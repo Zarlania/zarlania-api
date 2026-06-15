@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+  <!-- Exclude the generated/framework Spring Boot bootstrap class. -->
+  <Match>
+    <Class name="com.zarlania.api.ZarlaniaApiApplication"/>
+  </Match>
+
+  <!-- POC HelloController: SPRING_ENDPOINT is purely informational (it IS a controller). -->
+  <Match>
+    <Class name="com.zarlania.api.HelloController"/>
+    <Bug pattern="SPRING_ENDPOINT"/>
+  </Match>
+
+  <!-- POC WebConfig: permissive CORS is intentional for the POC; tightened in Phase 4. -->
+  <Match>
+    <Class name="com.zarlania.api.WebConfig"/>
+    <Bug pattern="PERMISSIVE_CORS"/>
+  </Match>
+</FindBugsFilter>
