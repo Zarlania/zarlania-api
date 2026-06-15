@@ -10,6 +10,6 @@ public class HelloController {
 
     @GetMapping("/")
     public Map<String, String> hello() {
-        return Map.of("message", "Hello from Zarlania API");
+        return Map.of("message", "Hello from Zarlania API v2");
     }
 }
