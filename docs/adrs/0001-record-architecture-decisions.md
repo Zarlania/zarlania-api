@@ -83,6 +83,10 @@ Rules established by this ADR:
    must be registered in `_tags.md` in the same change.
 9. **The law.** Once accepted on `master`, code may not contradict an ADR without a new
    ADR that supersedes it (the old one flips to `superseded` with cross-links).
+   This rule is enforced through code review and engineering discipline — not by
+   `./scripts/adr check`, which only validates ADR metadata (schema, status, tag
+   membership, filename/id match, ID sequence, and index freshness), not whether code
+   contradicts a decision.
 10. **Tooling.** All ADR operations go through `./scripts/adr` (see `--help`); the
     `adr-create`, `adr-search`, and `adr-tags` Claude skills wrap it.
 

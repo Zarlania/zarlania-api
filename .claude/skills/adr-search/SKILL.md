@@ -5,7 +5,7 @@ description: Use FIRST when you need to find an existing ADR or check whether a 
 
 # Searching ADRs
 
-Always use the CLI instead of reading `docs/adrs/` files directly. It is far cheaper.
+Use the CLI first for discovery instead of reading `docs/adrs/` files directly — it is far cheaper. Once `find`/`show` pinpoints the ADR id and you need the full prose, open that one file.
 
 - List all ADRs: `./scripts/adr list` (filter: `--status accepted`, `--tag security`)
 - Full-text search: `./scripts/adr find "<query>"`
