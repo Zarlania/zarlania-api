@@ -1,7 +1,7 @@
 [tool.pytest.ini_options]
 pythonpath = ["scripts/adr"]
 testpaths = ["scripts/adr/tests"]
-addopts = "--cov=lib --cov=cli --cov-branch --cov-report=term-missing"
+addopts = "--cov=lib --cov=cli --cov-branch --cov-report=term-missing --cov-fail-under=80"
 
 [tool.ruff]
 line-length = 100

@@ -1,4 +1,5 @@
 """Library for managing Architecture Decision Records (ADRs)."""
+
 from __future__ import annotations
 
 import datetime as _dt
@@ -69,7 +70,7 @@ def display_value(field_name: str, value) -> str:
         return EMPTY_DISPLAY
     if field_name in LIST_FIELDS:
         if isinstance(value, list):
-            return ", ".join(str(v) for v in value) if value else EMPTY_DISPLAY
+            return ", ".join(str(v) for v in value)
         return str(value)
     return str(value)
 
@@ -146,7 +147,8 @@ def validate_adrs(adr_dir) -> list[str]:
     if not tags_path.exists():
         errors.append("missing tag registry: _tags.md")
 
-    for adr in iter_adrs(adr_dir):
+    adrs = iter_adrs(adr_dir)
+    for adr in adrs:
         fm, name = adr.frontmatter, adr.path.name
 
         for key in FIELD_LABELS:
@@ -172,7 +174,7 @@ def validate_adrs(adr_dir) -> list[str]:
                 errors.append(f"{name}: tag '{tag}' not in _tags.md registry")
 
     index_path = adr_dir / "README.md"
-    expected_index = render_index(iter_adrs(adr_dir))
+    expected_index = render_index(adrs)
     if not index_path.exists():
         errors.append("missing ADR index: README.md")
     elif index_path.read_text(encoding="utf-8") != expected_index:
@@ -207,15 +209,22 @@ _DEFAULT_SECTIONS = (
 )
 
 
-def new_adr(adr_dir, name: str, tags: list[str], author: str,
-            today: str | None = None) -> Path:
+def new_adr(adr_dir, name: str, tags: list[str], author: str, today: str | None = None) -> Path:
     adr_dir = Path(adr_dir)
     today = today or _today_iso()
     adr_id = next_id(adr_dir)
     fm = {
-        "id": adr_id, "name": name, "description": "", "status": "proposed",
-        "date_proposed": today, "date_accepted": None, "date_invalidated": None,
-        "author": author, "supersedes": [], "superseded_by": [], "tags": list(tags),
+        "id": adr_id,
+        "name": name,
+        "description": "",
+        "status": "proposed",
+        "date_proposed": today,
+        "date_accepted": None,
+        "date_invalidated": None,
+        "author": author,
+        "supersedes": [],
+        "superseded_by": [],
+        "tags": list(tags),
     }
     path = adr_dir / f"{adr_id}-{slugify(name)}.md"
     path.write_text(compose_adr(fm, _DEFAULT_SECTIONS), encoding="utf-8")

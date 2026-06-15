@@ -1,4 +1,8 @@
+import textwrap
+from pathlib import Path
+
 import lib
+import pytest
 
 
 def test_slugify_basic():
@@ -15,10 +19,6 @@ def test_field_labels_cover_schema():
     assert len(lib.FIELD_LABELS) == 11
 
 
-import textwrap
-from pathlib import Path
-
-
 def _write(tmp_path: Path, text: str) -> Path:
     p = tmp_path / "0001-x.md"
     p.write_text(textwrap.dedent(text), encoding="utf-8")
@@ -26,7 +26,9 @@ def _write(tmp_path: Path, text: str) -> Path:
 
 
 def test_parse_adr_splits_frontmatter_and_body(tmp_path):
-    p = _write(tmp_path, """\
+    p = _write(
+        tmp_path,
+        """\
         ---
         id: "0001"
         name: Example
@@ -34,7 +36,8 @@ def test_parse_adr_splits_frontmatter_and_body(tmp_path):
         ---
         # Body here
         text
-        """)
+        """,
+    )
     adr = lib.parse_adr(p)
     assert adr.frontmatter["id"] == "0001"
     assert adr.frontmatter["tags"] == ["a", "b"]
@@ -44,11 +47,8 @@ def test_parse_adr_splits_frontmatter_and_body(tmp_path):
 def test_parse_adr_without_frontmatter_raises(tmp_path):
     p = tmp_path / "0002-y.md"
     p.write_text("no frontmatter\n", encoding="utf-8")
-    try:
+    with pytest.raises(ValueError):
         lib.parse_adr(p)
-        assert False, "expected ValueError"
-    except ValueError:
-        pass
 
 
 def test_dump_frontmatter_orders_fields():
@@ -69,9 +69,17 @@ def test_display_value_handles_empty_and_lists():
 
 def test_render_meta_table_roundtrips_via_extract():
     fm = {
-        "id": "0001", "name": "Example", "description": "d", "status": "proposed",
-        "date_proposed": "2026-06-15", "date_accepted": None, "date_invalidated": None,
-        "author": "stimothy", "supersedes": [], "superseded_by": [], "tags": ["process"],
+        "id": "0001",
+        "name": "Example",
+        "description": "d",
+        "status": "proposed",
+        "date_proposed": "2026-06-15",
+        "date_accepted": None,
+        "date_invalidated": None,
+        "author": "stimothy",
+        "supersedes": [],
+        "superseded_by": [],
+        "tags": ["process"],
     }
     table = lib.render_meta_table(fm)
     assert table.startswith(lib.META_START)
@@ -86,10 +94,17 @@ def test_extract_meta_table_missing_returns_none():
 
 def _make_adr(dir_: Path, num: str, name: str, status="accepted", tags=("process",)):
     fm = {
-        "id": num, "name": name, "description": "d", "status": status,
-        "date_proposed": "2026-06-15", "date_accepted": "2026-06-15",
-        "date_invalidated": None, "author": "stimothy",
-        "supersedes": [], "superseded_by": [], "tags": list(tags),
+        "id": num,
+        "name": name,
+        "description": "d",
+        "status": status,
+        "date_proposed": "2026-06-15",
+        "date_accepted": "2026-06-15",
+        "date_invalidated": None,
+        "author": "stimothy",
+        "supersedes": [],
+        "superseded_by": [],
+        "tags": list(tags),
     }
     body = f"# ADR-{num}: {name}\n\n{lib.render_meta_table(fm)}\n\n## Context\nx\n"
     p = dir_ / f"{num}-{lib.slugify(name)}.md"
@@ -141,9 +156,7 @@ def _registry(tmp_path: Path, *tags):
 def test_validate_clean_repo_has_no_errors(tmp_path):
     _registry(tmp_path, "process")
     _make_adr(tmp_path, "0001", "One", tags=("process",))
-    (tmp_path / "README.md").write_text(
-        lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8"
-    )
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
     assert lib.validate_adrs(tmp_path) == []
 
 
@@ -152,9 +165,7 @@ def test_validate_detects_table_drift(tmp_path):
     p = _make_adr(tmp_path, "0001", "One")
     text = p.read_text(encoding="utf-8").replace("| Status | accepted |", "| Status | proposed |")
     p.write_text(text, encoding="utf-8")
-    (tmp_path / "README.md").write_text(
-        lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8"
-    )
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
     errors = lib.validate_adrs(tmp_path)
     assert any("drift" in e.lower() for e in errors)
 
@@ -162,9 +173,7 @@ def test_validate_detects_table_drift(tmp_path):
 def test_validate_detects_unknown_tag(tmp_path):
     _registry(tmp_path, "process")
     _make_adr(tmp_path, "0001", "One", tags=("ghost",))
-    (tmp_path / "README.md").write_text(
-        lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8"
-    )
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
     errors = lib.validate_adrs(tmp_path)
     assert any("ghost" in e for e in errors)
 
@@ -188,8 +197,9 @@ def test_validate_detects_stale_index(tmp_path):
 
 def test_new_adr_creates_valid_proposed_file(tmp_path):
     _registry(tmp_path, "process")
-    path = lib.new_adr(tmp_path, name="My Choice", tags=["process"],
-                       author="stimothy", today="2026-06-15")
+    path = lib.new_adr(
+        tmp_path, name="My Choice", tags=["process"], author="stimothy", today="2026-06-15"
+    )
     assert path.name == "0001-my-choice.md"
     adr = lib.parse_adr(path)
     assert adr.frontmatter["status"] == "proposed"
@@ -201,8 +211,9 @@ def test_new_adr_creates_valid_proposed_file(tmp_path):
 
 def test_accept_adr_sets_status_and_date_and_syncs_table(tmp_path):
     _registry(tmp_path, "process")
-    path = lib.new_adr(tmp_path, name="My Choice", tags=["process"],
-                       author="stimothy", today="2026-06-15")
+    path = lib.new_adr(
+        tmp_path, name="My Choice", tags=["process"], author="stimothy", today="2026-06-15"
+    )
     lib.accept_adr(path, today="2026-06-20")
     adr = lib.parse_adr(path)
     assert adr.frontmatter["status"] == "accepted"
@@ -220,7 +231,6 @@ def test_add_tag_appends_and_is_idempotent(tmp_path):
 
 def test_write_index_makes_validation_pass(tmp_path):
     _registry(tmp_path, "process")
-    lib.new_adr(tmp_path, name="One", tags=["process"], author="stimothy",
-                today="2026-06-15")
+    lib.new_adr(tmp_path, name="One", tags=["process"], author="stimothy", today="2026-06-15")
     lib.write_index(tmp_path)
     assert lib.validate_adrs(tmp_path) == []
