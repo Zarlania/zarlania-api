@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec python3 "${HERE}/adr_tool/cli.py" "$@"
+VENV_PY="${HERE}/../.venv/bin/python"
+if [[ -x "${VENV_PY}" ]]; then
+  PY="${VENV_PY}"
+else
+  PY="python3"
+fi
+exec "${PY}" "${HERE}/adr_tool/cli.py" "$@"
