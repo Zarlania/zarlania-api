@@ -115,6 +115,23 @@ def test_cli_tags_missing_registry_errors(tmp_path):
     assert cli.main(["--adr-dir", str(tmp_path), "tags"]) == 1
 
 
+def test_cli_new_missing_registry_exits_1(tmp_path):
+    rc = cli.main(
+        [
+            "--adr-dir",
+            str(tmp_path),
+            "new",
+            "--name",
+            "X",
+            "--tags",
+            "process",
+            "--author",
+            "stimothy",
+        ]
+    )
+    assert rc == 1
+
+
 def test_cli_new_unknown_tags_exits_1(tmp_path, capsys):
     _registry(tmp_path, "process")
     rc = cli.main(

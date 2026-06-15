@@ -18,7 +18,11 @@ def _find_by_id(adr_dir: Path, adr_id: str) -> lib.Adr | None:
 
 def _cmd_new(args, adr_dir: Path) -> int:
     tags = [t.strip() for t in args.tags.split(",") if t.strip()]
-    registry = lib.load_tags(adr_dir / "_tags.md")
+    tags_path = adr_dir / "_tags.md"
+    if not tags_path.exists():
+        print(f"error: tag registry not found: {tags_path}", file=sys.stderr)
+        return 1
+    registry = lib.load_tags(tags_path)
     unknown = [t for t in tags if t not in registry]
     if unknown:
         print(
