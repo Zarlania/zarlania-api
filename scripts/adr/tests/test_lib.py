@@ -58,3 +58,27 @@ def test_dump_frontmatter_orders_fields():
     assert lines[0].startswith("id:")
     assert lines[1].startswith("name:")
     assert "tags:" in out
+
+
+def test_display_value_handles_empty_and_lists():
+    assert lib.display_value("author", None) == "—"
+    assert lib.display_value("tags", []) == "—"
+    assert lib.display_value("tags", ["a", "b"]) == "a, b"
+    assert lib.display_value("status", "accepted") == "accepted"
+
+
+def test_render_meta_table_roundtrips_via_extract():
+    fm = {
+        "id": "0001", "name": "Example", "description": "d", "status": "proposed",
+        "date_proposed": "2026-06-15", "date_accepted": None, "date_invalidated": None,
+        "author": "stimothy", "supersedes": [], "superseded_by": [], "tags": ["process"],
+    }
+    table = lib.render_meta_table(fm)
+    assert table.startswith(lib.META_START)
+    assert table.rstrip().endswith(lib.META_END)
+    body = f"intro\n\n{table}\n\n## Section\n"
+    assert lib.extract_meta_table(body) == table
+
+
+def test_extract_meta_table_missing_returns_none():
+    assert lib.extract_meta_table("no markers here") is None
