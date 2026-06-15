@@ -317,7 +317,9 @@ periodic maintenance step / CI job, since Dependabot doesn't natively update
 3. **ADR-0003** — Code quality & security gates (toolchain, thresholds, pre-commit↔CI split).
 4. **ADR-0004** — Contribution workflow (issue-driven, branch/PR naming, enforcement, CODEOWNERS, branch protection).
 5. **ADR-0005** — Deployment topology & runtime config (Render free tier, render.yaml,
-   docker-compose, actuator exposure, CORS allowlist) and release/versioning model.
+   docker-compose, actuator exposure, CORS allowlist).
+6. **ADR-0006** — Release & versioning model (SemVer in `pom.xml`, label-based in-PR
+   bump, automated tag + GitHub Release on merge, single-deploy guarantee).
 
 ## 13. Bootstrap Ordering (phased implementation)
 
@@ -332,7 +334,7 @@ machinery, then everything afterward follows the full process.
    `dependabot.yml`, OSS health files, branch-protection docs.
 4. **Phase 4 — App shell & deploy**: actuator + springdoc + CORS + version/build-info,
    `render.yaml`, `docker-compose.yml`, Dockerfile update, `scripts/bump-version`.
-5. **Phase 5 — Seed ADRs 0002–0005** documenting the above.
+5. **Phase 5 — Seed ADRs 0002–0006** documenting the above.
 
 ## 14. Resolved Decisions
 
