@@ -234,3 +234,91 @@ def test_write_index_makes_validation_pass(tmp_path):
     lib.new_adr(tmp_path, name="One", tags=["process"], author="stimothy", today="2026-06-15")
     lib.write_index(tmp_path)
     assert lib.validate_adrs(tmp_path) == []
+
+
+def test_today_iso_returns_iso_string():
+    result = lib._today_iso()
+    # Must match YYYY-MM-DD
+    import re
+
+    assert re.match(r"^\d{4}-\d{2}-\d{2}$", result)
+
+
+def test_display_value_list_field_non_list_scalar():
+    # LIST_FIELDS with a non-list scalar hits the `return str(value)` branch (line 74)
+    assert lib.display_value("tags", "solo-tag") == "solo-tag"
+
+
+def test_validate_missing_tags_registry(tmp_path):
+    # No _tags.md at all — should report missing registry error
+    _make_adr(tmp_path, "0001", "One")
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("_tags.md" in e for e in errors)
+
+
+def test_validate_missing_frontmatter_field(tmp_path):
+    # Write an ADR with a frontmatter field removed so the 'missing field' error fires
+    _registry(tmp_path, "process")
+    p = _make_adr(tmp_path, "0001", "One")
+    text = p.read_text(encoding="utf-8")
+    # Remove the 'author' line from frontmatter
+    stripped = "\n".join(line for line in text.splitlines() if not line.startswith("author:"))
+    p.write_text(stripped, encoding="utf-8")
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("missing field" in e for e in errors)
+
+
+def test_validate_invalid_status(tmp_path):
+    # ADR with an invalid status value triggers the status-check error
+    _registry(tmp_path, "process")
+    p = _make_adr(tmp_path, "0001", "One")
+    text = p.read_text(encoding="utf-8").replace("status: accepted", "status: unknown-status")
+    p.write_text(text, encoding="utf-8")
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("invalid status" in e for e in errors)
+
+
+def test_validate_missing_meta_table_markers(tmp_path):
+    # ADR body without meta-table markers triggers 'missing meta table markers' error
+    _registry(tmp_path, "process")
+    p = _make_adr(tmp_path, "0001", "One")
+    text = p.read_text(encoding="utf-8")
+    # Strip out the meta table block
+    import re
+
+    cleaned = re.sub(
+        r"<!-- adr-meta:start -->.*?<!-- adr-meta:end -->",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    p.write_text(cleaned, encoding="utf-8")
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("missing meta table markers" in e for e in errors)
+
+
+def test_accept_adr_no_meta_table_prepends(tmp_path):
+    # When body has no meta-table markers, _rewrite_with_synced_table prepends the table
+    _registry(tmp_path, "process")
+    path = lib.new_adr(
+        tmp_path, name="No Table", tags=["process"], author="stimothy", today="2026-06-15"
+    )
+    # Remove the meta table from the file body so the prepend fallback is hit
+    import re
+
+    text = path.read_text(encoding="utf-8")
+    cleaned = re.sub(
+        r"<!-- adr-meta:start -->.*?<!-- adr-meta:end -->\n?",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    path.write_text(cleaned, encoding="utf-8")
+    lib.accept_adr(path, today="2026-06-20")
+    adr = lib.parse_adr(path)
+    assert adr.frontmatter["status"] == "accepted"
+    assert lib.META_START in adr.body
