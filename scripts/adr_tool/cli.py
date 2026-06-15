@@ -62,19 +62,31 @@ def _cmd_show(args, adr_dir: Path) -> int:
 
 
 def _cmd_tags(args, adr_dir: Path) -> int:
-    for tag, desc in sorted(lib.load_tags(adr_dir / "_tags.md").items()):
+    tags_path = adr_dir / "_tags.md"
+    if not tags_path.exists():
+        print(f"error: tag registry not found: {tags_path}", file=sys.stderr)
+        return 1
+    for tag, desc in sorted(lib.load_tags(tags_path).items()):
         print(f"{tag:<16}  {desc}")
     return 0
 
 
 def _cmd_add_tag(args, adr_dir: Path) -> int:
-    lib.add_tag(adr_dir / "_tags.md", args.tag, args.description)
+    tags_path = adr_dir / "_tags.md"
+    if not tags_path.exists():
+        print(f"error: tag registry not found: {tags_path}", file=sys.stderr)
+        return 1
+    lib.add_tag(tags_path, args.tag, args.description)
     print(f"registered tag '{args.tag}'")
     return 0
 
 
 def _cmd_tag_usage(args, adr_dir: Path) -> int:
-    counts: dict[str, int] = {t: 0 for t in lib.load_tags(adr_dir / "_tags.md")}
+    tags_path = adr_dir / "_tags.md"
+    if not tags_path.exists():
+        print(f"error: tag registry not found: {tags_path}", file=sys.stderr)
+        return 1
+    counts: dict[str, int] = {t: 0 for t in lib.load_tags(tags_path)}
     for adr in lib.iter_adrs(adr_dir):
         for tag in adr.frontmatter.get("tags") or []:
             counts[tag] = counts.get(tag, 0) + 1

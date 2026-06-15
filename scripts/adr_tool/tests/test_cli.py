@@ -109,3 +109,7 @@ def test_cli_accept(tmp_path):
     cli.main(["--adr-dir", str(tmp_path), "accept", "0001"])
     adr = lib.parse_adr(tmp_path / "0001-accept-me.md")
     assert adr.frontmatter["status"] == "accepted"
+
+
+def test_cli_tags_missing_registry_errors(tmp_path):
+    assert cli.main(["--adr-dir", str(tmp_path), "tags"]) == 1
