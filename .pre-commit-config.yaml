@@ -19,6 +19,8 @@ repos:
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.21.2
     hooks:
+      # Scans STAGED changes so no new secret can be committed. The repo is brand-new
+      # with clean history, so we intentionally do not run a full-history scan.
       - id: gitleaks
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
@@ -58,7 +60,8 @@ repos:
         name: Spotless + Checkstyle (Java, via mvnw)
         entry: ./mvnw -q spotless:check checkstyle:check
         language: system
-        types: [java]
+        # Run when Java sources OR the build/quality config that governs them change.
+        files: '(\.java$|^pom\.xml$|^config/checkstyle/)'
         pass_filenames: false
       - id: adr-check
         name: ADR validation (./scripts/adr check)
