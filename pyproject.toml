@@ -1,6 +1,6 @@
 [tool.pytest.ini_options]
-pythonpath = ["scripts/adr"]
-testpaths = ["scripts/adr/tests"]
+pythonpath = ["scripts/adr_tool"]
+testpaths = ["scripts/adr_tool/tests"]
 addopts = "--cov=lib --cov=cli --cov-branch --cov-report=term-missing --cov-fail-under=80"
 
 [tool.ruff]
