@@ -184,3 +184,43 @@ def test_validate_detects_stale_index(tmp_path):
     (tmp_path / "README.md").write_text("# stale\n", encoding="utf-8")
     errors = lib.validate_adrs(tmp_path)
     assert any("index" in e.lower() for e in errors)
+
+
+def test_new_adr_creates_valid_proposed_file(tmp_path):
+    _registry(tmp_path, "process")
+    path = lib.new_adr(tmp_path, name="My Choice", tags=["process"],
+                       author="stimothy", today="2026-06-15")
+    assert path.name == "0001-my-choice.md"
+    adr = lib.parse_adr(path)
+    assert adr.frontmatter["status"] == "proposed"
+    assert adr.frontmatter["date_proposed"] == "2026-06-15"
+    assert adr.frontmatter["id"] == "0001"
+    # table is in sync from creation
+    assert lib.extract_meta_table(adr.body) == lib.render_meta_table(adr.frontmatter)
+
+
+def test_accept_adr_sets_status_and_date_and_syncs_table(tmp_path):
+    _registry(tmp_path, "process")
+    path = lib.new_adr(tmp_path, name="My Choice", tags=["process"],
+                       author="stimothy", today="2026-06-15")
+    lib.accept_adr(path, today="2026-06-20")
+    adr = lib.parse_adr(path)
+    assert adr.frontmatter["status"] == "accepted"
+    assert adr.frontmatter["date_accepted"] == "2026-06-20"
+    assert lib.extract_meta_table(adr.body) == lib.render_meta_table(adr.frontmatter)
+
+
+def test_add_tag_appends_and_is_idempotent(tmp_path):
+    _registry(tmp_path, "process")
+    lib.add_tag(tmp_path / "_tags.md", "security", "security model")
+    assert lib.load_tags(tmp_path / "_tags.md")["security"] == "security model"
+    lib.add_tag(tmp_path / "_tags.md", "security", "ignored second desc")
+    assert lib.load_tags(tmp_path / "_tags.md")["security"] == "security model"
+
+
+def test_write_index_makes_validation_pass(tmp_path):
+    _registry(tmp_path, "process")
+    lib.new_adr(tmp_path, name="One", tags=["process"], author="stimothy",
+                today="2026-06-15")
+    lib.write_index(tmp_path)
+    assert lib.validate_adrs(tmp_path) == []

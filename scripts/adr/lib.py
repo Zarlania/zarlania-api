@@ -1,6 +1,7 @@
 """Library for managing Architecture Decision Records (ADRs)."""
 from __future__ import annotations
 
+import datetime as _dt
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,7 +49,7 @@ class Adr:
     body: str
 
 
-def parse_adr(path) -> "Adr":
+def parse_adr(path) -> Adr:
     text = Path(path).read_text(encoding="utf-8")
     m = FRONTMATTER_RE.match(text)
     if not m:
@@ -98,7 +99,7 @@ def next_id(adr_dir) -> str:
     return f"{(max(nums) + 1) if nums else 1:04d}"
 
 
-def iter_adrs(adr_dir) -> list["Adr"]:
+def iter_adrs(adr_dir) -> list[Adr]:
     return [parse_adr(p) for p in sorted(Path(adr_dir).glob(ADR_GLOB))]
 
 
@@ -116,7 +117,7 @@ def load_tags(tags_path) -> dict[str, str]:
     return tags
 
 
-def render_index(adrs: list["Adr"]) -> str:
+def render_index(adrs: list[Adr]) -> str:
     lines = [
         "# Architecture Decision Records",
         "",
@@ -178,3 +179,76 @@ def validate_adrs(adr_dir) -> list[str]:
         errors.append("ADR index (README.md) is stale — run `./scripts/adr index`")
 
     return errors
+
+
+def _today_iso() -> str:
+    return _dt.date.today().isoformat()
+
+
+def compose_adr(fm: dict, body_sections: str) -> str:
+    """Build full ADR text: frontmatter + title + meta table + sections."""
+    return (
+        f"---\n{dump_frontmatter(fm)}\n---\n"
+        f"# ADR-{fm['id']}: {fm['name']}\n\n"
+        f"{render_meta_table(fm)}\n\n"
+        f"{body_sections}"
+    )
+
+
+_DEFAULT_SECTIONS = (
+    "## Context and Problem Statement\n\n"
+    "_What is the issue we are addressing? One subject only._\n\n"
+    "## Decision Drivers\n\n- _driver_\n\n"
+    "## Considered Options\n\n- _option_\n\n"
+    "## Decision Outcome\n\n"
+    "Chosen option: _option_, because _justification_.\n\n"
+    "### Consequences\n\n- Good: _benefit_\n- Bad: _cost_\n\n"
+    "## Links\n\n- _related ADRs / references_\n"
+)
+
+
+def new_adr(adr_dir, name: str, tags: list[str], author: str,
+            today: str | None = None) -> Path:
+    adr_dir = Path(adr_dir)
+    today = today or _today_iso()
+    adr_id = next_id(adr_dir)
+    fm = {
+        "id": adr_id, "name": name, "description": "", "status": "proposed",
+        "date_proposed": today, "date_accepted": None, "date_invalidated": None,
+        "author": author, "supersedes": [], "superseded_by": [], "tags": list(tags),
+    }
+    path = adr_dir / f"{adr_id}-{slugify(name)}.md"
+    path.write_text(compose_adr(fm, _DEFAULT_SECTIONS), encoding="utf-8")
+    return path
+
+
+def _rewrite_with_synced_table(adr: Adr) -> None:
+    """Persist an ADR re-rendering frontmatter + meta table, preserving sections."""
+    table = extract_meta_table(adr.body)
+    if table is not None:
+        new_body = adr.body.replace(table, render_meta_table(adr.frontmatter), 1)
+    else:
+        new_body = f"{render_meta_table(adr.frontmatter)}\n\n{adr.body}"
+    adr.path.write_text(
+        f"---\n{dump_frontmatter(adr.frontmatter)}\n---\n{new_body}", encoding="utf-8"
+    )
+
+
+def accept_adr(path, today: str | None = None) -> None:
+    adr = parse_adr(path)
+    adr.frontmatter["status"] = "accepted"
+    adr.frontmatter["date_accepted"] = today or _today_iso()
+    _rewrite_with_synced_table(adr)
+
+
+def add_tag(tags_path, tag: str, description: str) -> None:
+    tags_path = Path(tags_path)
+    if tag in load_tags(tags_path):
+        return
+    text = tags_path.read_text(encoding="utf-8").rstrip("\n")
+    tags_path.write_text(f"{text}\n| {tag} | {description} |\n", encoding="utf-8")
+
+
+def write_index(adr_dir) -> None:
+    adr_dir = Path(adr_dir)
+    (adr_dir / "README.md").write_text(render_index(iter_adrs(adr_dir)), encoding="utf-8")
