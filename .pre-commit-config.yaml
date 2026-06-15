@@ -1,5 +1,10 @@
 # Fast pre-commit checks. Heavy analysis (SpotBugs/JaCoCo/tests) runs in CI via ./mvnw verify.
 minimum_pre_commit_version: "3.5.0"
+
+# docs/superpowers/* are Claude's implementation/planning artifacts (specs & plans).
+# They are not source code and are exempt from ALL hooks — no linting, no auto-fixing.
+exclude: '^docs/superpowers/'
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -28,7 +33,6 @@ repos:
     hooks:
       - id: markdownlint
         args: ["--config", ".markdownlint.yaml"]
-        exclude: ^docs/superpowers/
 
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: v3.10.0-2
