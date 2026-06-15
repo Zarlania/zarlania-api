@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+pythonpath = ["scripts/adr"]
+testpaths = ["scripts/adr/tests"]
+addopts = "--cov=lib --cov=cli --cov-branch --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
