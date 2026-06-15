@@ -1,6 +1,6 @@
 # Zarlania API
 
-Backend service for Zarlania, deployed at https://api.zarlania.com. Java 25 / Spring
+Backend service for Zarlania, deployed at <https://api.zarlania.com>. Java 25 / Spring
 Boot / Maven, containerized and hosted on Render.
 
 > Early scaffolding stage — see `docs/superpowers/specs/` for the design and
