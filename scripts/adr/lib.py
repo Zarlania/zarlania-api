@@ -133,3 +133,48 @@ def render_index(adrs: list["Adr"]) -> str:
             f"| {display_value('tags', fm.get('tags'))} |"
         )
     return "\n".join(lines) + "\n"
+
+
+def validate_adrs(adr_dir) -> list[str]:
+    """Return a list of human-readable validation errors (empty == valid)."""
+    adr_dir = Path(adr_dir)
+    errors: list[str] = []
+
+    tags_path = adr_dir / "_tags.md"
+    registry = load_tags(tags_path) if tags_path.exists() else {}
+    if not tags_path.exists():
+        errors.append("missing tag registry: _tags.md")
+
+    for adr in iter_adrs(adr_dir):
+        fm, name = adr.frontmatter, adr.path.name
+
+        for key in FIELD_LABELS:
+            if key not in fm:
+                errors.append(f"{name}: frontmatter missing field '{key}'")
+
+        status = fm.get("status")
+        if status not in VALID_STATUSES:
+            errors.append(f"{name}: invalid status '{status}'")
+
+        expected_prefix = f"{fm.get('id')}-"
+        if not name.startswith(expected_prefix):
+            errors.append(f"{name}: filename does not match id '{fm.get('id')}'")
+
+        table = extract_meta_table(adr.body)
+        if table is None:
+            errors.append(f"{name}: missing meta table markers")
+        elif table != render_meta_table(fm):
+            errors.append(f"{name}: meta table drift (table != frontmatter)")
+
+        for tag in fm.get("tags") or []:
+            if tag not in registry:
+                errors.append(f"{name}: tag '{tag}' not in _tags.md registry")
+
+    index_path = adr_dir / "README.md"
+    expected_index = render_index(iter_adrs(adr_dir))
+    if not index_path.exists():
+        errors.append("missing ADR index: README.md")
+    elif index_path.read_text(encoding="utf-8") != expected_index:
+        errors.append("ADR index (README.md) is stale — run `./scripts/adr index`")
+
+    return errors

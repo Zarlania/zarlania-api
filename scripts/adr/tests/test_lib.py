@@ -129,3 +129,58 @@ def test_render_index_lists_adrs(tmp_path):
     index = lib.render_index(lib.iter_adrs(tmp_path))
     assert "| ID | Name | Status | Tags |" in index
     assert "[0001](0001-one.md)" in index
+
+
+def _registry(tmp_path: Path, *tags):
+    rows = "".join(f"| {t} | desc |\n" for t in tags)
+    (tmp_path / "_tags.md").write_text(
+        "# ADR Tags\n\n| Tag | Description |\n| --- | --- |\n" + rows, encoding="utf-8"
+    )
+
+
+def test_validate_clean_repo_has_no_errors(tmp_path):
+    _registry(tmp_path, "process")
+    _make_adr(tmp_path, "0001", "One", tags=("process",))
+    (tmp_path / "README.md").write_text(
+        lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8"
+    )
+    assert lib.validate_adrs(tmp_path) == []
+
+
+def test_validate_detects_table_drift(tmp_path):
+    _registry(tmp_path, "process")
+    p = _make_adr(tmp_path, "0001", "One")
+    text = p.read_text(encoding="utf-8").replace("| Status | accepted |", "| Status | proposed |")
+    p.write_text(text, encoding="utf-8")
+    (tmp_path / "README.md").write_text(
+        lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8"
+    )
+    errors = lib.validate_adrs(tmp_path)
+    assert any("drift" in e.lower() for e in errors)
+
+
+def test_validate_detects_unknown_tag(tmp_path):
+    _registry(tmp_path, "process")
+    _make_adr(tmp_path, "0001", "One", tags=("ghost",))
+    (tmp_path / "README.md").write_text(
+        lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8"
+    )
+    errors = lib.validate_adrs(tmp_path)
+    assert any("ghost" in e for e in errors)
+
+
+def test_validate_detects_bad_status_and_id_mismatch(tmp_path):
+    _registry(tmp_path, "process")
+    p = _make_adr(tmp_path, "0001", "One")
+    text = p.read_text(encoding="utf-8").replace("id: '0001'", 'id: "0009"')
+    p.write_text(text, encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("id" in e.lower() for e in errors)
+
+
+def test_validate_detects_stale_index(tmp_path):
+    _registry(tmp_path, "process")
+    _make_adr(tmp_path, "0001", "One")
+    (tmp_path / "README.md").write_text("# stale\n", encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("index" in e.lower() for e in errors)
