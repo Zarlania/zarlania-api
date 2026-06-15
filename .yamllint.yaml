@@ -1,0 +1,8 @@
+extends: default
+rules:
+  line-length: disable
+  document-start: disable
+  truthy:
+    check-keys: false   # allow GitHub Actions "on:" etc. in later phases
+  comments:
+    min-spaces-from-content: 1
