@@ -11,7 +11,10 @@
     <Bug pattern="SPRING_ENDPOINT"/>
   </Match>
 
-  <!-- POC WebConfig: permissive CORS is intentional for the POC; tightened in Phase 4. -->
+  <!--
+    POC WebConfig: permissive CORS is intentional for the POC. Tightened in Phase 4
+    (env-driven allowlist) — tracked in issue #4. Remove this suppression once fixed.
+  -->
   <Match>
     <Class name="com.zarlania.api.WebConfig"/>
     <Bug pattern="PERMISSIVE_CORS"/>
