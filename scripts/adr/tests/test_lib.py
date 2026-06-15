@@ -82,3 +82,50 @@ def test_render_meta_table_roundtrips_via_extract():
 
 def test_extract_meta_table_missing_returns_none():
     assert lib.extract_meta_table("no markers here") is None
+
+
+def _make_adr(dir_: Path, num: str, name: str, status="accepted", tags=("process",)):
+    fm = {
+        "id": num, "name": name, "description": "d", "status": status,
+        "date_proposed": "2026-06-15", "date_accepted": "2026-06-15",
+        "date_invalidated": None, "author": "stimothy",
+        "supersedes": [], "superseded_by": [], "tags": list(tags),
+    }
+    body = f"# ADR-{num}: {name}\n\n{lib.render_meta_table(fm)}\n\n## Context\nx\n"
+    p = dir_ / f"{num}-{lib.slugify(name)}.md"
+    p.write_text(f"---\n{lib.dump_frontmatter(fm)}\n---\n{body}", encoding="utf-8")
+    return p
+
+
+def test_next_id_empty_dir(tmp_path):
+    assert lib.next_id(tmp_path) == "0001"
+
+
+def test_next_id_increments(tmp_path):
+    _make_adr(tmp_path, "0001", "One")
+    _make_adr(tmp_path, "0004", "Four")
+    assert lib.next_id(tmp_path) == "0005"
+
+
+def test_iter_adrs_sorted(tmp_path):
+    _make_adr(tmp_path, "0002", "Two")
+    _make_adr(tmp_path, "0001", "One")
+    ids = [a.frontmatter["id"] for a in lib.iter_adrs(tmp_path)]
+    assert ids == ["0001", "0002"]
+
+
+def test_load_tags_parses_registry(tmp_path):
+    (tmp_path / "_tags.md").write_text(
+        "# ADR Tags\n\n| Tag | Description |\n| --- | --- |\n"
+        "| process | how we work |\n| security | security model |\n",
+        encoding="utf-8",
+    )
+    tags = lib.load_tags(tmp_path / "_tags.md")
+    assert tags == {"process": "how we work", "security": "security model"}
+
+
+def test_render_index_lists_adrs(tmp_path):
+    _make_adr(tmp_path, "0001", "One", tags=("process",))
+    index = lib.render_index(lib.iter_adrs(tmp_path))
+    assert "| ID | Name | Status | Tags |" in index
+    assert "[0001](0001-one.md)" in index
