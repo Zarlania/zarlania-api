@@ -1,7 +1,7 @@
 # CLAUDE.md — Zarlania API
 
 AI entry point for this repo. **This is a live, public service: merges to `master`
-deploy to production at https://api.zarlania.com.** Work carefully.
+deploy to production at <https://api.zarlania.com>.** Work carefully.
 
 ## Non-negotiables
 

@@ -99,4 +99,4 @@ Rules established by this ADR:
 ## Links
 
 - Spec: `docs/superpowers/specs/2026-06-15-zarlania-api-repo-shell-design.md`
-- MADR: https://adr.github.io/madr/
+- MADR: <https://adr.github.io/madr/>
