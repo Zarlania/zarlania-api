@@ -30,7 +30,11 @@ def _cmd_new(args, adr_dir: Path) -> int:
             file=sys.stderr,
         )
         return 1
-    path = lib.new_adr(adr_dir, name=args.name, tags=tags, author=args.author)
+    try:
+        path = lib.new_adr(adr_dir, name=args.name, tags=tags, author=args.author)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     lib.write_index(adr_dir)
     print(f"created {path}")
     return 0
@@ -80,7 +84,14 @@ def _cmd_add_tag(args, adr_dir: Path) -> int:
     if not tags_path.exists():
         print(f"error: tag registry not found: {tags_path}", file=sys.stderr)
         return 1
-    lib.add_tag(tags_path, args.tag, args.description)
+    if args.tag in lib.load_tags(tags_path):
+        print(f"tag '{args.tag}' is already registered")
+        return 0
+    try:
+        lib.add_tag(tags_path, args.tag, args.description)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(f"registered tag '{args.tag}'")
     return 0
 
@@ -111,7 +122,11 @@ def _cmd_accept(args, adr_dir: Path) -> int:
     if not adr:
         print(f"error: no ADR with id {args.id}", file=sys.stderr)
         return 1
-    lib.accept_adr(adr.path)
+    try:
+        lib.accept_adr(adr.path)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     lib.write_index(adr_dir)
     print(f"accepted {adr.path.name}")
     return 0

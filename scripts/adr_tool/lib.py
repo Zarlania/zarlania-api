@@ -129,7 +129,7 @@ def render_index(adrs: list[Adr]) -> str:
     ]
     for a in adrs:
         fm = a.frontmatter
-        link = f"[{fm['id']}]({a.path.name})"
+        link = f"[{fm.get('id', '?')}]({a.path.name})"
         lines.append(
             f"| {link} | {fm.get('name', '')} | {fm.get('status', '')} "
             f"| {display_value('tags', fm.get('tags'))} |"
@@ -147,7 +147,47 @@ def validate_adrs(adr_dir) -> list[str]:
     if not tags_path.exists():
         errors.append("missing tag registry: _tags.md")
 
-    adrs = iter_adrs(adr_dir)
+    # Detect malformed ADR filenames (not matching NNNN-*.md pattern)
+    for p in sorted(adr_dir.glob("*.md")):
+        name = p.name
+        if name == "README.md" or name.startswith("_"):
+            continue
+        if not ID_PREFIX_RE.match(name):
+            errors.append(f"{name}: malformed ADR filename (expected NNNN-title.md)")
+
+    # Parse each ADR file, catching per-file parse failures
+    adrs: list[Adr] = []
+    for p in sorted(adr_dir.glob(ADR_GLOB)):
+        try:
+            adrs.append(parse_adr(p))
+        except ValueError as exc:
+            errors.append(f"{p.name}: {exc}")
+
+    # Detect duplicate ids
+    id_to_files: dict[str, list[str]] = {}
+    for adr in adrs:
+        adr_id = str(adr.frontmatter.get("id", ""))
+        id_to_files.setdefault(adr_id, []).append(adr.path.name)
+    for adr_id, files in id_to_files.items():
+        if len(files) > 1:
+            errors.append(f"duplicate ADR id '{adr_id}' found in: {', '.join(files)}")
+
+    # Detect non-linear / gapped IDs
+    numeric_ids: list[int] = []
+    for adr in adrs:
+        raw_id = adr.frontmatter.get("id")
+        try:
+            numeric_ids.append(int(raw_id))
+        except (TypeError, ValueError):
+            pass  # non-numeric ids already flagged by schema checks
+    if numeric_ids:
+        max_id = max(numeric_ids)
+        id_set = set(numeric_ids)
+        for n in range(1, max_id + 1):
+            if n not in id_set:
+                errors.append(f"missing ADR id {n:04d} (IDs must be contiguous starting at 0001)")
+
+    # Per-file schema/status/filename/drift/tag checks
     for adr in adrs:
         fm, name = adr.frontmatter, adr.path.name
 
@@ -197,18 +237,6 @@ def compose_adr(fm: dict, body_sections: str) -> str:
     )
 
 
-_DEFAULT_SECTIONS = (
-    "## Context and Problem Statement\n\n"
-    "_What is the issue we are addressing? One subject only._\n\n"
-    "## Decision Drivers\n\n- _driver_\n\n"
-    "## Considered Options\n\n- _option_\n\n"
-    "## Decision Outcome\n\n"
-    "Chosen option: _option_, because _justification_.\n\n"
-    "### Consequences\n\n- Good: _benefit_\n- Bad: _cost_\n\n"
-    "## Links\n\n- _related ADRs / references_\n"
-)
-
-
 def new_adr(adr_dir, name: str, tags: list[str], author: str, today: str | None = None) -> Path:
     adr_dir = Path(adr_dir)
     today = today or _today_iso()
@@ -226,8 +254,21 @@ def new_adr(adr_dir, name: str, tags: list[str], author: str, today: str | None 
         "superseded_by": [],
         "tags": list(tags),
     }
+
+    # Read body sections from _template.md (single source of truth)
+    template_path = adr_dir / "_template.md"
+    if not template_path.exists():
+        raise ValueError(f"ADR template not found: {template_path}")
+    template = parse_adr(template_path)
+    # Extract body sections after the META_END marker
+    meta_end_pos = template.body.find(META_END)
+    if meta_end_pos != -1:
+        body_sections = template.body[meta_end_pos + len(META_END) :].lstrip("\n")
+    else:
+        body_sections = template.body
+
     path = adr_dir / f"{adr_id}-{slugify(name)}.md"
-    path.write_text(compose_adr(fm, _DEFAULT_SECTIONS), encoding="utf-8")
+    path.write_text(compose_adr(fm, body_sections), encoding="utf-8")
     return path
 
 
@@ -245,12 +286,21 @@ def _rewrite_with_synced_table(adr: Adr) -> None:
 
 def accept_adr(path, today: str | None = None) -> None:
     adr = parse_adr(path)
+    status = adr.frontmatter.get("status")
+    if status != "proposed":
+        raise ValueError(
+            f"cannot accept ADR with status '{status}' (only 'proposed' ADRs can be accepted)"
+        )
     adr.frontmatter["status"] = "accepted"
     adr.frontmatter["date_accepted"] = today or _today_iso()
     _rewrite_with_synced_table(adr)
 
 
 def add_tag(tags_path, tag: str, description: str) -> None:
+    if "|" in tag or "\n" in tag:
+        raise ValueError("tag must not contain '|' or newline characters")
+    if "|" in description or "\n" in description:
+        raise ValueError("description must not contain '|' or newline characters")
     tags_path = Path(tags_path)
     if tag in load_tags(tags_path):
         return
