@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Run the fast local check suite (mirrors pre-commit). Use --full to also run mvn verify.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
+
+FULL=0
+if [[ "${1:-}" == "--full" ]]; then
+  FULL=1
+fi
+
+PRE_COMMIT=".venv/bin/pre-commit"
+if [[ ! -x "${PRE_COMMIT}" ]]; then
+  PRE_COMMIT="pre-commit"
+fi
+
+echo "==> Running fast checks (pre-commit on all files)"
+"${PRE_COMMIT}" run --all-files
+
+if [[ "${FULL}" -eq 1 ]]; then
+  echo "==> Running full Maven verify (tests + SpotBugs + JaCoCo)"
+  ./mvnw clean verify
+fi
+
+echo "==> Checks passed."
