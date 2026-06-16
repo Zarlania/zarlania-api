@@ -10,6 +10,8 @@ RUN ./mvnw -q clean package -DskipTests
 # --- Run stage ---
 FROM eclipse-temurin:25-jre
 WORKDIR /app
-COPY --from=build /app/target/zarlania-api-0.0.1-SNAPSHOT.jar app.jar
+RUN useradd --system --no-create-home --uid 10001 appuser
+COPY --from=build /app/target/*.jar app.jar
+USER appuser
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]
