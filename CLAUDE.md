@@ -24,5 +24,6 @@ To create one, use the `adr-create` skill. For tags, use `adr-tags`. Run
 
 ## Status
 
-Phase 1 (ADR foundation) is in place. Quality gates, CI, the app shell, and deployment
-config arrive in later phases (see `docs/superpowers/specs/`).
+Phases 1–4 are in place (ADRs, quality gates, CI/governance, and the app shell:
+Actuator, OpenAPI, CORS allowlist, deploy config). Release automation and the seed
+ADRs are still pending (see `docs/superpowers/`).
