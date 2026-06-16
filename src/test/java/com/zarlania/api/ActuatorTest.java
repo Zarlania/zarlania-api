@@ -27,4 +27,12 @@ class ActuatorTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("UP"));
   }
+
+  @Test
+  void infoExposesBuildVersion() throws Exception {
+    mockMvc()
+        .perform(get("/actuator/info"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.build.version").exists());
+  }
 }
