@@ -1,0 +1,11 @@
+name: Chore / maintenance
+description: Tooling, dependencies, refactor, or housekeeping.
+labels: ["chore"]
+body:
+  - type: textarea
+    id: task
+    attributes:
+      label: Task
+      description: What needs to be done and why.
+    validations:
+      required: true
