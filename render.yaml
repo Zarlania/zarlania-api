@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: zarlania-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    branch: master
+    healthCheckPath: /actuator/health
+    autoDeploy: true
+    envVars:
+      - key: ZARLANIA_CORS_ALLOWED_ORIGINS
+        value: https://zarlania.com,https://www.zarlania.com
