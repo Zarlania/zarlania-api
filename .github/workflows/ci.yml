@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build:
+    name: Build & quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Maven verify (Spotless, Checkstyle, SpotBugs+FindSecBugs, tests, JaCoCo)
+        run: ./mvnw -B clean verify
+      - name: JaCoCo coverage report comment
+        if: github.event_name == 'pull_request'
+        uses: madrapps/jacoco-report@v1.7.1
+        with:
+          paths: ${{ github.workspace }}/target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 80
+          min-coverage-changed-files: 80
+          title: JaCoCo Coverage
+
+  checks:
+    name: Lint & ADR tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+      - name: Run lint hooks (Java gates run in the build job)
+        run: SKIP=java-quality pre-commit run --all-files --show-diff-on-failure
+      - name: ADR tooling tests
+        run: pytest --cov-fail-under=80
+
+  secrets:
+    name: Secret scan
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          version=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${version}/gitleaks_${version}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+      - name: Scan PR commits for secrets
+        run: |
+          gitleaks git . --redact --no-banner \
+            --log-opts="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+  governance:
+    name: PR references an issue
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify issue reference in PR title or branch
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if printf '%s' "$PR_TITLE" | grep -qE '#[0-9]+'; then
+            echo "OK: PR title references an issue."
+          elif printf '%s' "$HEAD_REF" | grep -qE '^[a-z]+/[0-9]+-'; then
+            echo "OK: branch name references an issue."
+          else
+            echo "::error::PR must reference a GitHub issue — put #<issue> in the title or name the branch type/<issue#>-slug." >&2
+            exit 1
+          fi
