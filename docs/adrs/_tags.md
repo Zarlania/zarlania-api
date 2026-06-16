@@ -9,3 +9,6 @@ one.** Adding a tag to an ADR requires adding it here in the same change
 | process | How we work; meta-process and workflow decisions |
 | documentation | Documentation practices, formats, and structure |
 | governance | Repo governance, ownership, and enforcement |
+| deployment | Deployment topology, hosting, and release/runtime infrastructure |
+| security | Security model and controls (CORS, secrets, auth, exposure) |
+| configuration | Runtime configuration and application properties |
