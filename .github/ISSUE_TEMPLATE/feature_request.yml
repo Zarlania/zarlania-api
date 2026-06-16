@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a new capability or change.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What need does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: checkboxes
+    id: adr
+    attributes:
+      label: Architectural significance
+      options:
+        - label: This may need an ADR (see docs/adrs/0001-record-architecture-decisions.md)
