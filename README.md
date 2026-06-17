@@ -40,10 +40,15 @@ docker compose up --build    # serves on http://localhost:8080
 ./mvnw spring-boot:run       # serves on http://localhost:8080
 ```
 
+No environment variables are required to boot the service. Local configuration is
+env-driven: `docker compose` sets `ZARLANIA_CORS_ALLOWED_ORIGINS` to localhost origins so a
+local frontend can call the API, whereas `./mvnw spring-boot:run` uses the production-origin
+defaults — override `ZARLANIA_CORS_ALLOWED_ORIGINS` (and `PORT`) via your environment as needed.
+
 ## Endpoints
 
 | Endpoint | Description |
-|---|---|
+| --- | --- |
 | `GET /actuator/health` | Aggregate health (used by Render health check) |
 | `GET /actuator/health/liveness` | Liveness probe |
 | `GET /actuator/health/readiness` | Readiness probe |
@@ -61,7 +66,7 @@ Significant decisions are recorded as ADRs in `docs/adrs/`. Browse them with the
 ```bash
 ./scripts/adr list            # list all ADRs
 ./scripts/adr find "<query>"  # search ADRs
-./scripts/adr show 0006       # show one ADR's metadata
+./scripts/adr show 0001       # show one ADR's metadata
 ./scripts/adr check           # validate ADRs (no drift, valid tags, fresh index)
 ```
 
