@@ -74,5 +74,6 @@ includes localhost" wording, chosen so the default is production-safe.
 ## Links
 
 - Spec: `docs/superpowers/specs/2026-06-15-zarlania-api-repo-shell-design.md`
+- `docker-compose.yml` (sets the localhost dev origins via `ZARLANIA_CORS_ALLOWED_ORIGINS`)
 - Issue #4 (CORS hardening)
 - Issue #23 (FindSecBugs CORS detector NPE; `CorsConfigTest` is the compensating control)
