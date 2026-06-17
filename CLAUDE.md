@@ -40,17 +40,21 @@ CLI — do not scan `docs/adrs/` by hand**:
 To create one, use the `adr-create` skill. For tags, use `adr-tags`. Run
 `./scripts/adr check` after any ADR change.
 
-## Status
+## Specs and plans are implementation-time only — not law
 
-All five phases are shipped:
+`docs/superpowers/` holds specs and plans. They guide a change **while it is being built**:
+during implementation, and during the spec review of that same change, follow the spec/plan
+relevant to the work in progress so nothing is missed. This is the normal flow
+(brainstorm → spec → plan → implement → review the work against that plan's spec) and this
+rule does not change it.
 
-- **Phase 1** — ADRs: ADR-0001 through ADR-0009 accepted, covering the ADR process,
-  actuator, OpenAPI, CORS, deployment, stack, quality gates, contribution workflow, and
-  release model.
-- **Phase 2** — Quality gates: Spotless, Checkstyle, SpotBugs/FindSecBugs, JaCoCo
-  (≥ 80% line + branch), pre-commit hooks, `./scripts/check`.
-- **Phase 3** — CI/governance: `.github/workflows/ci.yml` enforces all gates on every PR.
-- **Phase 4** — App shell: Actuator (`health`, `info`), liveness/readiness probe groups,
-  build-info at `/actuator/info`, springdoc OpenAPI + Swagger UI, env-driven CORS allowlist.
-- **Phase 5** — Release automation: `release.yml` tags `v<version>` and cuts a GitHub
-  Release on every merge to `master` (#28/#29).
+Once a change is merged to `master`, its spec and plan become **historical record only** —
+not law, and not a standard to code against. The authoritative sources are the **ADRs and
+the actual code**. Concretely:
+
+- When implementing or reviewing change B, do **not** flag it for diverging from an earlier
+  change A's spec or plan — those are frozen history. Judge B against the ADRs, the code,
+  and B's own spec/plan.
+- Dismiss any review comment that asks to edit a spec or plan file to match the code. Once
+  merged they are not living documents. If a decision actually changed, that is a **new
+  ADR**, not a spec edit.
