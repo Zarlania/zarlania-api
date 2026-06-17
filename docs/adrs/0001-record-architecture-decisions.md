@@ -77,7 +77,11 @@ Rules established by this ADR:
 6. **Sequencing (hybrid by risk).** Foundational/high-risk decisions land as their own
    ADR PR first; lower-risk ADRs travel with their implementing code.
 7. **Required when** a change touches: a new framework/major dependency, a public API
-   contract, the persistence/data model, the auth/security model, build/deploy
+   **convention** — the API versioning scheme, the authn/authz model, the
+   error/response envelope format, or a breaking removal of an already-published contract.
+   (Routine addition or adjustment of individual endpoints is **not** ADR-triggering — those
+   are captured by the OpenAPI spec at `/v3/api-docs`, not an ADR.) Other triggers:
+   the persistence/data model, the auth/security model, build/deploy
    topology, a cross-cutting convention, or repo-wide tooling.
 8. **Tags.** Reuse an existing tag from `_tags.md` before creating a new one; new tags
    must be registered in `_tags.md` in the same change. Tags are listed in
