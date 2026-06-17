@@ -5,10 +5,4 @@
     <Class name="com.zarlania.api.ZarlaniaApiApplication"/>
   </Match>
 
-  <!-- POC HelloController: SPRING_ENDPOINT is purely informational (it IS a controller). -->
-  <Match>
-    <Class name="com.zarlania.api.HelloController"/>
-    <Bug pattern="SPRING_ENDPOINT"/>
-  </Match>
-
 </FindBugsFilter>
