@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+    # labeled/unlabeled included so release-check re-runs when a release:* label changes.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [master]
 
