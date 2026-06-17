@@ -63,8 +63,8 @@ resolves issue #4.
 The application's built-in default allowlist is the **production origins only**
 (`https://zarlania.com`, `https://www.zarlania.com`); localhost dev origins are supplied per
 environment via `ZARLANIA_CORS_ALLOWED_ORIGINS` (e.g. in `docker-compose.yml`), rather than
-baked into the default. This is a deliberate, accepted divergence from the spec's "default
-includes localhost" wording, chosen so the default is production-safe.
+baked into the default. The default is deliberately production-safe; dev origins are added
+through the environment override instead.
 
 ### Consequences
 

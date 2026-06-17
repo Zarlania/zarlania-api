@@ -34,9 +34,9 @@ tags:
 
 ## Context and Problem Statement
 
-The service needs a pinned language, framework, and build toolchain. The repo-shell spec
-baselined Java 25 / Spring Boot 3.5.x / Maven / Docker, with a stated policy to pick the
-**latest compatible** versions at implementation time to minimize first-Dependabot churn.
+The service needs a pinned language, framework, and build toolchain. It should run on a
+long-term-support runtime and adopt the **latest compatible** versions at adoption time, to
+minimize Dependabot churn right after the first release.
 
 ## Decision Drivers
 
@@ -47,21 +47,19 @@ baselined Java 25 / Spring Boot 3.5.x / Maven / Docker, with a stated policy to 
 ## Considered Options
 
 - Java 25 LTS + Spring Boot 4.1.x + Maven wrapper + multi-stage Temurin Docker (chosen).
-- Spring Boot 3.5.x (the spec's original baseline).
+- Spring Boot 3.5.x (the previous major line).
 - Gradle instead of Maven.
 
 ## Decision Outcome
 
 Chosen: **Java 25 (LTS), Spring Boot 4.1.x, Maven via `./mvnw`, multi-stage Temurin 25
-Docker (jdk build → jre run, non-root), springdoc-openapi 3.0.3.** Per the spec's
-latest-compatible policy this lands on Spring Boot **4.1.0** rather than the 3.5.x baseline
-the spec table named; this divergence is intentional and accepted.
+Docker (jdk build → jre run, non-root), springdoc-openapi 3.0.3.** Adopting the latest
+compatible versions at adoption time is why this lands on Spring Boot **4.1.0**.
 
 ### Consequences
 
 - Good: newest features and security fixes; minimal initial dependency churn; LTS runtime.
-- Bad: Spring Boot 4.x is newer with a shorter community track record; the spec's stack
-  table (§32) is now historical and should be read together with this ADR.
+- Bad: Spring Boot 4.x is newer with a shorter community track record.
 
 ## Links
 

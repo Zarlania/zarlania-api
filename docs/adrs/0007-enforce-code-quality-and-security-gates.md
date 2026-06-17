@@ -56,12 +56,12 @@ pre-commit and CI; **SpotBugs (effort Max) + FindSecBugs 1.14.0 + JaCoCo (line A
 runs gitleaks, markdownlint, shellcheck/shfmt, ruff, yamllint, `./scripts/adr check`, and
 hygiene hooks. CI posts a JaCoCo coverage comment to the PR.
 
-Accepted divergences from the spec: the ADR/release tooling is implemented in **Python
-(tested with pytest + coverage ≥ 80), not bash — so there are no bats/kcov tests**; and CI
-gitleaks scans the **PR commit range** rather than full history, because the repository was
-created with clean history and pre-commit blocks new secrets at staging time. (The gitleaks
-pre-commit hook also runs in CI — the `checks` job invokes `pre-commit run --all-files` — so
-secrets are scanned at both the staged-change and PR-commit-range layers.)
+The ADR and release tooling is implemented in **Python**, tested with pytest + coverage
+(≥ 80% line + branch); there are no bash/bats tests. CI gitleaks scans the **PR commit
+range** rather than full history, because the repository was created with clean history and
+pre-commit blocks new secrets at staging time. (The gitleaks pre-commit hook also runs in
+CI — the `checks` job invokes `pre-commit run --all-files` — so secrets are scanned at both
+the staged-change and PR-commit-range layers.)
 
 ### Consequences
 
