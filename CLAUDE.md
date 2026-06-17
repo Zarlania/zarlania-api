@@ -12,6 +12,19 @@ deploy to production at <https://api.zarlania.com>.** Work carefully.
 - **Every change ties to a GitHub issue.** Branch `type/<issue#>-slug`; PR title
   references `#<issue>`.
 
+## Releases (every merge ships)
+
+Every merge to `master` cuts exactly one SemVer release. The version lives in `pom.xml`
+`<version>` and is bumped **inside the PR** (never after merge — that would double-deploy).
+
+When opening a PR:
+
+1. Choose the bump from the change: breaking = `major`, feature = `minor`, fix/chore =
+   `patch`. Apply the matching `release:<kind>` label (no label = `patch`).
+2. Run `./scripts/bump-version bump <kind>` to set `pom.xml` to the next version.
+3. CI's "Release version bump" check verifies the pom matches the label vs. the latest
+   release tag; on merge, `release.yml` tags `v<version>` and cuts the GitHub Release.
+
 ## Working with ADRs (save tokens)
 
 To find an ADR or check whether a decision exists, **use the `adr-search` skill / the
