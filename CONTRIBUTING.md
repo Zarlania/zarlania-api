@@ -13,6 +13,21 @@ This is a live, public service: merges to `master` deploy to production at
 5. **Code owner approval** is required before merge (you, via CODEOWNERS).
 6. **Squash-merge to `master`**, which auto-deploys to Render.
 
+## Releasing
+
+Releases are automated — every merge to `master` produces one SemVer release; there is no
+manual release step and no `CHANGELOG.md` (GitHub Release notes are auto-generated).
+
+The version is `pom.xml` `<version>` and must be bumped **in the PR**:
+
+1. Apply one `release:major`, `release:minor`, or `release:patch` label (no label = patch).
+2. Run `./scripts/bump-version bump <kind>` to write the next version.
+3. CI rejects the PR if the pom version doesn't match the label relative to the latest
+   release tag.
+
+On merge, `release.yml` creates the `v<version>` tag and GitHub Release. Dependabot PRs are
+not expected to bump; their changes are included in the next release that does.
+
 ## Architecture Decision Records
 
 Significant decisions are recorded as ADRs in `docs/adrs/` and are binding once accepted.

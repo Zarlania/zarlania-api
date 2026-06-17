@@ -36,3 +36,12 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest        # run ADR tooling tests
 ```
+
+## Maintainer: release setup (one-time)
+
+- Create the bump labels:
+  - `gh label create release:major --color B60205 --description "Release: major version bump"`
+  - `gh label create release:minor --color FBCA04 --description "Release: minor version bump"`
+  - `gh label create release:patch --color 0E8A16 --description "Release: patch version bump"`
+- Add **Release version bump** and the existing CI jobs to the required status checks for
+  `master` (Settings → Branches → branch protection).
