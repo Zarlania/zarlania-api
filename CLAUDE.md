@@ -12,6 +12,11 @@ deploy to production at <https://api.zarlania.com>.** Work carefully.
 - **Every change ties to a GitHub issue.** Branch `type/<issue#>-slug`; PR title
   references `#<issue>`.
 
+## Stack
+
+Java 25 / Spring Boot 4.1.x / Maven (wrapper `./mvnw`) / multi-stage Temurin Docker.
+For the version-adoption rationale see ADR-0006 (`./scripts/adr show 0006`).
+
 ## Releases (every merge ships)
 
 Every merge to `master` cuts exactly one SemVer release. The version lives in `pom.xml`
@@ -37,6 +42,14 @@ To create one, use the `adr-create` skill. For tags, use `adr-tags`. Run
 
 ## Status
 
-Phases 1–4 are in place (ADRs, quality gates, CI/governance, and the app shell:
-Actuator, OpenAPI, CORS allowlist, deploy config). Release automation and the seed
-ADRs are still pending (see `docs/superpowers/`).
+All five phases are shipped:
+
+- **Phase 1** — ADRs: ADR-0001 accepted; ADR-0002–0009 in place covering actuator,
+  OpenAPI, CORS, deployment, stack, quality gates, contribution workflow, and release model.
+- **Phase 2** — Quality gates: Spotless, Checkstyle, SpotBugs/FindSecBugs, JaCoCo
+  (≥ 80% line + branch), pre-commit hooks, `./scripts/check`.
+- **Phase 3** — CI/governance: `.github/workflows/ci.yml` enforces all gates on every PR.
+- **Phase 4** — App shell: Actuator (`health`, `info`), liveness/readiness probe groups,
+  build-info at `/actuator/info`, springdoc OpenAPI + Swagger UI, env-driven CORS allowlist.
+- **Phase 5** — Release automation: `release.yml` tags `v<version>` and cuts a GitHub
+  Release on every merge to `master` (#28/#29).
