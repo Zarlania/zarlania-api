@@ -13,13 +13,12 @@ from pathlib import Path
 BUMP_KINDS = ("major", "minor", "patch")
 
 # Leading optional "v", three numeric components; anything after (e.g. -SNAPSHOT) ignored.
-_SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)")
+_SEMVER_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?!\.\d)")
 
 # The project's own <version> is the one immediately following the zarlania-api
 # <artifactId>. This deliberately does NOT match the <parent> version.
 _POM_VERSION_RE = re.compile(
-    r"(<artifactId>zarlania-api</artifactId>\s*<version>)(.*?)(</version>)",
-    re.DOTALL,
+    r"(<artifactId>zarlania-api</artifactId>\s*<version>)(.*?)(</version>)"
 )
 
 
@@ -46,6 +45,7 @@ def bump(version: tuple[int, int, int], kind: str) -> tuple[int, int, int]:
 
 
 def latest_tag_version(tags: list[str]) -> tuple[int, int, int]:
+    """Return the highest SemVer among tags, or (0, 0, 0) if none parse."""
     versions = []
     for tag in tags:
         try:
@@ -59,7 +59,8 @@ def expected_version(tags: list[str], kind: str) -> str:
     return format_version(bump(latest_tag_version(tags), kind))
 
 
-def read_pom_version(pom_path) -> str:
+def read_pom_version(pom_path: str | Path) -> str:
+    """Return the project's <version> (not the parent's); raise if absent."""
     text = Path(pom_path).read_text(encoding="utf-8")
     m = _POM_VERSION_RE.search(text)
     if not m:
@@ -67,7 +68,7 @@ def read_pom_version(pom_path) -> str:
     return m.group(2).strip()
 
 
-def set_pom_version(pom_path, new_version: str) -> None:
+def set_pom_version(pom_path: str | Path, new_version: str) -> None:
     pom_path = Path(pom_path)
     text = pom_path.read_text(encoding="utf-8")
     new_text, n = _POM_VERSION_RE.subn(

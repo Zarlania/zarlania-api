@@ -93,3 +93,15 @@ def test_read_pom_version_raises_when_missing(tmp_path):
     p.write_text("<project></project>", encoding="utf-8")
     with pytest.raises(ValueError):
         release.read_pom_version(p)
+
+
+def test_parse_version_rejects_four_part():
+    with pytest.raises(ValueError):
+        release.parse_version("1.2.3.4")
+
+
+def test_set_pom_version_raises_when_missing(tmp_path):
+    p = tmp_path / "pom.xml"
+    p.write_text("<project></project>", encoding="utf-8")
+    with pytest.raises(ValueError):
+        release.set_pom_version(p, "1.0.0")
