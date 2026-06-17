@@ -1,4 +1,5 @@
 import textwrap
+from types import SimpleNamespace
 
 import release
 import release_cli
@@ -20,7 +21,7 @@ def _pom(tmp_path, version):
     return p
 
 
-def test_current_prints_pom_version(tmp_path, capsys, monkeypatch):
+def test_current_prints_pom_version(tmp_path, capsys):
     p = _pom(tmp_path, "1.2.3")
     rc = release_cli.main(["--pom", str(p), "current"])
     assert rc == 0
@@ -58,3 +59,34 @@ def test_verify_fails_when_pom_mismatched(tmp_path, capsys, monkeypatch):
     rc = release_cli.main(["--pom", str(p), "verify", "minor"])
     assert rc == 1
     assert "does not match" in capsys.readouterr().err
+
+
+def test_cli_reports_error_on_bad_pom(tmp_path, capsys):
+    p = tmp_path / "pom.xml"
+    p.write_text("<project></project>", encoding="utf-8")
+    rc = release_cli.main(["--pom", str(p), "current"])
+    assert rc == 1
+    assert "error:" in capsys.readouterr().err
+
+
+def test_git_tags_returns_stripped_nonempty(monkeypatch):
+    monkeypatch.setattr(
+        release_cli.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(stdout="v1.0.0\n\n v1.1.0 \n"),
+    )
+    assert release_cli._git_tags() == ["v1.0.0", "v1.1.0"]
+
+
+def test_git_tags_warns_on_shallow_clone(capsys, monkeypatch):
+    results = iter([SimpleNamespace(stdout=""), SimpleNamespace(stdout="true\n")])
+    monkeypatch.setattr(release_cli.subprocess, "run", lambda *a, **k: next(results))
+    assert release_cli._git_tags() == []
+    assert "shallow" in capsys.readouterr().err
+
+
+def test_git_tags_no_warning_when_not_shallow(capsys, monkeypatch):
+    results = iter([SimpleNamespace(stdout=""), SimpleNamespace(stdout="false\n")])
+    monkeypatch.setattr(release_cli.subprocess, "run", lambda *a, **k: next(results))
+    assert release_cli._git_tags() == []
+    assert "shallow" not in capsys.readouterr().err

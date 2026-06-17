@@ -11,7 +11,21 @@ import release
 
 def _git_tags() -> list[str]:
     out = subprocess.run(["git", "tag", "--list"], capture_output=True, text=True, check=True)
-    return [line.strip() for line in out.stdout.splitlines() if line.strip()]
+    tags = [line.strip() for line in out.stdout.splitlines() if line.strip()]
+    if not tags:
+        shallow = subprocess.run(
+            ["git", "rev-parse", "--is-shallow-repository"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        if shallow.stdout.strip() == "true":
+            print(
+                "warning: shallow clone with no tags — the release version will be "
+                "computed from 0.0.0; use 'fetch-depth: 0' so tags are available.",
+                file=sys.stderr,
+            )
+    return tags
 
 
 def _cmd_current(args) -> int:
@@ -60,7 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except (ValueError, FileNotFoundError, subprocess.CalledProcessError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
