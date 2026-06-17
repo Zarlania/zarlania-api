@@ -8,31 +8,45 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
-@SpringBootTest
-@AutoConfigureMockMvc
+@SpringBootTest(properties = "zarlania.cors.allowed-origins=https://zarlania.com")
 class CorsConfigTest {
 
-  @Autowired private MockMvc mockMvc;
+  @Autowired private WebApplicationContext context;
 
-  @Test
-  void getRequestIncludesCorsAllowOriginHeader() throws Exception {
-    mockMvc
-        .perform(get("/").header("Origin", "https://app.zarlania.com"))
-        .andExpect(status().isOk())
-        .andExpect(header().string("Access-Control-Allow-Origin", "*"));
+  private MockMvc mockMvc() {
+    return MockMvcBuilders.webAppContextSetup(context).build();
   }
 
   @Test
-  void preflightRequestIsAllowedForGet() throws Exception {
-    mockMvc
+  void allowedOriginGetsCorsHeader() throws Exception {
+    mockMvc()
+        .perform(get("/").header("Origin", "https://zarlania.com"))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Access-Control-Allow-Origin", "https://zarlania.com"));
+  }
+
+  @Test
+  void disallowedOriginIsRejected() throws Exception {
+    mockMvc()
         .perform(
             options("/")
-                .header("Origin", "https://app.zarlania.com")
+                .header("Origin", "https://evil.example.com")
+                .header("Access-Control-Request-Method", "GET"))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void allowedOriginPreflightSucceeds() throws Exception {
+    mockMvc()
+        .perform(
+            options("/")
+                .header("Origin", "https://zarlania.com")
                 .header("Access-Control-Request-Method", "GET"))
         .andExpect(status().isOk())
-        .andExpect(header().string("Access-Control-Allow-Origin", "*"));
+        .andExpect(header().string("Access-Control-Allow-Origin", "https://zarlania.com"));
   }
 }

@@ -23,8 +23,10 @@ repos:
       # with clean history, so we intentionally do not run a full-history scan.
       - id: gitleaks
 
+  # Keep this rev in sync with ruff in requirements-dev.txt (Dependabot bumps that file,
+  # not this hook). Automating this sync is tracked in #26.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.2
+    rev: v0.15.17
     hooks:
       - id: ruff
         args: [--fix]

@@ -20,6 +20,15 @@ Significant decisions are recorded as ADRs in `docs/adrs/`. Browse them with the
 The ADR process itself is defined in
 `docs/adrs/0001-record-architecture-decisions.md`.
 
+## Running locally
+
+```bash
+docker compose up --build      # serves on http://localhost:8080
+```
+
+Key endpoints: `GET /` (hello), `GET /actuator/health`, `GET /actuator/info` (version),
+`GET /swagger-ui.html` (API docs), `GET /v3/api-docs` (OpenAPI JSON).
+
 ## Developer setup (Phase 1)
 
 ```bash

@@ -4,8 +4,15 @@ Registry of all tags used across ADRs. **Reuse an existing tag before creating a
 one.** Adding a tag to an ADR requires adding it here in the same change
 (`./scripts/adr add-tag <tag> --description "..."`).
 
+Tags are kept in **alphabetical order** — both here and in each ADR's `tags` list.
+`./scripts/adr add-tag` inserts new rows in order, and `./scripts/adr check` fails on
+any registry or ADR whose tags are not sorted.
+
 | Tag | Description |
 | --- | --- |
-| process | How we work; meta-process and workflow decisions |
+| configuration | Runtime configuration and application properties |
+| deployment | Deployment topology, hosting, and release/runtime infrastructure |
 | documentation | Documentation practices, formats, and structure |
 | governance | Repo governance, ownership, and enforcement |
+| process | How we work; meta-process and workflow decisions |
+| security | Security model and controls (CORS, secrets, auth, exposure) |

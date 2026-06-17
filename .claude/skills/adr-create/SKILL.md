@@ -9,7 +9,8 @@ First confirm one is needed (see ADR-0001's trigger checklist) and that no ADR a
 covers it (`./scripts/adr find "<topic>"`).
 
 1. Pick tags. Reuse existing ones: `./scripts/adr tags`. If a new tag is truly needed,
-   register it first: `./scripts/adr add-tag <tag> --description "..."`.
+   register it first: `./scripts/adr add-tag <tag> --description "..."`. Tags are stored
+   alphabetically (the tooling sorts them; `check` enforces it).
 2. Create the ADR (status `proposed`): `./scripts/adr new --name "<imperative title>"
    --tags a,b --author stimothy`. **One subject per ADR.**
 3. Fill in the MADR sections in the generated file. Do NOT hand-edit the frontmatter

@@ -11,9 +11,9 @@ author: stimothy
 supersedes: []
 superseded_by: []
 tags:
-- process
 - documentation
 - governance
+- process
 ---
 # ADR-0001: Record architecture decisions using MADR with frontmatter
 
@@ -30,7 +30,7 @@ tags:
 | Author | stimothy |
 | Supersedes | — |
 | Superseded by | — |
-| Tags | process, documentation, governance |
+| Tags | documentation, governance, process |
 <!-- adr-meta:end -->
 
 ## Context and Problem Statement
@@ -80,7 +80,9 @@ Rules established by this ADR:
    contract, the persistence/data model, the auth/security model, build/deploy
    topology, a cross-cutting convention, or repo-wide tooling.
 8. **Tags.** Reuse an existing tag from `_tags.md` before creating a new one; new tags
-   must be registered in `_tags.md` in the same change.
+   must be registered in `_tags.md` in the same change. Tags are listed in
+   **alphabetical order** in both `_tags.md` and every ADR's `tags` list; the tooling
+   sorts on creation and `check` enforces it.
 9. **The law.** Once accepted on `master`, code may not contradict an ADR without a new
    ADR that supersedes it (the old one flips to `superseded` with cross-links).
    This rule is enforced through code review and engineering discipline — not by
