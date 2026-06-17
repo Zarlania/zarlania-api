@@ -24,7 +24,7 @@ class CorsConfigTest {
   @Test
   void allowedOriginGetsCorsHeader() throws Exception {
     mockMvc()
-        .perform(get("/").header("Origin", "https://zarlania.com"))
+        .perform(get("/v3/api-docs").header("Origin", "https://zarlania.com"))
         .andExpect(status().isOk())
         .andExpect(header().string("Access-Control-Allow-Origin", "https://zarlania.com"));
   }
@@ -33,7 +33,7 @@ class CorsConfigTest {
   void disallowedOriginIsRejected() throws Exception {
     mockMvc()
         .perform(
-            options("/")
+            options("/v3/api-docs")
                 .header("Origin", "https://evil.example.com")
                 .header("Access-Control-Request-Method", "GET"))
         .andExpect(status().isForbidden());
@@ -43,7 +43,7 @@ class CorsConfigTest {
   void allowedOriginPreflightSucceeds() throws Exception {
     mockMvc()
         .perform(
-            options("/")
+            options("/v3/api-docs")
                 .header("Origin", "https://zarlania.com")
                 .header("Access-Control-Request-Method", "GET"))
         .andExpect(status().isOk())
