@@ -17,6 +17,22 @@ deploy to production at <https://api.zarlania.com>.** Work carefully.
 Java 25 / Spring Boot 4.1.x / Maven (wrapper `./mvnw`) / multi-stage Temurin Docker.
 For the version-adoption rationale see ADR-0006 (`./scripts/adr show 0006`).
 
+## Code quality & structure
+
+Keep this codebase clean as it grows from scaffolding into real features:
+
+- Practice **DRY** and **SOLID**. Prefer small, single-responsibility units; refactor
+  duplication instead of copying it.
+- **Organize by feature/domain, not by flat technical-layer buckets.** Group related code
+  together. As endpoints land, a domain like *users* should own its package (e.g.
+  `com.zarlania.api.users` holding its controller/service/repository/entity) rather than a
+  flat `controllers/` listing every controller and a flat `services/` listing every service.
+  Group whenever there's a natural grouping.
+- Cross-cutting / infrastructure code lives in its own package — e.g. configuration classes
+  under a `config` package — not scattered at the application root.
+- This is intent, not a rigid tree: use judgment, follow the established structure once it
+  exists, and don't over-engineer (YAGNI).
+
 ## Releases (every merge ships)
 
 Every merge to `master` cuts exactly one SemVer release. The version lives in `pom.xml`

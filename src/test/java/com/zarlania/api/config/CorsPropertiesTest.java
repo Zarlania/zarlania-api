@@ -1,4 +1,4 @@
-package com.zarlania.api;
+package com.zarlania.api.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
