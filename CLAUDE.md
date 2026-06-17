@@ -19,17 +19,31 @@ For the version-adoption rationale see ADR-0006 (`./scripts/adr show 0006`).
 
 ## Code quality & structure
 
-Keep this codebase clean as it grows from scaffolding into real features:
+Keep this codebase clean as it grows from scaffolding into real features. These are
+judgment-level rules; formatting, style, and the ≥ 80% coverage floor are already enforced by
+the build — don't restate them, and never silence them (see below).
 
 - Practice **DRY** and **SOLID**. Prefer small, single-responsibility units; refactor
   duplication instead of copying it.
-- **Organize by feature/domain, not by flat technical-layer buckets.** Group related code
+- **Tests prove behavior.** Write the test first; assert observable behavior through the
+  public surface, not mock interactions or internals. The ≥ 80% coverage gate measures
+  quantity — it does not prove a test is meaningful.
+- **Fail fast; prefer immutability.** Validate configuration and external input at the
+  boundary and throw early (as `CorsProperties` does). Prefer immutable value types and
+  constructor injection over field injection / mutable state.
+- **Don't silence the gates to go green.** Fix the root cause rather than adding
+  `@SuppressWarnings`, Checkstyle/SpotBugs excludes, skipped tests, or a lowered coverage
+  threshold. A genuine tool bug gets a documented exception — an issue plus a compensating
+  test — e.g. the FindSecBugs CORS detector NPE on `WebConfig` (issue #23).
+- **Keep dependencies lean.** Prefer the framework/stdlib before reaching for a new library.
+  A new major dependency (or other architecturally significant choice) is an ADR, not a
+  casual add.
+- **Organize by feature/domain, not flat technical-layer buckets.** Group related code
   together. As endpoints land, a domain like *users* should own its package (e.g.
   `com.zarlania.api.users` holding its controller/service/repository/entity) rather than a
   flat `controllers/` listing every controller and a flat `services/` listing every service.
-  Group whenever there's a natural grouping.
-- Cross-cutting / infrastructure code lives in its own package — e.g. configuration classes
-  under a `config` package — not scattered at the application root.
+  Cross-cutting / infrastructure code lives in its own package (e.g. config under a `config`
+  package), not scattered at the application root.
 - This is intent, not a rigid tree: use judgment, follow the established structure once it
   exists, and don't over-engineer (YAGNI).
 
