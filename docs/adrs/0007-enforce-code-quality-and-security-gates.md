@@ -1,10 +1,10 @@
 ---
 id: '0007'
 name: Enforce code quality and security gates
-description: 'Maven-driven quality gates with a fast pre-commit vs full-CI split.'
-status: proposed
+description: Maven-driven quality gates with a fast pre-commit vs full-CI split.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +21,9 @@ tags:
 | ID | 0007 |
 | Name | Enforce code quality and security gates |
 | Description | Maven-driven quality gates with a fast pre-commit vs full-CI split. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |

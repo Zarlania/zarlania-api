@@ -1,10 +1,11 @@
 ---
-id: '0008'
+id: 0008
 name: Require issue-driven contribution workflow
-description: 'Issue-driven branches/PRs enforced in CI, with templates, CODEOWNERS, and branch protection.'
-status: proposed
+description: Issue-driven branches/PRs enforced in CI, with templates, CODEOWNERS,
+  and branch protection.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0008 |
 | Name | Require issue-driven contribution workflow |
 | Description | Issue-driven branches/PRs enforced in CI, with templates, CODEOWNERS, and branch protection. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |

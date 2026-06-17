@@ -44,8 +44,9 @@ To create one, use the `adr-create` skill. For tags, use `adr-tags`. Run
 
 All five phases are shipped:
 
-- **Phase 1** — ADRs: ADR-0001 accepted; ADR-0002–0009 in place covering actuator,
-  OpenAPI, CORS, deployment, stack, quality gates, contribution workflow, and release model.
+- **Phase 1** — ADRs: ADR-0001 through ADR-0009 accepted, covering the ADR process,
+  actuator, OpenAPI, CORS, deployment, stack, quality gates, contribution workflow, and
+  release model.
 - **Phase 2** — Quality gates: Spotless, Checkstyle, SpotBugs/FindSecBugs, JaCoCo
   (≥ 80% line + branch), pre-commit hooks, `./scripts/check`.
 - **Phase 3** — CI/governance: `.github/workflows/ci.yml` enforces all gates on every PR.

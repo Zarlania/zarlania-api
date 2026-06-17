@@ -1,10 +1,11 @@
 ---
 id: '0002'
 name: Expose only Actuator health and info endpoints
-description: 'Exposes only Actuator health and info over HTTP (details never) and surfaces the build version at /actuator/info.'
-status: proposed
+description: Exposes only Actuator health and info over HTTP (details never) and surfaces
+  the build version at /actuator/info.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0002 |
 | Name | Expose only Actuator health and info endpoints |
 | Description | Exposes only Actuator health and info over HTTP (details never) and surfaces the build version at /actuator/info. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |

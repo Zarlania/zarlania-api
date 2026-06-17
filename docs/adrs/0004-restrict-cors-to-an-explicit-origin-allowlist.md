@@ -1,10 +1,11 @@
 ---
 id: '0004'
 name: Restrict CORS to an explicit origin allowlist
-description: 'Binds CORS origins from configuration as an explicit allowlist (never a wildcard), replacing the POC permissive config.'
-status: proposed
+description: Binds CORS origins from configuration as an explicit allowlist (never
+  a wildcard), replacing the POC permissive config.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0004 |
 | Name | Restrict CORS to an explicit origin allowlist |
 | Description | Binds CORS origins from configuration as an explicit allowlist (never a wildcard), replacing the POC permissive config. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |

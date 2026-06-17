@@ -1,10 +1,11 @@
 ---
 id: '0006'
 name: Adopt Java 25, Spring Boot, and Maven with Docker
-description: 'Pin Java 25 LTS, Spring Boot 4.1.x, Maven wrapper, and a multi-stage Temurin Docker image.'
-status: proposed
+description: Pin Java 25 LTS, Spring Boot 4.1.x, Maven wrapper, and a multi-stage
+  Temurin Docker image.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0006 |
 | Name | Adopt Java 25, Spring Boot, and Maven with Docker |
 | Description | Pin Java 25 LTS, Spring Boot 4.1.x, Maven wrapper, and a multi-stage Temurin Docker image. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |

@@ -1,10 +1,11 @@
 ---
-id: '0009'
+id: 0009
 name: Release every merge via in-PR SemVer bump
-description: 'SemVer in pom.xml, label-driven in-PR bump, automated tag + GitHub Release on merge, single deploy.'
-status: proposed
+description: SemVer in pom.xml, label-driven in-PR bump, automated tag + GitHub Release
+  on merge, single deploy.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0009 |
 | Name | Release every merge via in-PR SemVer bump |
 | Description | SemVer in pom.xml, label-driven in-PR bump, automated tag + GitHub Release on merge, single deploy. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |
