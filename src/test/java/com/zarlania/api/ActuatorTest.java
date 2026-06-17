@@ -35,4 +35,20 @@ class ActuatorTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.build.version").exists());
   }
+
+  @Test
+  void livenessProbeIsUp() throws Exception {
+    mockMvc()
+        .perform(get("/actuator/health/liveness"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("UP"));
+  }
+
+  @Test
+  void readinessProbeIsUp() throws Exception {
+    mockMvc()
+        .perform(get("/actuator/health/readiness"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.status").value("UP"));
+  }
 }

@@ -12,6 +12,41 @@ deploy to production at <https://api.zarlania.com>.** Work carefully.
 - **Every change ties to a GitHub issue.** Branch `type/<issue#>-slug`; PR title
   references `#<issue>`.
 
+## Stack
+
+Java 25 / Spring Boot 4.1.x / Maven (wrapper `./mvnw`) / multi-stage Temurin Docker.
+For the version-adoption rationale see ADR-0006 (`./scripts/adr show 0006`).
+
+## Code quality & structure
+
+Keep this codebase clean as it grows from scaffolding into real features. These are
+judgment-level rules; formatting, style, and the ≥ 80% coverage floor are already enforced by
+the build — don't restate them, and never silence them (see below).
+
+- Practice **DRY** and **SOLID**. Prefer small, single-responsibility units; refactor
+  duplication instead of copying it.
+- **Tests prove behavior.** Write the test first; assert observable behavior through the
+  public surface, not mock interactions or internals. The ≥ 80% coverage gate measures
+  quantity — it does not prove a test is meaningful.
+- **Fail fast; prefer immutability.** Validate configuration and external input at the
+  boundary and throw early (as `CorsProperties` does). Prefer immutable value types and
+  constructor injection over field injection / mutable state.
+- **Don't silence the gates to go green.** Fix the root cause rather than adding
+  `@SuppressWarnings`, Checkstyle/SpotBugs excludes, skipped tests, or a lowered coverage
+  threshold. A genuine tool bug gets a documented exception — an issue plus a compensating
+  test — e.g. the FindSecBugs CORS detector NPE on `WebConfig` (issue #23).
+- **Keep dependencies lean.** Prefer the framework/stdlib before reaching for a new library.
+  A new major dependency (or other architecturally significant choice) is an ADR, not a
+  casual add.
+- **Organize by feature/domain, not flat technical-layer buckets.** Group related code
+  together. As endpoints land, a domain like *users* should own its package (e.g.
+  `com.zarlania.api.users` holding its controller/service/repository/entity) rather than a
+  flat `controllers/` listing every controller and a flat `services/` listing every service.
+  Cross-cutting / infrastructure code lives in its own package (e.g. config under a `config`
+  package), not scattered at the application root.
+- This is intent, not a rigid tree: use judgment, follow the established structure once it
+  exists, and don't over-engineer (YAGNI).
+
 ## Releases (every merge ships)
 
 Every merge to `master` cuts exactly one SemVer release. The version lives in `pom.xml`
@@ -35,8 +70,21 @@ CLI — do not scan `docs/adrs/` by hand**:
 To create one, use the `adr-create` skill. For tags, use `adr-tags`. Run
 `./scripts/adr check` after any ADR change.
 
-## Status
+## Specs and plans are implementation-time only — not law
 
-Phases 1–4 are in place (ADRs, quality gates, CI/governance, and the app shell:
-Actuator, OpenAPI, CORS allowlist, deploy config). Release automation and the seed
-ADRs are still pending (see `docs/superpowers/`).
+`docs/superpowers/` holds specs and plans. They guide a change **while it is being built**:
+during implementation, and during the spec review of that same change, follow the spec/plan
+relevant to the work in progress so nothing is missed. This is the normal flow
+(brainstorm → spec → plan → implement → review the work against that plan's spec) and this
+rule does not change it.
+
+Once a change is merged to `master`, its spec and plan become **historical record only** —
+not law, and not a standard to code against. The authoritative sources are the **ADRs and
+the actual code**. Concretely:
+
+- When implementing or reviewing change B, do **not** flag it for diverging from an earlier
+  change A's spec or plan — those are frozen history. Judge B against the ADRs, the code,
+  and B's own spec/plan.
+- Dismiss any review comment that asks to edit a spec or plan file to match the code. Once
+  merged they are not living documents. If a decision actually changed, that is a **new
+  ADR**, not a spec edit.

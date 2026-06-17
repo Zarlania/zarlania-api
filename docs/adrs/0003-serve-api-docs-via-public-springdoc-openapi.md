@@ -1,10 +1,11 @@
 ---
 id: '0003'
 name: Serve API docs via public springdoc OpenAPI
-description: 'Serves a machine-readable OpenAPI document and a public Swagger UI via springdoc (Spring Boot 4 line).'
-status: proposed
+description: Serves a machine-readable OpenAPI document and a public Swagger UI via
+  springdoc (Spring Boot 4 line).
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0003 |
 | Name | Serve API docs via public springdoc OpenAPI |
 | Description | Serves a machine-readable OpenAPI document and a public Swagger UI via springdoc (Spring Boot 4 line). |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |

@@ -1,4 +1,4 @@
-package com.zarlania.api;
+package com.zarlania.api.config;
 
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;

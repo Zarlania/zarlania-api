@@ -1,10 +1,11 @@
 ---
 id: '0004'
 name: Restrict CORS to an explicit origin allowlist
-description: 'Binds CORS origins from configuration as an explicit allowlist (never a wildcard), replacing the POC permissive config.'
-status: proposed
+description: Binds CORS origins from configuration as an explicit allowlist (never
+  a wildcard), replacing the POC permissive config.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0004 |
 | Name | Restrict CORS to an explicit origin allowlist |
 | Description | Binds CORS origins from configuration as an explicit allowlist (never a wildcard), replacing the POC permissive config. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |
@@ -59,6 +60,12 @@ misconfiguration fails fast rather than silently weakening CORS. Methods and hea
 scoped to the current GET-only API surface. This replaces the POC's permissive config and
 resolves issue #4.
 
+The application's built-in default allowlist is the **production origins only**
+(`https://zarlania.com`, `https://www.zarlania.com`); localhost dev origins are supplied per
+environment via `ZARLANIA_CORS_ALLOWED_ORIGINS` (e.g. in `docker-compose.yml`), rather than
+baked into the default. The default is deliberately production-safe; dev origins are added
+through the environment override instead.
+
 ### Consequences
 
 - Good: secure-by-default CORS; origins are reviewable configuration; misconfiguration
@@ -68,5 +75,6 @@ resolves issue #4.
 ## Links
 
 - Spec: `docs/superpowers/specs/2026-06-15-zarlania-api-repo-shell-design.md`
+- `docker-compose.yml` (sets the localhost dev origins via `ZARLANIA_CORS_ALLOWED_ORIGINS`)
 - Issue #4 (CORS hardening)
 - Issue #23 (FindSecBugs CORS detector NPE; `CorsConfigTest` is the compensating control)

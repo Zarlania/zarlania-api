@@ -1,10 +1,11 @@
 ---
 id: '0005'
 name: Deploy on Render as code using Docker
-description: 'Codifies the Render web service in render.yaml with a non-root Docker image and docker-compose for local dev.'
-status: proposed
+description: Codifies the Render web service in render.yaml with a non-root Docker
+  image and docker-compose for local dev.
+status: accepted
 date_proposed: '2026-06-16'
-date_accepted: null
+date_accepted: '2026-06-16'
 date_invalidated: null
 author: stimothy
 supersedes: []
@@ -21,9 +22,9 @@ tags:
 | ID | 0005 |
 | Name | Deploy on Render as code using Docker |
 | Description | Codifies the Render web service in render.yaml with a non-root Docker image and docker-compose for local dev. |
-| Status | proposed |
+| Status | accepted |
 | Date proposed | 2026-06-16 |
-| Date accepted | — |
+| Date accepted | 2026-06-16 |
 | Date invalidated | — |
 | Author | stimothy |
 | Supersedes | — |
