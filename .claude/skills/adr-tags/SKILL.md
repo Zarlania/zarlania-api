@@ -14,3 +14,7 @@ The tag registry is `docs/adrs/_tags.md`. Every tag used by any ADR must exist t
   --description "..."`
 
 Prefer reusing an existing tag. After changes, run `./scripts/adr check`.
+
+Tags are kept in **alphabetical order** in `_tags.md` and in every ADR's `tags` list.
+`add-tag` inserts new rows in order and `new` sorts the tags you pass; `check` fails if
+either is out of order. When hand-editing an ADR's tags, keep them alphabetical.

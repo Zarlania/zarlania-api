@@ -32,6 +32,8 @@ FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
 ADR_GLOB = "[0-9][0-9][0-9][0-9]-*.md"
 ID_PREFIX_RE = re.compile(r"^(\d{4})-.*\.md$")
 _TAG_ROW_RE = re.compile(r"^\|\s*(?P<tag>[^|]+?)\s*\|\s*(?P<desc>.*?)\s*\|\s*$")
+# A markdown table separator row (e.g. "| --- | --- |"): only pipes, spaces, hyphens.
+_TAG_SEP_RE = re.compile(r"^\|[\s\-|]+\|\s*$")
 
 META_START = "<!-- adr-meta:start -->"
 META_END = "<!-- adr-meta:end -->"
@@ -146,6 +148,8 @@ def validate_adrs(adr_dir) -> list[str]:
     registry = load_tags(tags_path) if tags_path.exists() else {}
     if not tags_path.exists():
         errors.append("missing tag registry: _tags.md")
+    elif list(registry) != sorted(registry):
+        errors.append("_tags.md registry is not in alphabetical order")
 
     # Detect malformed ADR filenames (not matching NNNN-*.md pattern)
     for p in sorted(adr_dir.glob("*.md")):
@@ -209,9 +213,12 @@ def validate_adrs(adr_dir) -> list[str]:
         elif table != render_meta_table(fm):
             errors.append(f"{name}: meta table drift (table != frontmatter)")
 
-        for tag in fm.get("tags") or []:
+        adr_tags = fm.get("tags") or []
+        for tag in adr_tags:
             if tag not in registry:
                 errors.append(f"{name}: tag '{tag}' not in _tags.md registry")
+        if list(adr_tags) != sorted(adr_tags):
+            errors.append(f"{name}: tags are not in alphabetical order")
 
     index_path = adr_dir / "README.md"
     expected_index = render_index(adrs)
@@ -252,7 +259,8 @@ def new_adr(adr_dir, name: str, tags: list[str], author: str, today: str | None 
         "author": author,
         "supersedes": [],
         "superseded_by": [],
-        "tags": list(tags),
+        # Tags are stored alphabetically (see _tags.md / ADR-0001 rule 8).
+        "tags": sorted(tags),
     }
 
     # Read body sections from _template.md (single source of truth)
@@ -296,16 +304,29 @@ def accept_adr(path, today: str | None = None) -> None:
     _rewrite_with_synced_table(adr)
 
 
+def _registry_header(text: str) -> str:
+    """Return the registry prose + table header up to and including the separator row."""
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if _TAG_SEP_RE.match(line):
+            return "\n".join(lines[: i + 1])
+    raise ValueError("tag registry missing table header separator row")
+
+
 def add_tag(tags_path, tag: str, description: str) -> None:
     if "|" in tag or "\n" in tag:
         raise ValueError("tag must not contain '|' or newline characters")
     if "|" in description or "\n" in description:
         raise ValueError("description must not contain '|' or newline characters")
     tags_path = Path(tags_path)
-    if tag in load_tags(tags_path):
+    tags = load_tags(tags_path)
+    if tag in tags:
         return
-    text = tags_path.read_text(encoding="utf-8").rstrip("\n")
-    tags_path.write_text(f"{text}\n| {tag} | {description} |\n", encoding="utf-8")
+    tags[tag] = description
+    # Rewrite the table with rows in alphabetical order (see ADR-0001 rule 8).
+    header = _registry_header(tags_path.read_text(encoding="utf-8"))
+    rows = "\n".join(f"| {t} | {tags[t]} |" for t in sorted(tags))
+    tags_path.write_text(f"{header}\n{rows}\n", encoding="utf-8")
 
 
 def write_index(adr_dir) -> None:

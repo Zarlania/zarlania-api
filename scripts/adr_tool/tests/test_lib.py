@@ -513,6 +513,48 @@ def test_validate_empty_dir_no_gap_error(tmp_path):
     assert not any("missing ADR id" in e for e in errors)
 
 
+def test_new_adr_sorts_tags_alphabetically(tmp_path):
+    """new_adr stores tags in alphabetical order regardless of input order."""
+    _registry(tmp_path, "alpha", "process", "zebra")
+    _template(tmp_path)
+    path = lib.new_adr(
+        tmp_path,
+        name="Sorted Tags",
+        tags=["zebra", "process", "alpha"],
+        author="stimothy",
+        today="2026-06-15",
+    )
+    adr = lib.parse_adr(path)
+    assert adr.frontmatter["tags"] == ["alpha", "process", "zebra"]
+
+
+def test_add_tag_inserts_in_alphabetical_order(tmp_path):
+    """add_tag keeps the registry sorted alphabetically, not append-only."""
+    _registry(tmp_path, "configuration", "security")
+    lib.add_tag(tmp_path / "_tags.md", "deployment", "deploy stuff")
+    keys = list(lib.load_tags(tmp_path / "_tags.md"))
+    assert keys == ["configuration", "deployment", "security"]
+
+
+def test_validate_detects_unsorted_adr_tags(tmp_path):
+    _registry(tmp_path, "process", "security")
+    _make_adr(tmp_path, "0001", "One", tags=("security", "process"))
+    (tmp_path / "README.md").write_text(lib.render_index(lib.iter_adrs(tmp_path)), encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("alphabetical order" in e for e in errors)
+
+
+def test_validate_detects_unsorted_registry(tmp_path):
+    # Registry rows out of alphabetical order
+    (tmp_path / "_tags.md").write_text(
+        "# ADR Tags\n\n| Tag | Description |\n| --- | --- |\n| security | s |\n| process | p |\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "README.md").write_text(lib.render_index([]), encoding="utf-8")
+    errors = lib.validate_adrs(tmp_path)
+    assert any("_tags.md registry is not in alphabetical order" in e for e in errors)
+
+
 def test_render_index_missing_id_uses_question_mark():
     """render_index uses '?' for missing frontmatter id rather than raising KeyError."""
     from pathlib import Path
