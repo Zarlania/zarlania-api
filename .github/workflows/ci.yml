@@ -2,6 +2,8 @@ name: CI
 
 on:
   pull_request:
+    # labeled/unlabeled included so release-check re-runs when a release:* label changes.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
   push:
     branches: [master]
 
@@ -108,3 +110,33 @@ jobs:
             echo "::error::PR must reference a GitHub issue — put #<issue> in the title or name the branch type/<issue#>-slug." >&2
             exit 1
           fi
+
+  release-check:
+    name: Release version bump
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0 # need tags to compute the latest release version
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Determine bump kind from release label
+        id: bump
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          kinds=$(printf '%s' "$LABELS" | grep -oE 'release:(major|minor|patch)' | sed 's/release://' | sort -u || true)
+          count=$(printf '%s\n' "$kinds" | grep -c . || true)
+          if [ "$count" -gt 1 ]; then
+            echo "::error::multiple release:* labels found ($(echo "$kinds" | tr '\n' ' ')); apply exactly one." >&2
+            exit 1
+          fi
+          kind="${kinds:-patch}"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "Bump kind: $kind"
+      - name: Verify pom version matches the bump
+        run: python scripts/release_tool/release_cli.py verify "${{ steps.bump.outputs.kind }}"

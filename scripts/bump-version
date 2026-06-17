@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PY="${HERE}/../.venv/bin/python"
+if [[ -x "${VENV_PY}" ]]; then
+  PY="${VENV_PY}"
+else
+  PY="python3"
+fi
+exec "${PY}" "${HERE}/release_tool/release_cli.py" "$@"

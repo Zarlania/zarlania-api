@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+
+# Least privilege by default; the release job grants itself contents: write.
+permissions:
+  contents: read
+
+# Serialize releases; never cancel an in-flight one.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Tag and GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the version tag and GitHub Release
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Read pom version
+        id: ver
+        run: echo "version=$(python scripts/release_tool/release_cli.py current)" >> "$GITHUB_OUTPUT"
+      - name: Create tag and GitHub Release if new
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            # Expected no-op for merges that didn't bump (e.g. Dependabot) — their changes
+            # ride the next release. Human PRs cannot merge without a correct bump because
+            # the required "Release version bump" check enforces it, so a no-op here is not
+            # a silent missed release.
+            echo "Release $tag already exists; nothing to do (changes ride the next bump)."
+            exit 0
+          fi
+          gh release create "$tag" --target "$GITHUB_SHA" --title "$tag" --generate-notes
+          echo "Created release $tag."
