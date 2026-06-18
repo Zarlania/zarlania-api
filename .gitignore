@@ -44,3 +44,10 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+### Local AI prompt scratch files (never committed) ###
+# Personal, throwaway prompts to feed the Claude CLI — not part of the repo.
+# See CLAUDE.md "AI prompt scratch files" for what this directory is.
+# Ignore the contents but keep the directory itself via a tracked .gitkeep.
+docs/ai-prompts/*
+!docs/ai-prompts/.gitkeep

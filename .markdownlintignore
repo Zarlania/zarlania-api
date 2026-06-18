@@ -1,0 +1,11 @@
+# Mirrors the pre-commit `exclude` so markdownlint ignores these dirs no matter how
+# it is invoked (pre-commit, npx, a global install, or CI).
+#
+# docs/superpowers/* — Claude's implementation/planning artifacts (specs & plans).
+# docs/ai-prompts/*  — the user's personal, git-ignored scratch prompts for the Claude CLI.
+# Neither is source code; both are exempt from all linting.
+docs/superpowers/
+docs/ai-prompts/
+
+# Build output (Maven copies some Markdown into target/).
+target/

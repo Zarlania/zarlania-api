@@ -2,8 +2,9 @@
 minimum_pre_commit_version: "3.5.0"
 
 # docs/superpowers/* are Claude's implementation/planning artifacts (specs & plans).
-# They are not source code and are exempt from ALL hooks — no linting, no auto-fixing.
-exclude: '^docs/superpowers/'
+# docs/ai-prompts/* are the user's personal, git-ignored scratch prompts for the Claude CLI.
+# Neither is source code; both are exempt from ALL hooks — no linting, no auto-fixing.
+exclude: '^docs/(superpowers|ai-prompts)/'
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
