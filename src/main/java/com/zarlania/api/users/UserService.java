@@ -2,6 +2,7 @@ package com.zarlania.api.users;
 
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +34,14 @@ public class UserService {
     }
     User user = new User();
     user.setEmail(email);
-    return UserDto.from(users.save(user));
+    try {
+      // saveAndFlush forces the INSERT now so a concurrent duplicate that slipped past the
+      // existsByEmail pre-check is surfaced here as the unique-constraint violation, which we
+      // translate into the contracted domain exception rather than leaking a persistence error.
+      return UserDto.from(users.saveAndFlush(user));
+    } catch (DataIntegrityViolationException ex) {
+      throw new EmailAlreadyExistsException(email);
+    }
   }
 
   /**

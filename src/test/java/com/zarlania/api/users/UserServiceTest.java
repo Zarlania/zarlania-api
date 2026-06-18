@@ -10,10 +10,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.TestPropertySource;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaConfig.class, UserService.class})
+// Pin to H2 so a SPRING_DATASOURCE_URL in the environment can't bleed into tests
+// (@TestPropertySource outranks OS env vars).
+@TestPropertySource(
+    properties = "spring.datasource.url=jdbc:h2:mem:zarlania;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
 class UserServiceTest {
 
   @Autowired private UserService userService;
@@ -30,6 +35,11 @@ class UserServiceTest {
   @Test
   void createRejectsBlankEmail() {
     assertThatThrownBy(() -> userService.create("  ")).isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void createRejectsNullEmail() {
+    assertThatThrownBy(() -> userService.create(null)).isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test

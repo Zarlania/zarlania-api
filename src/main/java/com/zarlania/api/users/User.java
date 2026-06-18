@@ -20,7 +20,6 @@ import lombok.Setter;
 @Entity
 @Table(name = "users")
 @Getter
-@Setter
 @NoArgsConstructor
 public class User extends Auditable {
 
@@ -28,6 +27,7 @@ public class User extends Auditable {
   @GeneratedValue(strategy = GenerationType.UUID)
   private UUID id;
 
+  @Setter
   @Column(name = "email", nullable = false, length = 320)
   private String email;
 }

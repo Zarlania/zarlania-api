@@ -70,9 +70,10 @@ ledger the single source of truth for schema state.
 
 H2 is configured in PostgreSQL compatibility mode (`MODE=PostgreSQL`) so that SQL syntax in
 migrations is as close to real Postgres as possible. When the team moves to a hosted Postgres
-instance, the change is limited to swapping the datasource URL (via the `SPRING_DATASOURCE_URL`
-environment variable), credentials, and JDBC driver; Flyway migration files and Hibernate
-entity mappings are unchanged.
+instance, the change is limited to swapping the datasource URL and credentials (via the
+`SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`
+environment variables); the JDBC driver is not pinned, so Spring Boot infers it from the URL, and
+Flyway migration files and Hibernate entity mappings are unchanged.
 
 Testcontainers was considered but deferred: the additional complexity and Docker-in-Docker
 CI requirement is not justified at this stage, and H2 PostgreSQL mode is sufficient for the

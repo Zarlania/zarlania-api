@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class UserDtoTest {
 
@@ -11,7 +12,8 @@ class UserDtoTest {
   void fromCopiesIdAndEmail() {
     UUID expectedId = UUID.fromString("00000000-0000-0000-0000-000000000001");
     User user = new User();
-    user.setId(expectedId);
+    // id has no setter (immutable, DB-generated); set it directly for this mapping unit test.
+    ReflectionTestUtils.setField(user, "id", expectedId);
     user.setEmail("linus@example.com");
 
     UserDto dto = UserDto.from(user);

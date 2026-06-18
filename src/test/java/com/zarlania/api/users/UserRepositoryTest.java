@@ -12,10 +12,15 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.context.TestPropertySource;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(JpaConfig.class)
+// Pin to H2 so a SPRING_DATASOURCE_URL in the environment can't bleed into tests
+// (@TestPropertySource outranks OS env vars).
+@TestPropertySource(
+    properties = "spring.datasource.url=jdbc:h2:mem:zarlania;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
 class UserRepositoryTest {
 
   @Autowired private UserRepository users;
