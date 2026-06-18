@@ -1,4 +1,10 @@
 extends: default
+# Mirrors the pre-commit `exclude` so yamllint ignores these dirs no matter how it is
+# invoked. docs/superpowers/* are Claude's specs/plans; docs/ai-prompts/* are the user's
+# git-ignored scratch prompts. Neither is source code; both are exempt from all linting.
+ignore: |
+  docs/superpowers/
+  docs/ai-prompts/
 rules:
   line-length: disable
   document-start: disable

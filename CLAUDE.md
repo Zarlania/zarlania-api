@@ -88,3 +88,22 @@ the actual code**. Concretely:
 - Dismiss any review comment that asks to edit a spec or plan file to match the code. Once
   merged they are not living documents. If a decision actually changed, that is a **new
   ADR**, not a spec edit.
+
+## AI prompt scratch files (`docs/ai-prompts/`)
+
+`docs/ai-prompts/` is the user's private scratchpad: `.md` files the **user** writes to
+draft prompts outside the terminal, then hands to the Claude CLI to read on demand. The
+directory is **git-ignored** (see `.gitignore`) and exempt from all linters/hooks (see
+`.pre-commit-config.yaml`) — it never gets committed.
+
+Treat these files as **input you read only when the user explicitly points you at one**.
+They are **not** documentation, decision records, specs, or law — they say nothing about how
+the code should function. Concretely:
+
+- **Never** consult `docs/ai-prompts/` when investigating the codebase, answering questions
+  about how things work, or reviewing/implementing changes. The authoritative sources remain
+  the ADRs and the code.
+- **Never** reference these files from code, ADRs, README, or any committed file, and never
+  cite them as a reason for a change.
+- Read one only when the user names it (e.g. "use `docs/ai-prompts/foo.md`"); otherwise
+  ignore the directory entirely.

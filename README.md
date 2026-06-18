@@ -73,6 +73,7 @@ Useful operational URLs that are *not* part of the API docs:
 - `src/` — the Spring Boot application.
 - `docs/adrs/` — Architecture Decision Records: the binding decisions. Use `./scripts/adr`.
 - `docs/superpowers/` — implementation specs and plans (see note below).
+- `docs/ai-prompts/` — git-ignored personal scratchpad for AI prompts (see note below).
 - `scripts/` — dev, ADR, and release tooling (`setup-dev`, `check`, `adr`, `bump-version`).
 - `.github/` — CI workflows, issue/PR templates, CODEOWNERS.
 - `pom.xml`, `Dockerfile`, `docker-compose.yml`, `render.yaml` — build, container, and deploy config.
@@ -107,3 +108,10 @@ are **point-in-time** artifacts — written before or while a change was built, 
 intentionally diverge from what shipped once the implementer learned more. They are not a
 coding standard and are not a reason for code to look a certain way: the authoritative
 sources are the ADRs and the code itself. Treat them as historical context, not rules.
+
+## About `docs/ai-prompts/`
+
+`docs/ai-prompts/` is a personal scratchpad for drafting AI prompts outside the terminal and
+feeding them to the Claude CLI on demand. It is **git-ignored** and exempt from all linters,
+so nothing in it is ever committed. These files are not documentation, decision records, or
+specs — nothing in the repo references them, and they say nothing about how the code works.
