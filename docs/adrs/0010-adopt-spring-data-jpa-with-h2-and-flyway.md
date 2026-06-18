@@ -68,11 +68,11 @@ All DDL lives in Flyway migration scripts under `src/main/resources/db/migration
 matches the entity model but never generates or alters DDL. This makes the Flyway migration
 ledger the single source of truth for schema state.
 
-H2 is configured in PostgreSQL compatibility mode
-(`MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH`) so that SQL syntax in
+H2 is configured in PostgreSQL compatibility mode (`MODE=PostgreSQL`) so that SQL syntax in
 migrations is as close to real Postgres as possible. When the team moves to a hosted Postgres
-instance, the change is limited to swapping the datasource URL, credentials, and JDBC driver;
-Flyway migration files and Hibernate entity mappings are unchanged.
+instance, the change is limited to swapping the datasource URL (via the `SPRING_DATASOURCE_URL`
+environment variable), credentials, and JDBC driver; Flyway migration files and Hibernate
+entity mappings are unchanged.
 
 Testcontainers was considered but deferred: the additional complexity and Docker-in-Docker
 CI requirement is not justified at this stage, and H2 PostgreSQL mode is sufficient for the
