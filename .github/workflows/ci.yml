@@ -13,8 +13,12 @@ permissions:
   contents: read
 
 jobs:
+  # labeled/unlabeled events exist only so release-check re-runs on a release:* label
+  # change; every other job skips them (via this guard) to avoid duplicate builds and a
+  # duplicate JaCoCo coverage comment. Empty on push (action is null) -> the job still runs.
   build:
     name: Build & quality gates
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -43,6 +47,7 @@ jobs:
 
   checks:
     name: Lint & ADR tests
+    if: github.event.action != 'labeled' && github.event.action != 'unlabeled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -67,7 +72,7 @@ jobs:
 
   secrets:
     name: Secret scan
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -89,7 +94,7 @@ jobs:
 
   governance:
     name: PR references an issue
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'unlabeled'
     runs-on: ubuntu-latest
     steps:
       - name: Verify issue reference in PR title or branch
