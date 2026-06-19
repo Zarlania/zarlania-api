@@ -19,7 +19,7 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param organizationId the organization id
    * @return the organization's memberships (empty if none)
    */
-  List<MembershipEntity> findByOrganization_Id(UUID organizationId);
+  List<MembershipEntity> findByOrganizationId(UUID organizationId);
 
   /**
    * Reports whether the given user already has a membership in the given organization.
@@ -28,7 +28,7 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param userId the user id
    * @return {@code true} if a membership already exists for that user in that organization
    */
-  boolean existsByOrganization_IdAndUserId(UUID organizationId, UUID userId);
+  boolean existsByOrganizationIdAndUserId(UUID organizationId, UUID userId);
 
   /**
    * Finds the given user's membership in the given organization, if any.
@@ -37,7 +37,7 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param userId the user id
    * @return the membership, if one exists
    */
-  Optional<MembershipEntity> findByOrganization_IdAndUserId(UUID organizationId, UUID userId);
+  Optional<MembershipEntity> findByOrganizationIdAndUserId(UUID organizationId, UUID userId);
 
   /**
    * Reports whether the user holds the given role in an organization of the given type — used to
@@ -48,6 +48,6 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param type the organization type to match
    * @return {@code true} if such a membership exists
    */
-  boolean existsByUserIdAndRoleAndOrganization_Type(
+  boolean existsByUserIdAndRoleAndOrganizationType(
       UUID userId, MembershipRole role, OrganizationType type);
 }

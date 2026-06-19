@@ -75,7 +75,7 @@ class MembershipRepositoryTest {
     memberships.save(newMembership(org, memberId, MembershipRole.MEMBER));
     entityManager.flush();
 
-    List<MembershipEntity> found = memberships.findByOrganization_Id(org.getId());
+    List<MembershipEntity> found = memberships.findByOrganizationId(org.getId());
 
     assertThat(found).hasSize(2);
   }
@@ -85,26 +85,26 @@ class MembershipRepositoryTest {
     UUID userId = seedUser("owner3@example.com");
     OrganizationEntity org = saveOrganization("Acme", OrganizationType.GENERAL);
 
-    assertThat(memberships.existsByOrganization_IdAndUserId(org.getId(), userId)).isFalse();
+    assertThat(memberships.existsByOrganizationIdAndUserId(org.getId(), userId)).isFalse();
     memberships.save(newMembership(org, userId, MembershipRole.OWNER));
     entityManager.flush();
 
-    assertThat(memberships.existsByOrganization_IdAndUserId(org.getId(), userId)).isTrue();
+    assertThat(memberships.existsByOrganizationIdAndUserId(org.getId(), userId)).isTrue();
   }
 
   @Test
-  void existsByUserRoleAndOrgTypeDetectsAPersonalOwner() {
+  void existsByUserRoleAndOrganizationTypeDetectsPersonalOwner() {
     UUID userId = seedUser("owner4@example.com");
     OrganizationEntity personal = saveOrganization("Mine", OrganizationType.PERSONAL);
     memberships.save(newMembership(personal, userId, MembershipRole.OWNER));
     entityManager.flush();
 
     assertThat(
-            memberships.existsByUserIdAndRoleAndOrganization_Type(
+            memberships.existsByUserIdAndRoleAndOrganizationType(
                 userId, MembershipRole.OWNER, OrganizationType.PERSONAL))
         .isTrue();
     assertThat(
-            memberships.existsByUserIdAndRoleAndOrganization_Type(
+            memberships.existsByUserIdAndRoleAndOrganizationType(
                 UUID.randomUUID(), MembershipRole.OWNER, OrganizationType.PERSONAL))
         .isFalse();
   }
