@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit configuration.
-#
-# docs/superpowers/ holds implementation-time specs and plans. Per CLAUDE.md they are
-# implementation-grounded planning artifacts (frozen historical record once merged), not code
-# or law, so automated code review must not flag or propose edits to them.
-reviews:
-  path_filters:
-    - "!docs/superpowers/**"
