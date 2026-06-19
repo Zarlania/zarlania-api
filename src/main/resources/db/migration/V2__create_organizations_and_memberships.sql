@@ -4,7 +4,8 @@ CREATE TABLE organizations (
     type       VARCHAR(20)                 NOT NULL,
     created_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP(6) WITH TIME ZONE NOT NULL,
-    CONSTRAINT pk_organizations   PRIMARY KEY (id),
+    CONSTRAINT pk_organizations      PRIMARY KEY (id),
+    CONSTRAINT uq_organizations_name UNIQUE (name),
     CONSTRAINT ck_organizations_type CHECK (type IN ('PERSONAL', 'GENERAL'))
 );
 
@@ -21,3 +22,7 @@ CREATE TABLE memberships (
     CONSTRAINT uq_memberships_org_user     UNIQUE (organization_id, user_id),
     CONSTRAINT ck_memberships_role         CHECK (role IN ('OWNER', 'MEMBER'))
 );
+
+-- Supports OrganizationService.createPersonalOrganization's existence check by (user_id, role),
+-- keeping the personal-organization lookup off a full table scan as memberships grow.
+CREATE INDEX idx_memberships_user_role ON memberships (user_id, role);

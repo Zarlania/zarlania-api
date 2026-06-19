@@ -1,11 +1,11 @@
 # Users and Organizations — Design
 
 **Date:** 2026-06-17
-**Status:** In progress — Phase 1 implemented (v0.2.0); Phase 2 implemented (v0.3.0); Phase 3 planned
+**Status:** In progress — Phase 1 implemented (v0.2.0); Phase 2 implemented (v0.3.0); Phases 3–4 planned
 
 This spec introduces the first real domains in the service: `users` and `organizations`,
 plus a repo-wide **reference-docs system** whose first authored doc captures the user/org
-rules. It is split into **three implementation phases**, each its own plan / merge / release,
+rules. It is split into **four implementation phases**, each its own plan / merge / release,
 so the work divides cleanly across context windows. Update the Status table below as phases
 land.
 
@@ -14,8 +14,9 @@ land.
 | Phase | Scope | State |
 |-------|-------|-------|
 | 1 | Persistence foundation + `users` domain | ✅ Done (v0.2.0) |
-| 2 | `organizations` domain | ✅ Done (v0.3.0) |
-| 3 | Reference-docs system + first doc (user/org rules) | Not started |
+| 2 | `organizations` domain (incl. unique org names) | ✅ Done (v0.3.0) |
+| 3 | `users` handle: replace `displayName` with a unique `username` | Not started |
+| 4 | Reference-docs system + first doc (user/org rules) | Not started |
 
 ## Context & goals
 
@@ -107,7 +108,7 @@ after each.
    reference-docs system (parallel to ADR-0001 for ADRs): `docs/reference/` holds living,
    editable explanations of how the system works, 6-digit-numbered with a tag registry,
    generated index, and `./scripts/ref` tooling. Distinct from ADRs (immutable decisions) and
-   superpowers specs (implementation-time). Additive; supersedes nothing. (Phase 3.)
+   superpowers specs (implementation-time). Additive; supersedes nothing. (Phase 4.)
 
 No existing ADR is contradicted; this is additive to ADR-0001 (MADR ADRs) and ADR-0006
 (Java 25 / Spring Boot / Maven).
@@ -208,6 +209,12 @@ Every persisted entity carries `createdAt` and `updatedAt` timestamps stored at 
   remove or demote an owner (none exist in this pass; e.g. a future `removeMember` /
   owner-demotion) must reject the change when it would leave the org ownerless.
 - Email is unique across users.
+- **Organization names are unique** across all organizations — enforced by a database `UNIQUE`
+  constraint (`uq_organizations_name`) and surfaced as `OrganizationNameAlreadyExistsException`,
+  so general-org names are race-safe at the data layer. A personal org is named after the owner's
+  handle, so once the Phase 3 `username` change lands this same constraint also DB-backs the
+  **one-personal-org-per-user** rule; until then the uniqueness half is the service pre-check
+  above (the name constraint assumes a unique name is passed in).
 
 ### Boundary summary
 
@@ -217,7 +224,7 @@ opaquely, never imports `User`). All public service methods accept and return DT
 never entities. The only link between them is the **database** FK `membership.user_id` →
 `users.id`, which lives in a migration, not in the object model.
 
-## Reference-docs system (Phase 3)
+## Reference-docs system (Phase 4)
 
 A repo-wide system for **living explanatory documentation** — how the system behaves — kept
 distinct from ADRs (immutable decisions), superpowers specs/plans (implementation-time), and
@@ -303,8 +310,8 @@ code rather than restating decisions.
 ## Phase plans
 
 Each phase is implemented from its own plan in a clean session, and is a single merge → single
-SemVer release. Phases 1–2 add functionality (`release:minor`); Phase 3 is tooling + docs with
-no app-behavior change (`release:patch`).
+SemVer release. Phases 1–2 added functionality (`release:minor`); Phase 3 adjusts the `users`
+domain (handle change); Phase 4 is tooling + docs with no app-behavior change (`release:patch`).
 
 ### Phase 1 — Persistence foundation + `users` domain
 
@@ -325,19 +332,39 @@ and audit timestamps, all gates green, ADRs accepted. Update the Phase status ta
 
 ### Phase 2 — `organizations` domain
 
-1. Flyway migration: `organizations` and `memberships` tables, including the FK
-   `memberships.user_id` → `users.id`.
+1. Flyway migration: `organizations` and `memberships` tables, the FK
+   `memberships.user_id` → `users.id`, and a `UNIQUE` constraint on the organization name
+   (`uq_organizations_name`).
 2. `Organization` + `Membership` entities (extending `Auditable`), enums, repositories.
 3. `OrganizationDto`, `MembershipDto`.
 4. `OrganizationService`: personal/general creation, `addMember`, `addOwner`, reads, and all
-   invariant enforcement.
+   invariant enforcement; rejects a duplicate org name as `OrganizationNameAlreadyExistsException`
+   and a raced duplicate membership as `DuplicateMembershipException`.
 5. Tests: integration (H2, real migrated schema) covering every invariant; unit for pure logic
    with Mockito.
 
 **Done when:** all organization invariants hold and are proven by tests, all gates green.
 Update the Phase status table.
 
-### Phase 3 — Reference-docs system + first doc
+### Phase 3 — `users` handle: replace `displayName` with a unique `username`
+
+Adjust the `users` domain so the user's public name is a **unique handle** — the stable, unique
+name a personal organization is created under (closing the assumption Phase 2 relies on).
+
+1. Flyway migration: drop `users.display_name`; add `users.username` (`NOT NULL`) with a `UNIQUE`
+   constraint (`uq_users_username`).
+2. `users` domain: replace `displayName` with `username` on `UserEntity`, the `User` DTO, and
+   `UserService.create(...)`; surface the username-uniqueness violation as a domain exception
+   (mirror the existing email pattern).
+3. Tests: username uniqueness rejected; create/lookup updated; gates green.
+4. Then a personal org's name (= the owner's `username`) is globally unique, so the Phase 2
+   `uq_organizations_name` constraint DB-enforces one-personal-org-per-user and the
+   `OrganizationService` personal-org pre-check can be retired.
+
+**Done when:** users carry a unique `username` (no `displayName`), all gates green. Update the
+Phase status table.
+
+### Phase 4 — Reference-docs system + first doc
 
 1. Extract a shared core module from `adr_tool` (frontmatter, numbered-doc iteration, tag
    registry, index generation, id/slug allocation with configurable width, meta-block,

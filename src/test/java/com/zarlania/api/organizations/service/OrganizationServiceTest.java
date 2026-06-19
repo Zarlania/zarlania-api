@@ -8,6 +8,7 @@ import com.zarlania.api.organizations.OrganizationType;
 import com.zarlania.api.organizations.dto.Membership;
 import com.zarlania.api.organizations.dto.Organization;
 import com.zarlania.api.organizations.exception.DuplicateMembershipException;
+import com.zarlania.api.organizations.exception.OrganizationNameAlreadyExistsException;
 import com.zarlania.api.organizations.exception.OrganizationNotFoundException;
 import com.zarlania.api.organizations.exception.PersonalOrganizationAlreadyExistsException;
 import com.zarlania.api.organizations.exception.PersonalOrganizationMembershipException;
@@ -93,6 +94,26 @@ class OrganizationServiceTest {
               assertThat(m.userId()).isEqualTo(creator);
               assertThat(m.role()).isEqualTo(MembershipRole.OWNER);
             });
+  }
+
+  @Test
+  void createGeneralOrganizationRejectsDuplicateName() {
+    UUID first = seedUser("first@example.com");
+    UUID second = seedUser("second@example.com");
+    service.createGeneralOrganization(first, "Acme");
+
+    assertThatThrownBy(() -> service.createGeneralOrganization(second, "Acme"))
+        .isInstanceOf(OrganizationNameAlreadyExistsException.class);
+  }
+
+  @Test
+  void organizationNamesAreUniqueAcrossTypes() {
+    UUID general = seedUser("general@example.com");
+    UUID personal = seedUser("personal@example.com");
+    service.createGeneralOrganization(general, "Shared");
+
+    assertThatThrownBy(() -> service.createPersonalOrganization(personal, "Shared"))
+        .isInstanceOf(OrganizationNameAlreadyExistsException.class);
   }
 
   @Test

@@ -7,15 +7,18 @@ import com.zarlania.api.organizations.dto.Organization;
 import com.zarlania.api.organizations.entity.MembershipEntity;
 import com.zarlania.api.organizations.entity.OrganizationEntity;
 import com.zarlania.api.organizations.exception.DuplicateMembershipException;
+import com.zarlania.api.organizations.exception.OrganizationNameAlreadyExistsException;
 import com.zarlania.api.organizations.exception.OrganizationNotFoundException;
 import com.zarlania.api.organizations.exception.PersonalOrganizationAlreadyExistsException;
 import com.zarlania.api.organizations.exception.PersonalOrganizationMembershipException;
 import com.zarlania.api.organizations.repository.MembershipRepository;
 import com.zarlania.api.organizations.repository.OrganizationRepository;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,12 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class OrganizationService {
+
+  /** Name of the organization-name unique constraint in {@code V2__...sql}. */
+  private static final String NAME_UNIQUE_CONSTRAINT = "uq_organizations_name";
+
+  /** Name of the (organization_id, user_id) membership unique constraint in {@code V2__...sql}. */
+  private static final String MEMBERSHIP_UNIQUE_CONSTRAINT = "uq_memberships_org_user";
 
   private final OrganizationRepository organizationRepository;
   private final MembershipRepository membershipRepository;
@@ -42,6 +51,7 @@ public class OrganizationService {
    * @throws IllegalArgumentException if {@code ownerUserId} is null or {@code name} is blank
    * @throws PersonalOrganizationAlreadyExistsException if the owner already has a personal
    *     organization
+   * @throws OrganizationNameAlreadyExistsException if the name is already taken
    */
   @Transactional
   public Organization createPersonalOrganization(UUID ownerUserId, String name) {
@@ -63,6 +73,7 @@ public class OrganizationService {
    * @param name the organization's display name
    * @return the created organization
    * @throws IllegalArgumentException if {@code creatorUserId} is null or {@code name} is blank
+   * @throws OrganizationNameAlreadyExistsException if the name is already taken
    */
   @Transactional
   public Organization createGeneralOrganization(UUID creatorUserId, String name) {
@@ -105,6 +116,7 @@ public class OrganizationService {
    * @throws IllegalArgumentException if either id is null
    * @throws OrganizationNotFoundException if no organization has that id
    * @throws PersonalOrganizationMembershipException if the organization is personal
+   * @throws DuplicateMembershipException if a concurrent request already added the user
    */
   @Transactional
   public Membership addOwner(UUID organizationId, UUID userId) {
@@ -122,7 +134,7 @@ public class OrganizationService {
                   return created;
                 });
     membership.setRole(MembershipRole.OWNER);
-    return organizationMapper.toDto(membershipRepository.save(membership));
+    return organizationMapper.toDto(saveMembership(membership, organizationId, userId));
   }
 
   /**
@@ -164,7 +176,16 @@ public class OrganizationService {
     OrganizationEntity organization = new OrganizationEntity();
     organization.setName(name);
     organization.setType(type);
-    return organizationRepository.save(organization);
+    try {
+      // saveAndFlush forces the INSERT now so a name collision that slipped past any pre-check
+      // surfaces here as the name unique-constraint violation rather than at commit time.
+      return organizationRepository.saveAndFlush(organization);
+    } catch (DataIntegrityViolationException ex) {
+      if (isConstraintViolation(ex, NAME_UNIQUE_CONSTRAINT)) {
+        throw OrganizationNameAlreadyExistsException.forName(name);
+      }
+      throw ex;
+    }
   }
 
   private MembershipEntity addMembership(
@@ -173,7 +194,38 @@ public class OrganizationService {
     membership.setOrganization(organization);
     membership.setUserId(userId);
     membership.setRole(role);
-    return membershipRepository.save(membership);
+    return saveMembership(membership, organization.getId(), userId);
+  }
+
+  private MembershipEntity saveMembership(
+      MembershipEntity membership, UUID organizationId, UUID userId) {
+    try {
+      // saveAndFlush forces the INSERT now so a concurrent duplicate that slipped past the
+      // existence pre-check surfaces here as the (organization_id, user_id) unique-constraint
+      // violation and is reported as the domain exception rather than a raw persistence error.
+      return membershipRepository.saveAndFlush(membership);
+    } catch (DataIntegrityViolationException ex) {
+      if (isConstraintViolation(ex, MEMBERSHIP_UNIQUE_CONSTRAINT)) {
+        throw DuplicateMembershipException.forMembership(organizationId, userId);
+      }
+      throw ex;
+    }
+  }
+
+  /**
+   * Reports whether the violation's cause chain names the given constraint. Matching the constraint
+   * name (which appears in both H2 and PostgreSQL messages) avoids catching unrelated integrity
+   * failures and avoids depending on a JPA-provider-specific typed exception.
+   */
+  private static boolean isConstraintViolation(
+      DataIntegrityViolationException ex, String constraintName) {
+    for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
+      String message = String.valueOf(cause.getMessage()).toLowerCase(Locale.ROOT);
+      if (message.contains(constraintName)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private static void requireNonNull(UUID value, String field) {
