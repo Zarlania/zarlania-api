@@ -5,4 +5,12 @@
 <suppressions>
   <!-- Spring Boot main class: framework-shaped, exempt from Javadoc/HideUtilityCtor noise. -->
   <suppress files="ZarlaniaApiApplication\.java" checks="HideUtilityClassConstructor|MissingJavadocType|MissingJavadocMethod"/>
+  <!-- Spring Data JPA derived-query methods use underscore as a path-traversal separator
+       (e.g. findByOrganization_Id traverses the 'organization' association to its 'id' field).
+       This is framework convention, not a naming-style violation. -->
+  <suppress files="MembershipRepository\.java" checks="MethodName"/>
+  <!-- Test method name contains the abbreviation 'Org' from the Spring Data method name
+       existsByUserIdAndRoleAndOrganization_Type; the test name mirrors the method under test
+       and cannot be changed without obscuring the relationship. -->
+  <suppress files="MembershipRepositoryTest\.java" checks="AbbreviationAsWordInName"/>
 </suppressions>
