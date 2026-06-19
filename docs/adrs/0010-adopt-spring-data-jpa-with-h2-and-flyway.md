@@ -1,7 +1,7 @@
 ---
 id: '0010'
 name: Adopt Spring Data JPA with H2 and Flyway
-description: ''
+description: 'Persist via Spring Data JPA on H2 in PostgreSQL mode with Flyway as the sole schema owner, keeping a config-only path to hosted Postgres.'
 status: accepted
 date_proposed: '2026-06-18'
 date_accepted: '2026-06-18'
@@ -20,7 +20,7 @@ tags:
 | --- | --- |
 | ID | 0010 |
 | Name | Adopt Spring Data JPA with H2 and Flyway |
-| Description | — |
+| Description | Persist via Spring Data JPA on H2 in PostgreSQL mode with Flyway as the sole schema owner, keeping a config-only path to hosted Postgres. |
 | Status | accepted |
 | Date proposed | 2026-06-18 |
 | Date accepted | 2026-06-18 |
@@ -70,10 +70,13 @@ ledger the single source of truth for schema state.
 
 H2 is configured in PostgreSQL compatibility mode (`MODE=PostgreSQL`) so that SQL syntax in
 migrations is as close to real Postgres as possible. When the team moves to a hosted Postgres
-instance, the change is limited to swapping the datasource URL and credentials (via the
+instance, the change is swapping the datasource URL and credentials (via the
 `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and `SPRING_DATASOURCE_PASSWORD`
-environment variables); the JDBC driver is not pinned, so Spring Boot infers it from the URL, and
-Flyway migration files and Hibernate entity mappings are unchanged.
+environment variables) and adding the PostgreSQL JDBC driver — plus Flyway's PostgreSQL module — to
+the build. The JDBC driver is not pinned in configuration, so once that dependency is present Spring
+Boot infers the driver from the URL; the Flyway migration files and Hibernate entity mappings are
+unchanged. Only H2 ships on the classpath today, so the move is a configuration **and** dependency
+change, not configuration alone.
 
 Testcontainers was considered but deferred: the additional complexity and Docker-in-Docker
 CI requirement is not justified at this stage, and H2 PostgreSQL mode is sufficient for the
@@ -89,8 +92,8 @@ familiarity and the project's future feature complexity favour JPA's richer feat
   query time.
 - Good: Integration tests run against a real in-process database with the full migration
   history applied, giving high confidence without an external dependency.
-- Good: Promoting to Postgres at deployment time is a configuration-only change with no
-  migration rewrites.
+- Good: Promoting to Postgres at deployment time needs only a configuration change plus adding
+  the Postgres driver and Flyway Postgres module to the build — no migration rewrites.
 - Bad: H2's PostgreSQL compatibility mode is not 100% faithful; any H2-unsupported SQL
   syntax must be worked around (e.g. using compatible equivalents or guarding with a
   H2-specific migration).

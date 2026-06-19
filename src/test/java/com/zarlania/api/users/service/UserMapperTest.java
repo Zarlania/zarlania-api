@@ -1,24 +1,28 @@
-package com.zarlania.api.users;
+package com.zarlania.api.users.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.zarlania.api.users.dto.User;
+import com.zarlania.api.users.entity.UserEntity;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-class UserDtoTest {
+class UserMapperTest {
 
   @Test
-  void fromCopiesIdAndEmail() {
+  void toDtoCopiesIdAndEmail() {
     UUID expectedId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-    User user = new User();
+    UserEntity entity = new UserEntity();
     // id has no setter (immutable, DB-generated); set it directly for this mapping unit test.
-    ReflectionTestUtils.setField(user, "id", expectedId);
-    user.setEmail("linus@example.com");
+    ReflectionTestUtils.setField(entity, "id", expectedId);
+    entity.setEmail("linus@example.com");
+    entity.setDisplayName("Linus");
 
-    UserDto dto = UserDto.from(user);
+    User dto = new UserMapper().toDto(entity);
 
     assertThat(dto.id()).isEqualTo(expectedId);
     assertThat(dto.email()).isEqualTo("linus@example.com");
+    assertThat(dto.displayName()).isEqualTo("Linus");
   }
 }

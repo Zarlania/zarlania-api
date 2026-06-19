@@ -38,12 +38,15 @@ the build — don't restate them, and never silence them (see below).
 - **Keep dependencies lean.** Prefer the framework/stdlib before reaching for a new library.
   A new major dependency (or other architecturally significant choice) is an ADR, not a
   casual add.
-- **Organize by feature/domain, not flat technical-layer buckets.** Group related code
-  together. As endpoints land, a domain like *users* should own its package (e.g.
-  `com.zarlania.api.users` holding its controller/service/repository/entity) rather than a
-  flat `controllers/` listing every controller and a flat `services/` listing every service.
-  Cross-cutting / infrastructure code lives in its own package (e.g. config under a `config`
-  package), not scattered at the application root.
+- **Organize by feature/domain first, then by layer within the domain.** Group related code
+  together. A domain like *users* owns its package (`com.zarlania.api.users`) and splits its
+  layers into sub-packages — `controller`, `service`, `repository`, `entity`, `dto`,
+  `exception` (singular) — rather than a repo-wide flat `controllers/` listing every
+  controller and a flat `services/` listing every service. Cross-cutting / infrastructure
+  code lives in its own package (e.g. config under a `config` package), not scattered at the
+  application root. The **DTO carries the canonical domain name** (e.g. `User`) because DTOs
+  cross boundaries and are referenced far more than entities; the JPA entity is suffixed
+  (`UserEntity`).
 - This is intent, not a rigid tree: use judgment, follow the established structure once it
   exists, and don't over-engineer (YAGNI).
 

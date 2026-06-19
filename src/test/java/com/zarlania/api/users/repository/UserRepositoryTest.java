@@ -1,9 +1,10 @@
-package com.zarlania.api.users;
+package com.zarlania.api.users.repository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.zarlania.api.persistence.JpaConfig;
+import com.zarlania.api.users.entity.UserEntity;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,15 +24,16 @@ import org.springframework.test.context.TestPropertySource;
     properties = "spring.datasource.url=jdbc:h2:mem:zarlania;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
 class UserRepositoryTest {
 
-  @Autowired private UserRepository users;
+  @Autowired private UserRepository userRepository;
   @Autowired private TestEntityManager entityManager;
 
   @Test
   void savingAssignsIdAndAuditTimestamps() {
-    User user = new User();
+    UserEntity user = new UserEntity();
     user.setEmail("ada@example.com");
+    user.setDisplayName("Ada");
 
-    User saved = users.save(user);
+    UserEntity saved = userRepository.save(user);
     entityManager.flush();
 
     assertThat(saved.getId()).isNotNull();
@@ -41,12 +43,13 @@ class UserRepositoryTest {
 
   @Test
   void findByEmailReturnsTheSavedUser() {
-    User user = new User();
+    UserEntity user = new UserEntity();
     user.setEmail("grace@example.com");
-    users.save(user);
+    user.setDisplayName("Grace");
+    userRepository.save(user);
     entityManager.flush();
 
-    Optional<User> found = users.findByEmail("grace@example.com");
+    Optional<UserEntity> found = userRepository.findByEmail("grace@example.com");
 
     assertThat(found).isPresent();
     assertThat(found.get().getEmail()).isEqualTo("grace@example.com");
@@ -54,26 +57,29 @@ class UserRepositoryTest {
 
   @Test
   void existsByEmailReflectsPersistedState() {
-    assertThat(users.existsByEmail("none@example.com")).isFalse();
-    User user = new User();
+    assertThat(userRepository.existsByEmail("none@example.com")).isFalse();
+    UserEntity user = new UserEntity();
     user.setEmail("none@example.com");
-    users.save(user);
+    user.setDisplayName("Nobody");
+    userRepository.save(user);
     entityManager.flush();
 
-    assertThat(users.existsByEmail("none@example.com")).isTrue();
+    assertThat(userRepository.existsByEmail("none@example.com")).isTrue();
   }
 
   @Test
   void duplicateEmailViolatesTheUniqueConstraint() {
-    User first = new User();
+    UserEntity first = new UserEntity();
     first.setEmail("dup@example.com");
-    users.save(first);
+    first.setDisplayName("Dup One");
+    userRepository.save(first);
     entityManager.flush();
 
-    User second = new User();
+    UserEntity second = new UserEntity();
     second.setEmail("dup@example.com");
+    second.setDisplayName("Dup Two");
 
-    assertThatThrownBy(() -> users.saveAndFlush(second))
+    assertThatThrownBy(() -> userRepository.saveAndFlush(second))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 }

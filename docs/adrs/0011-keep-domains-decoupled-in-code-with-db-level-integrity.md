@@ -1,7 +1,7 @@
 ---
 id: '0011'
 name: Keep domains decoupled in code with DB-level integrity
-description: ''
+description: 'Keep domains decoupled in code (private entities, DTO boundaries, no cross-domain JPA associations) while enforcing referential integrity with database foreign keys.'
 status: accepted
 date_proposed: '2026-06-18'
 date_accepted: '2026-06-18'
@@ -20,7 +20,7 @@ tags:
 | --- | --- |
 | ID | 0011 |
 | Name | Keep domains decoupled in code with DB-level integrity |
-| Description | — |
+| Description | Keep domains decoupled in code (private entities, DTO boundaries, no cross-domain JPA associations) while enforcing referential integrity with database foreign keys. |
 | Status | accepted |
 | Date proposed | 2026-06-18 |
 | Date accepted | 2026-06-18 |

@@ -1,7 +1,7 @@
 ---
 id: '0012'
 name: Adopt Lombok for entity boilerplate
-description: ''
+description: 'Use Lombok for JPA entity boilerplate (@Getter, @Setter, @NoArgsConstructor; never @Data on entities); DTOs are Java records; Lombok is allowed elsewhere where it cuts boilerplate without a drawback.'
 status: accepted
 date_proposed: '2026-06-18'
 date_accepted: '2026-06-18'
@@ -20,7 +20,7 @@ tags:
 | --- | --- |
 | ID | 0012 |
 | Name | Adopt Lombok for entity boilerplate |
-| Description | — |
+| Description | Use Lombok for JPA entity boilerplate (@Getter, @Setter, @NoArgsConstructor; never @Data on entities); DTOs are Java records; Lombok is allowed elsewhere where it cuts boilerplate without a drawback. |
 | Status | accepted |
 | Date proposed | 2026-06-18 |
 | Date accepted | 2026-06-18 |
@@ -63,9 +63,10 @@ compatibility and test-coverage tool accuracy.
 ## Decision Outcome
 
 Chosen option: **Lombok `@Getter`, `@Setter`, and `@NoArgsConstructor` on JPA entity
-classes only; DTOs as Java records; `lombok.config` with `addLombokGeneratedAnnotation =
+classes; DTOs as Java records; `lombok.config` with `addLombokGeneratedAnnotation =
 true`**, because it eliminates entity boilerplate safely without the JPA pitfalls of
 `@Data`, and keeps JaCoCo coverage numbers meaningful by excluding generated accessors.
+Lombok is not confined to entities — it may also reduce boilerplate elsewhere (see rule 5).
 
 The rules are:
 
@@ -82,9 +83,11 @@ The rules are:
    so that Lombok annotates every generated method and constructor with `@Generated`. JaCoCo
    respects this annotation and excludes those methods from branch and line coverage
    counting, keeping the 80% gate focused on real logic.
-5. **Lombok outside entities requires justification.** Using Lombok on non-entity classes
-   is not prohibited outright, but must have an explicit rationale documented in a comment
-   or review note.
+5. **Lombok beyond entities is allowed where it removes boilerplate.** Lombok may be used on
+   any class where it eliminates boilerplate without introducing a drawback — for example
+   `@RequiredArgsConstructor` on a service to generate constructor injection. The `@Data` and
+   `@EqualsAndHashCode` prohibition above is specific to the hazards of *JPA entities* and
+   does not extend to other types; outside entities, judgement is the only gate.
 
 ### Consequences
 

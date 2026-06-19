@@ -1,11 +1,12 @@
-package com.zarlania.api.users;
+package com.zarlania.api.users.repository;
 
+import com.zarlania.api.users.entity.UserEntity;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/** Persistence access for {@link User}. Internal to the {@code users} domain. */
-public interface UserRepository extends JpaRepository<User, UUID> {
+/** Persistence access for {@link UserEntity}. Internal to the {@code users} domain. */
+public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
   /**
    * Finds a user by exact email.
@@ -13,7 +14,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
    * @param email the email to match
    * @return the user, if one exists
    */
-  Optional<User> findByEmail(String email);
+  Optional<UserEntity> findByEmail(String email);
 
   /**
    * Reports whether a user with the given email exists.

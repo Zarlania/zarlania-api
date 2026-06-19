@@ -1,4 +1,4 @@
-package com.zarlania.api.users;
+package com.zarlania.api.users.entity;
 
 import com.zarlania.api.persistence.Auditable;
 import jakarta.persistence.Column;
@@ -14,14 +14,14 @@ import lombok.Setter;
 
 /**
  * A user account, identified by a unique email association. Holds no secrets — credentials live in
- * the future identity domain. Internal to the {@code users} domain; cross boundaries via {@link
- * UserDto}.
+ * the future identity domain. Internal to the {@code users} domain; cross boundaries via the {@link
+ * com.zarlania.api.users.dto.User} DTO, which carries the canonical {@code User} name.
  */
 @Entity
 @Table(name = "users")
 @Getter
 @NoArgsConstructor
-public class User extends Auditable {
+public class UserEntity extends Auditable {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
@@ -30,4 +30,8 @@ public class User extends Auditable {
   @Setter
   @Column(name = "email", nullable = false, length = 320)
   private String email;
+
+  @Setter
+  @Column(name = "display_name", nullable = false, length = 100)
+  private String displayName;
 }
