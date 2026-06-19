@@ -191,7 +191,7 @@ Add the two domain enums, the `OrganizationEntity` and `MembershipEntity` mapped
   - `OrganizationEntity extends Auditable` — `UUID getId()`, `String getName()` / `setName`, `OrganizationType getType()` / `setType`, no-arg constructor.
   - `MembershipEntity extends Auditable` — `UUID getId()`, `OrganizationEntity getOrganization()` / `setOrganization`, `UUID getUserId()` / `setUserId`, `MembershipRole getRole()` / `setRole`, no-arg constructor.
   - `OrganizationRepository extends JpaRepository<OrganizationEntity, UUID>`.
-  - `MembershipRepository extends JpaRepository<MembershipEntity, UUID>` with: `List<MembershipEntity> findByOrganization_Id(UUID organizationId)`; `boolean existsByOrganization_IdAndUserId(UUID organizationId, UUID userId)`; `Optional<MembershipEntity> findByOrganization_IdAndUserId(UUID organizationId, UUID userId)`; `boolean existsByUserIdAndRoleAndOrganization_Type(UUID userId, MembershipRole role, OrganizationType type)`.
+  - `MembershipRepository extends JpaRepository<MembershipEntity, UUID>` with: `List<MembershipEntity> findByOrganizationId(UUID organizationId)`; `boolean existsByOrganizationIdAndUserId(UUID organizationId, UUID userId)`; `Optional<MembershipEntity> findByOrganizationIdAndUserId(UUID organizationId, UUID userId)`; `boolean existsByUserIdAndRoleAndOrganizationType(UUID userId, MembershipRole role, OrganizationType type)`.
 
 - [ ] **Step 1a: Create the shared test support helper `src/test/java/com/zarlania/api/organizations/support/OrganizationTestSupport.java`.**
 
@@ -316,7 +316,7 @@ class MembershipRepositoryTest {
     memberships.save(newMembership(org, memberId, MembershipRole.MEMBER));
     entityManager.flush();
 
-    List<MembershipEntity> found = memberships.findByOrganization_Id(org.getId());
+    List<MembershipEntity> found = memberships.findByOrganizationId(org.getId());
 
     assertThat(found).hasSize(2);
   }
@@ -326,26 +326,26 @@ class MembershipRepositoryTest {
     UUID userId = seedUser("owner3@example.com");
     OrganizationEntity org = saveOrganization("Acme", OrganizationType.GENERAL);
 
-    assertThat(memberships.existsByOrganization_IdAndUserId(org.getId(), userId)).isFalse();
+    assertThat(memberships.existsByOrganizationIdAndUserId(org.getId(), userId)).isFalse();
     memberships.save(newMembership(org, userId, MembershipRole.OWNER));
     entityManager.flush();
 
-    assertThat(memberships.existsByOrganization_IdAndUserId(org.getId(), userId)).isTrue();
+    assertThat(memberships.existsByOrganizationIdAndUserId(org.getId(), userId)).isTrue();
   }
 
   @Test
-  void existsByUserRoleAndOrgTypeDetectsAPersonalOwner() {
+  void existsByUserRoleAndOrganizationTypeDetectsPersonalOwner() {
     UUID userId = seedUser("owner4@example.com");
     OrganizationEntity personal = saveOrganization("Mine", OrganizationType.PERSONAL);
     memberships.save(newMembership(personal, userId, MembershipRole.OWNER));
     entityManager.flush();
 
     assertThat(
-            memberships.existsByUserIdAndRoleAndOrganization_Type(
+            memberships.existsByUserIdAndRoleAndOrganizationType(
                 userId, MembershipRole.OWNER, OrganizationType.PERSONAL))
         .isTrue();
     assertThat(
-            memberships.existsByUserIdAndRoleAndOrganization_Type(
+            memberships.existsByUserIdAndRoleAndOrganizationType(
                 UUID.randomUUID(), MembershipRole.OWNER, OrganizationType.PERSONAL))
         .isFalse();
   }
@@ -543,7 +543,7 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param organizationId the organization id
    * @return the organization's memberships (empty if none)
    */
-  List<MembershipEntity> findByOrganization_Id(UUID organizationId);
+  List<MembershipEntity> findByOrganizationId(UUID organizationId);
 
   /**
    * Reports whether the given user already has a membership in the given organization.
@@ -552,7 +552,7 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param userId the user id
    * @return {@code true} if a membership already exists for that user in that organization
    */
-  boolean existsByOrganization_IdAndUserId(UUID organizationId, UUID userId);
+  boolean existsByOrganizationIdAndUserId(UUID organizationId, UUID userId);
 
   /**
    * Finds the given user's membership in the given organization, if any.
@@ -561,7 +561,7 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param userId the user id
    * @return the membership, if one exists
    */
-  Optional<MembershipEntity> findByOrganization_IdAndUserId(UUID organizationId, UUID userId);
+  Optional<MembershipEntity> findByOrganizationIdAndUserId(UUID organizationId, UUID userId);
 
   /**
    * Reports whether the user holds the given role in an organization of the given type — used to
@@ -572,7 +572,7 @@ public interface MembershipRepository extends JpaRepository<MembershipEntity, UU
    * @param type the organization type to match
    * @return {@code true} if such a membership exists
    */
-  boolean existsByUserIdAndRoleAndOrganization_Type(
+  boolean existsByUserIdAndRoleAndOrganizationType(
       UUID userId, MembershipRole role, OrganizationType type);
 }
 ```
@@ -1195,7 +1195,7 @@ public class OrganizationService {
   public Organization createPersonalOrganization(UUID ownerUserId, String name) {
     requireNonNull(ownerUserId, "ownerUserId");
     requireNonBlank(name, "name");
-    if (membershipRepository.existsByUserIdAndRoleAndOrganization_Type(
+    if (membershipRepository.existsByUserIdAndRoleAndOrganizationType(
         ownerUserId, MembershipRole.OWNER, OrganizationType.PERSONAL)) {
       throw PersonalOrganizationAlreadyExistsException.forOwner(ownerUserId);
     }
@@ -1237,7 +1237,7 @@ public class OrganizationService {
     requireNonNull(organizationId, "organizationId");
     requireNonNull(userId, "userId");
     OrganizationEntity organization = requireGeneralOrganization(organizationId);
-    if (membershipRepository.existsByOrganization_IdAndUserId(organizationId, userId)) {
+    if (membershipRepository.existsByOrganizationIdAndUserId(organizationId, userId)) {
       throw DuplicateMembershipException.forMembership(organizationId, userId);
     }
     return organizationMapper.toDto(addMembership(organization, userId, MembershipRole.MEMBER));
@@ -1261,7 +1261,7 @@ public class OrganizationService {
     OrganizationEntity organization = requireGeneralOrganization(organizationId);
     MembershipEntity membership =
         membershipRepository
-            .findByOrganization_IdAndUserId(organizationId, userId)
+            .findByOrganizationIdAndUserId(organizationId, userId)
             .orElseGet(
                 () -> {
                   MembershipEntity created = new MembershipEntity();
@@ -1292,7 +1292,7 @@ public class OrganizationService {
    */
   @Transactional(readOnly = true)
   public List<Membership> findMemberships(UUID organizationId) {
-    return membershipRepository.findByOrganization_Id(organizationId).stream()
+    return membershipRepository.findByOrganizationId(organizationId).stream()
         .map(organizationMapper::toDto)
         .toList();
   }
