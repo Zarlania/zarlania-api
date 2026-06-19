@@ -10,11 +10,13 @@ any registry or ADR whose tags are not sorted.
 
 | Tag | Description |
 | --- | --- |
+| architecture | Architectural structure, boundaries, and cross-domain conventions |
 | build | Build, runtime, and toolchain decisions |
 | configuration | Runtime configuration and application properties |
 | deployment | Deployment topology, hosting, and release/runtime infrastructure |
 | documentation | Documentation practices, formats, and structure |
 | governance | Repo governance, ownership, and enforcement |
+| persistence | Persistence model, datasources, schema, and migrations |
 | process | How we work; meta-process and workflow decisions |
 | quality | Code quality, static analysis, and coverage gates |
 | release | Versioning and release automation |
