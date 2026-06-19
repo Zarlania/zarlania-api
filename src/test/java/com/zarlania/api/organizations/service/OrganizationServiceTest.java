@@ -137,6 +137,14 @@ class OrganizationServiceTest {
   }
 
   @Test
+  void addOwnerIsRejectedForAnUnknownOrganization() {
+    UUID userId = seedUser("ghost@example.com");
+
+    assertThatThrownBy(() -> service.addOwner(UUID.randomUUID(), userId))
+        .isInstanceOf(OrganizationNotFoundException.class);
+  }
+
+  @Test
   void addOwnerAddsNewOwnerToGeneralOrganization() {
     UUID creator = seedUser("creator@example.com");
     UUID coOwner = seedUser("coowner@example.com");
