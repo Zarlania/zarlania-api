@@ -73,6 +73,21 @@ CLI — do not scan `docs/adrs/` by hand**:
 To create one, use the `adr-create` skill. For tags, use `adr-tags`. Run
 `./scripts/adr check` after any ADR change.
 
+## Working with reference docs
+
+`docs/reference/` holds **living explanatory docs** — how the system behaves — distinct from
+ADRs (immutable decisions) and `docs/superpowers/` (implementation-time specs/plans). They
+are editable and updated in place; see ADR-0013.
+
+Use the CLI — **do not hand-scan `docs/reference/`**:
+
+- `./scripts/ref list` / `./scripts/ref find "<query>"` / `./scripts/ref show <id>`
+- `./scripts/ref new --title "<title>" --tags <t1,t2>` to author one; `./scripts/ref check`
+  after any change.
+
+Decide when to consult or author a reference doc as the situation warrants. No content lives
+in CLAUDE.md.
+
 ## Specs and plans are implementation-time only — not law
 
 `docs/superpowers/` holds specs and plans. They guide a change **while it is being built**:
