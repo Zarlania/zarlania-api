@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_PY="${HERE}/../.venv/bin/python"
+if [[ -x "${VENV_PY}" ]]; then
+  PY="${VENV_PY}"
+else
+  PY="python3"
+fi
+export PYTHONPATH="${HERE}/doc_core${PYTHONPATH:+:${PYTHONPATH}}"
+exec "${PY}" "${HERE}/ref_tool/ref_cli.py" "$@"

@@ -6,7 +6,7 @@ testpaths = [
     "scripts/doc_core/tests",
     "scripts/ref_tool/tests",
 ]
-addopts = "--cov=lib --cov=cli --cov=release --cov=release_cli --cov=core --cov=ref --cov-branch --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=lib --cov=cli --cov=release --cov=release_cli --cov=core --cov=ref --cov=ref_cli --cov-branch --cov-report=term-missing --cov-fail-under=80"
 
 [tool.ruff]
 line-length = 100
