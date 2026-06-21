@@ -24,28 +24,28 @@ public class UserService {
   private final UserMapper userMapper;
 
   /**
-   * Creates a user with the given email and display name.
+   * Creates a user with the given email and username.
    *
    * @param email a non-blank email, unique across users
-   * @param displayName a non-blank public name other users know this user by
+   * @param username a non-blank unique public handle
    * @return the created user as a DTO
-   * @throws IllegalArgumentException if {@code email} or {@code displayName} is null or blank
+   * @throws IllegalArgumentException if {@code email} or {@code username} is null or blank
    * @throws EmailAlreadyExistsException if a user with that email already exists
    */
   @Transactional
-  public User create(String email, String displayName) {
+  public User create(String email, String username) {
     if (email == null || email.isBlank()) {
       throw new IllegalArgumentException("email must not be blank");
     }
-    if (displayName == null || displayName.isBlank()) {
-      throw new IllegalArgumentException("displayName must not be blank");
+    if (username == null || username.isBlank()) {
+      throw new IllegalArgumentException("username must not be blank");
     }
     if (userRepository.existsByEmail(email)) {
       throw EmailAlreadyExistsException.forEmail(email);
     }
     UserEntity entity = new UserEntity();
     entity.setEmail(email);
-    entity.setDisplayName(displayName);
+    entity.setUsername(username);
     try {
       // saveAndFlush forces the INSERT now so a concurrent duplicate that slipped past the
       // existsByEmail pre-check surfaces here as the email unique-constraint violation. Only that

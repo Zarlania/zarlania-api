@@ -27,49 +27,49 @@ class UserServiceTest {
 
   @Test
   void createPersistsAndReturnsDtoWithId() {
-    User created = userService.create("alan@example.com", "Alan T");
+    User created = userService.create("alan@example.com", "alan");
 
     assertThat(created.id()).isNotNull();
     assertThat(created.email()).isEqualTo("alan@example.com");
-    assertThat(created.displayName()).isEqualTo("Alan T");
+    assertThat(created.username()).isEqualTo("alan");
     assertThat(userService.findById(created.id())).contains(created);
   }
 
   @Test
   void createRejectsBlankEmail() {
-    assertThatThrownBy(() -> userService.create("  ", "Name"))
+    assertThatThrownBy(() -> userService.create("  ", "name"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void createRejectsNullEmail() {
-    assertThatThrownBy(() -> userService.create(null, "Name"))
+    assertThatThrownBy(() -> userService.create(null, "name"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void createRejectsBlankDisplayName() {
+  void createRejectsBlankUsername() {
     assertThatThrownBy(() -> userService.create("noname@example.com", "  "))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void createRejectsNullDisplayName() {
+  void createRejectsNullUsername() {
     assertThatThrownBy(() -> userService.create("noname@example.com", null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void createRejectsDuplicateEmail() {
-    userService.create("twin@example.com", "Twin One");
+    userService.create("twin@example.com", "twinOne");
 
-    assertThatThrownBy(() -> userService.create("twin@example.com", "Twin Two"))
+    assertThatThrownBy(() -> userService.create("twin@example.com", "twinTwo"))
         .isInstanceOf(EmailAlreadyExistsException.class);
   }
 
   @Test
   void findByEmailReturnsCreatedUser() {
-    User created = userService.create("margaret@example.com", "Maggie");
+    User created = userService.create("margaret@example.com", "maggie");
 
     assertThat(userService.findByEmail("margaret@example.com")).contains(created);
   }

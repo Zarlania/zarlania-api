@@ -9,6 +9,6 @@ import java.util.UUID;
  *
  * @param id the user's id
  * @param email the user's email
- * @param displayName the public name other users know this user by (not PII)
+ * @param username the user's unique public handle (not PII)
  */
-public record User(UUID id, String email, String displayName) {}
+public record User(UUID id, String email, String username) {}

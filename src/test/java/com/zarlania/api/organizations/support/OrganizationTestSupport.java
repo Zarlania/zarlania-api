@@ -23,11 +23,11 @@ public final class OrganizationTestSupport {
     UUID id = UUID.randomUUID();
     entityManager
         .createNativeQuery(
-            "INSERT INTO users (id, email, display_name, created_at, updated_at) "
+            "INSERT INTO users (id, email, username, created_at, updated_at) "
                 + "VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")
         .setParameter(1, id)
         .setParameter(2, email)
-        .setParameter(3, "Seed " + email)
+        .setParameter(3, "seed-" + email)
         .executeUpdate();
     return id;
   }
