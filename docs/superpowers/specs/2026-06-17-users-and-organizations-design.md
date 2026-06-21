@@ -1,7 +1,7 @@
 # Users and Organizations — Design
 
 **Date:** 2026-06-17
-**Status:** In progress — Phase 1 implemented (v0.2.0); Phase 2 implemented (v0.3.0); Phase 3 implemented (v0.4.0); Phase 4 planned
+**Status:** Complete — Phase 1 implemented (v0.2.0); Phase 2 implemented (v0.3.0); Phase 3 implemented (v0.4.0); Phase 4 implemented (v0.4.1)
 
 This spec introduces the first real domains in the service: `users` and `organizations`,
 plus a repo-wide **reference-docs system** whose first authored doc captures the user/org
@@ -16,7 +16,7 @@ land.
 | 1 | Persistence foundation + `users` domain | ✅ Done (v0.2.0) |
 | 2 | `organizations` domain (incl. unique org names) | ✅ Done (v0.3.0) |
 | 3 | `users` handle: replace `displayName` with a unique `username` | ✅ Done (v0.4.0) |
-| 4 | Reference-docs system + first doc (user/org rules) | Not started |
+| 4 | Reference-docs system + first doc (user/org rules) | ✅ Done (v0.4.1) |
 
 ## Context & goals
 
