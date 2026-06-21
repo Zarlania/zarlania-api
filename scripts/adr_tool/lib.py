@@ -1,13 +1,17 @@
-"""Library for managing Architecture Decision Records (ADRs)."""
+"""Library for managing Architecture Decision Records (ADRs).
+
+Generic, schema-agnostic document mechanics live in ``core``. This module supplies the ADR
+schema, the proposed→accepted lifecycle, and ADR-specific index/validation, adapting ``core``
+so the historical ADR public surface (one-arg helpers, ADR-worded errors) is unchanged.
+"""
 
 from __future__ import annotations
 
-import datetime as _dt
-import re
-from dataclasses import dataclass
 from pathlib import Path
 
-import yaml
+import core
+from core import Doc as Adr  # an ADR is a Doc with the same (path, frontmatter, body) fields
+from core import load_tags, slugify  # re-exported unchanged
 
 # Ordered ADR metadata fields mapped to their human-readable table labels.
 FIELD_LABELS: dict[str, str] = {
@@ -27,97 +31,47 @@ FIELD_LABELS: dict[str, str] = {
 VALID_STATUSES = {"proposed", "accepted", "superseded", "deprecated", "rejected"}
 LIST_FIELDS = {"supersedes", "superseded_by", "tags"}
 
-FRONTMATTER_RE = re.compile(r"^---\n(.*?)\n---\n?(.*)$", re.DOTALL)
-
-ADR_GLOB = "[0-9][0-9][0-9][0-9]-*.md"
-ID_PREFIX_RE = re.compile(r"^(\d{4})-.*\.md$")
-_TAG_ROW_RE = re.compile(r"^\|\s*(?P<tag>[^|]+?)\s*\|\s*(?P<desc>.*?)\s*\|\s*$")
-# A markdown table separator row (e.g. "| --- | --- |"): only pipes, spaces, hyphens.
-_TAG_SEP_RE = re.compile(r"^\|[\s\-|]+\|\s*$")
-
 META_START = "<!-- adr-meta:start -->"
 META_END = "<!-- adr-meta:end -->"
-EMPTY_DISPLAY = "—"
+EMPTY_DISPLAY = core.EMPTY_DISPLAY
 
+_WIDTH = 4
+_INDEX_NAME = "README.md"
+_INDEX_COMMAND = "./scripts/adr index"
 
-def slugify(name: str) -> str:
-    """Lowercase, hyphenate, strip to a filename-safe slug."""
-    return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-
-
-@dataclass
-class Adr:
-    path: Path
-    frontmatter: dict
-    body: str
+__all__ = ["slugify", "load_tags", "Adr"]  # silence unused-import lint for re-exports
 
 
 def parse_adr(path) -> Adr:
-    text = Path(path).read_text(encoding="utf-8")
-    m = FRONTMATTER_RE.match(text)
-    if not m:
-        raise ValueError(f"{path}: missing or malformed YAML frontmatter")
-    fm = yaml.safe_load(m.group(1)) or {}
-    return Adr(path=Path(path), frontmatter=fm, body=m.group(2))
+    return core.parse_doc(path)
 
 
 def dump_frontmatter(fm: dict) -> str:
-    """Serialize frontmatter in canonical field order (only known fields)."""
-    ordered = {key: fm.get(key) for key in FIELD_LABELS}
-    return yaml.safe_dump(ordered, sort_keys=False, allow_unicode=True).rstrip()
+    return core.dump_frontmatter(fm, FIELD_LABELS)
 
 
 def display_value(field_name: str, value) -> str:
-    if value is None or value == "" or value == []:
-        return EMPTY_DISPLAY
-    if field_name in LIST_FIELDS:
-        if isinstance(value, list):
-            return ", ".join(str(v) for v in value)
-        return str(value)
-    return str(value)
+    return core.display_value(value, field_name in LIST_FIELDS)
 
 
 def render_meta_table(fm: dict) -> str:
-    lines = [META_START, "| Field | Value |", "| --- | --- |"]
-    for key, label in FIELD_LABELS.items():
-        lines.append(f"| {label} | {display_value(key, fm.get(key))} |")
-    lines.append(META_END)
-    return "\n".join(lines)
+    return core.render_meta_table(fm, FIELD_LABELS, LIST_FIELDS, META_START, META_END)
 
 
 def extract_meta_table(body: str) -> str | None:
-    start = body.find(META_START)
-    end = body.find(META_END)
-    if start == -1 or end == -1 or end < start:
-        return None
-    return body[start : end + len(META_END)]
+    return core.extract_meta_table(body, META_START, META_END)
 
 
 def next_id(adr_dir) -> str:
-    nums = []
-    for p in Path(adr_dir).glob(ADR_GLOB):
-        m = ID_PREFIX_RE.match(p.name)
-        if m:
-            nums.append(int(m.group(1)))
-    return f"{(max(nums) + 1) if nums else 1:04d}"
+    return core.next_id(adr_dir, _WIDTH)
 
 
 def iter_adrs(adr_dir) -> list[Adr]:
-    return [parse_adr(p) for p in sorted(Path(adr_dir).glob(ADR_GLOB))]
+    return core.iter_docs(adr_dir, _WIDTH)
 
 
-def load_tags(tags_path) -> dict[str, str]:
-    tags: dict[str, str] = {}
-    for line in Path(tags_path).read_text(encoding="utf-8").splitlines():
-        m = _TAG_ROW_RE.match(line)
-        if not m:
-            continue
-        tag = m.group("tag").strip()
-        desc = m.group("desc").strip()
-        if tag.lower() == "tag" or set(tag) <= {"-"}:
-            continue  # header / separator rows
-        tags[tag] = desc
-    return tags
+def _today_iso() -> str:
+    return core.today_iso()
 
 
 def render_index(adrs: list[Adr]) -> str:
@@ -139,99 +93,28 @@ def render_index(adrs: list[Adr]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _status_check(adr: Adr) -> list[str]:
+    status = adr.frontmatter.get("status")
+    if status not in VALID_STATUSES:
+        return [f"{adr.path.name}: invalid status '{status}'"]
+    return []
+
+
 def validate_adrs(adr_dir) -> list[str]:
     """Return a list of human-readable validation errors (empty == valid)."""
-    adr_dir = Path(adr_dir)
-    errors: list[str] = []
-
-    tags_path = adr_dir / "_tags.md"
-    registry = load_tags(tags_path) if tags_path.exists() else {}
-    if not tags_path.exists():
-        errors.append("missing tag registry: _tags.md")
-    elif list(registry) != sorted(registry):
-        errors.append("_tags.md registry is not in alphabetical order")
-
-    # Detect malformed ADR filenames (not matching NNNN-*.md pattern)
-    for p in sorted(adr_dir.glob("*.md")):
-        name = p.name
-        if name == "README.md" or name.startswith("_"):
-            continue
-        if not ID_PREFIX_RE.match(name):
-            errors.append(f"{name}: malformed ADR filename (expected NNNN-title.md)")
-
-    # Parse each ADR file, catching per-file parse failures
-    adrs: list[Adr] = []
-    for p in sorted(adr_dir.glob(ADR_GLOB)):
-        try:
-            adrs.append(parse_adr(p))
-        except ValueError as exc:
-            errors.append(f"{p.name}: {exc}")
-
-    # Detect duplicate ids
-    id_to_files: dict[str, list[str]] = {}
-    for adr in adrs:
-        adr_id = str(adr.frontmatter.get("id", ""))
-        id_to_files.setdefault(adr_id, []).append(adr.path.name)
-    for adr_id, files in id_to_files.items():
-        if len(files) > 1:
-            errors.append(f"duplicate ADR id '{adr_id}' found in: {', '.join(files)}")
-
-    # Detect non-linear / gapped IDs
-    numeric_ids: list[int] = []
-    for adr in adrs:
-        raw_id = adr.frontmatter.get("id")
-        try:
-            numeric_ids.append(int(raw_id))
-        except (TypeError, ValueError):
-            pass  # non-numeric ids already flagged by schema checks
-    if numeric_ids:
-        max_id = max(numeric_ids)
-        id_set = set(numeric_ids)
-        for n in range(1, max_id + 1):
-            if n not in id_set:
-                errors.append(f"missing ADR id {n:04d} (IDs must be contiguous starting at 0001)")
-
-    # Per-file schema/status/filename/drift/tag checks
-    for adr in adrs:
-        fm, name = adr.frontmatter, adr.path.name
-
-        for key in FIELD_LABELS:
-            if key not in fm:
-                errors.append(f"{name}: frontmatter missing field '{key}'")
-
-        status = fm.get("status")
-        if status not in VALID_STATUSES:
-            errors.append(f"{name}: invalid status '{status}'")
-
-        expected_prefix = f"{fm.get('id')}-"
-        if not name.startswith(expected_prefix):
-            errors.append(f"{name}: filename does not match id '{fm.get('id')}'")
-
-        table = extract_meta_table(adr.body)
-        if table is None:
-            errors.append(f"{name}: missing meta table markers")
-        elif table != render_meta_table(fm):
-            errors.append(f"{name}: meta table drift (table != frontmatter)")
-
-        adr_tags = fm.get("tags") or []
-        for tag in adr_tags:
-            if tag not in registry:
-                errors.append(f"{name}: tag '{tag}' not in _tags.md registry")
-        if list(adr_tags) != sorted(adr_tags):
-            errors.append(f"{name}: tags are not in alphabetical order")
-
-    index_path = adr_dir / "README.md"
-    expected_index = render_index(adrs)
-    if not index_path.exists():
-        errors.append("missing ADR index: README.md")
-    elif index_path.read_text(encoding="utf-8") != expected_index:
-        errors.append("ADR index (README.md) is stale — run `./scripts/adr index`")
-
-    return errors
-
-
-def _today_iso() -> str:
-    return _dt.date.today().isoformat()
+    return core.validate_common(
+        adr_dir,
+        width=_WIDTH,
+        noun="ADR",
+        field_labels=FIELD_LABELS,
+        list_fields=LIST_FIELDS,
+        meta_start=META_START,
+        meta_end=META_END,
+        index_name=_INDEX_NAME,
+        index_command=_INDEX_COMMAND,
+        render_index=render_index,
+        per_doc_extra=_status_check,
+    )
 
 
 def compose_adr(fm: dict, body_sections: str) -> str:
@@ -263,12 +146,11 @@ def new_adr(adr_dir, name: str, tags: list[str], author: str, today: str | None 
         "tags": sorted(tags),
     }
 
-    # Read body sections from _template.md (single source of truth)
+    # Read body sections from _template.md (single source of truth).
     template_path = adr_dir / "_template.md"
     if not template_path.exists():
         raise ValueError(f"ADR template not found: {template_path}")
     template = parse_adr(template_path)
-    # Extract body sections after the META_END marker
     meta_end_pos = template.body.find(META_END)
     if meta_end_pos != -1:
         body_sections = template.body[meta_end_pos + len(META_END) :].lstrip("\n")
@@ -304,31 +186,9 @@ def accept_adr(path, today: str | None = None) -> None:
     _rewrite_with_synced_table(adr)
 
 
-def _registry_header(text: str) -> str:
-    """Return the registry prose + table header up to and including the separator row."""
-    lines = text.splitlines()
-    for i, line in enumerate(lines):
-        if _TAG_SEP_RE.match(line):
-            return "\n".join(lines[: i + 1])
-    raise ValueError("tag registry missing table header separator row")
-
-
 def add_tag(tags_path, tag: str, description: str) -> None:
-    if "|" in tag or "\n" in tag:
-        raise ValueError("tag must not contain '|' or newline characters")
-    if "|" in description or "\n" in description:
-        raise ValueError("description must not contain '|' or newline characters")
-    tags_path = Path(tags_path)
-    tags = load_tags(tags_path)
-    if tag in tags:
-        return
-    tags[tag] = description
-    # Rewrite the table with rows in alphabetical order (see ADR-0001 rule 8).
-    header = _registry_header(tags_path.read_text(encoding="utf-8"))
-    rows = "\n".join(f"| {t} | {tags[t]} |" for t in sorted(tags))
-    tags_path.write_text(f"{header}\n{rows}\n", encoding="utf-8")
+    core.add_tag(tags_path, tag, description)
 
 
 def write_index(adr_dir) -> None:
-    adr_dir = Path(adr_dir)
-    (adr_dir / "README.md").write_text(render_index(iter_adrs(adr_dir)), encoding="utf-8")
+    core.write_index(adr_dir, _INDEX_NAME, render_index, _WIDTH)

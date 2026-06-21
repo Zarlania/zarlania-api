@@ -7,4 +7,5 @@ if [[ -x "${VENV_PY}" ]]; then
 else
   PY="python3"
 fi
+export PYTHONPATH="${HERE}/doc_core${PYTHONPATH:+:${PYTHONPATH}}"
 exec "${PY}" "${HERE}/adr_tool/cli.py" "$@"
