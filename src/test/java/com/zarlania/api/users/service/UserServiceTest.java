@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.zarlania.api.persistence.JpaConfig;
 import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
+import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -65,6 +66,14 @@ class UserServiceTest {
 
     assertThatThrownBy(() -> userService.create("twin@example.com", "twinTwo"))
         .isInstanceOf(EmailAlreadyExistsException.class);
+  }
+
+  @Test
+  void createRejectsDuplicateUsername() {
+    userService.create("first@example.com", "twin");
+
+    assertThatThrownBy(() -> userService.create("second@example.com", "twin"))
+        .isInstanceOf(UsernameAlreadyExistsException.class);
   }
 
   @Test
