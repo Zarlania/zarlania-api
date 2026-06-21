@@ -8,6 +8,7 @@ in place.
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import core
@@ -84,7 +85,14 @@ def render_index(docs: list[core.Doc]) -> str:
 def _date_check(doc: core.Doc) -> list[str]:
     created = doc.frontmatter.get("created")
     updated = doc.frontmatter.get("updated")
-    if created and updated and str(updated) < str(created):
+    if not created or not updated:
+        return []
+    try:
+        created_date = date.fromisoformat(str(created))
+        updated_date = date.fromisoformat(str(updated))
+    except ValueError:
+        return [f"{doc.path.name}: created/updated must be YYYY-MM-DD dates"]
+    if updated_date < created_date:
         return [f"{doc.path.name}: updated ({updated}) is before created ({created})"]
     return []
 

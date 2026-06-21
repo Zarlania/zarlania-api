@@ -49,6 +49,24 @@ def test_parse_doc_without_frontmatter_raises(tmp_path):
         core.parse_doc(p)
 
 
+def test_parse_doc_non_mapping_frontmatter_raises(tmp_path):
+    # Frontmatter that parses as a YAML list (not a mapping) must raise a
+    # ValueError, not crash downstream `.get()` callers with an AttributeError.
+    p = tmp_path / "0001-x.md"
+    p.write_text("---\n- not-a-mapping\n---\nbody\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="frontmatter must be a mapping"):
+        core.parse_doc(p)
+
+
+def test_parse_doc_invalid_yaml_raises_valueerror(tmp_path):
+    # Malformed YAML between the delimiters must surface as a ValueError so the
+    # `check` command reports it instead of crashing on yaml.YAMLError.
+    p = tmp_path / "0001-x.md"
+    p.write_text('---\nid: "0001\n  : :\n---\nbody\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="invalid YAML frontmatter"):
+        core.parse_doc(p)
+
+
 def test_dump_frontmatter_uses_given_order():
     out = core.dump_frontmatter({"tags": ["x"], "id": "7", "title": "T"}, LABELS)
     lines = out.splitlines()
@@ -213,3 +231,22 @@ def test_validate_per_doc_extra_runs(tmp_path):
     core.write_index(tmp_path, "README.md", _render_index, 6)
     errors = _validate(tmp_path, per_doc_extra=lambda d: ["custom failure"])
     assert "custom failure" in errors
+
+
+def test_validate_reports_non_list_tags_instead_of_crashing(tmp_path):
+    # A scalar `tags` value must be reported as an error, not iterated/sorted
+    # (which would crash with a TypeError or process a string character-by-character).
+    _registry(tmp_path, "alpha")
+    p = _make_doc(tmp_path, "000001", "One")
+    doc = core.parse_doc(p)
+    doc.frontmatter["tags"] = 1
+    body = (
+        f"# {doc.frontmatter['title']}\n\n"
+        f"{core.render_meta_table(doc.frontmatter, LABELS, LIST_FIELDS, START, END)}\n\n## X\nx\n"
+    )
+    p.write_text(
+        f"---\n{core.dump_frontmatter(doc.frontmatter, LABELS)}\n---\n{body}", encoding="utf-8"
+    )
+    core.write_index(tmp_path, "README.md", _render_index, 6)
+    errors = _validate(tmp_path)
+    assert any("field 'tags' must be a list" in e for e in errors)

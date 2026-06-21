@@ -43,7 +43,14 @@ def parse_doc(path) -> Doc:
     m = FRONTMATTER_RE.match(text)
     if not m:
         raise ValueError(f"{path}: missing or malformed YAML frontmatter")
-    fm = yaml.safe_load(m.group(1)) or {}
+    try:
+        fm = yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError as exc:
+        # Surface a YAML parse failure as a domain ValueError so validate_common
+        # reports it instead of crashing the `check` command with a traceback.
+        raise ValueError(f"{path}: invalid YAML frontmatter: {exc}") from exc
+    if not isinstance(fm, dict):
+        raise ValueError(f"{path}: frontmatter must be a mapping")
     return Doc(path=Path(path), frontmatter=fm, body=m.group(2))
 
 
@@ -232,7 +239,12 @@ def validate_common(
         elif table != render_meta_table(fm, field_labels, list_fields, meta_start, meta_end):
             errors.append(f"{name}: meta table drift (table != frontmatter)")
 
-        doc_tags = fm.get("tags") or []
+        doc_tags = fm.get("tags")
+        if doc_tags is None:
+            doc_tags = []
+        elif not isinstance(doc_tags, list):
+            errors.append(f"{name}: frontmatter field 'tags' must be a list")
+            doc_tags = []
         for tag in doc_tags:
             if tag not in registry:
                 errors.append(f"{name}: tag '{tag}' not in _tags.md registry")

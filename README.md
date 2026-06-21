@@ -101,8 +101,8 @@ skill) scaffolds one from the template.
 ```
 
 Reference docs are **living explanations** of how the system behaves — edited in place,
-unlike the immutable ADRs. Author one with `./scripts/ref new`. See `docs/reference/` and
-ADR-0013.
+unlike the immutable ADRs. Author one with `./scripts/ref new --title "<title>" --tags
+<tag1,tag2>`. See `docs/reference/` and ADR-0013.
 
 ## Making a change
 

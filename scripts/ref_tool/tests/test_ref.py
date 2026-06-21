@@ -114,6 +114,25 @@ def test_validate_detects_updated_before_created(tmp_path):
     assert any("updated" in e and "before" in e for e in errors)
 
 
+def test_validate_detects_non_iso_date(tmp_path):
+    # A non-YYYY-MM-DD date must be reported as a format error rather than
+    # silently passing a lexicographic comparison.
+    _registry(tmp_path, "architecture")
+    _template(tmp_path)
+    path = ref.new_doc(tmp_path, title="One", tags=["architecture"], today="2026-06-21")
+    doc = ref.parse_doc(path)
+    doc.frontmatter["updated"] = "2026-13-99"  # not a real calendar date
+    path.write_text(
+        f"---\n{ref.dump_frontmatter(doc.frontmatter)}\n---\n"
+        f"# {doc.frontmatter['title']}\n\n"
+        f"{ref.render_meta_table(doc.frontmatter)}\n\n## Overview\nx\n",
+        encoding="utf-8",
+    )
+    ref.write_index(tmp_path)
+    errors = ref.validate_docs(tmp_path)
+    assert any("YYYY-MM-DD" in e for e in errors)
+
+
 def test_validate_detects_unknown_tag(tmp_path):
     _registry(tmp_path, "architecture")
     _template(tmp_path)

@@ -47,10 +47,12 @@ checks, permission gates, and authentication/secrets.
 
 ### Personal organizations
 
-- Every user has a one-to-one relationship with a single `PERSONAL` organization. The
-  `organizations` domain enforces the uniqueness half (it rejects creating a second personal
-  org for an owner who already has one); the future account-creation orchestration guarantees
-  the one always exists — together they yield **exactly one** personal org per user.
+- A user has a one-to-one relationship with a single `PERSONAL` organization. Today the
+  `organizations` domain enforces only the uniqueness half — it rejects creating a second
+  personal org for an owner who already has one, so a user has **at most one** personal org.
+  The other half (that one always exists) belongs to the future account-creation
+  orchestration; once it lands, the two halves together yield **exactly one** personal org
+  per user.
 - A personal organization has exactly one membership: its owner, with role `OWNER`. No other
   members and no additional owners may be added (`addMember` / `addOwner` are rejected for
   `PERSONAL` orgs).
