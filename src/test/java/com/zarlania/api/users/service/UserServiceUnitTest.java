@@ -53,15 +53,15 @@ class UserServiceUnitTest {
   @Test
   void createTranslatesUsernameUniquenessRaceIntoDomainException() {
     UserService userService = new UserService(userRepository, new UserMapper());
-    when(userRepository.existsByEmail("race@example.com")).thenReturn(false);
-    when(userRepository.existsByUsername("racer")).thenReturn(false);
+    when(userRepository.existsByEmail("taken@example.com")).thenReturn(false);
+    when(userRepository.existsByUsername("taken")).thenReturn(false);
     when(userRepository.saveAndFlush(any(UserEntity.class)))
         .thenThrow(
             new DataIntegrityViolationException(
                 "could not execute statement [Unique index or primary key violation: "
                     + "\"PUBLIC.UQ_USERS_USERNAME\"]"));
 
-    assertThatThrownBy(() -> userService.create("race@example.com", "racer"))
+    assertThatThrownBy(() -> userService.create("taken@example.com", "taken"))
         .isInstanceOf(UsernameAlreadyExistsException.class);
   }
 }

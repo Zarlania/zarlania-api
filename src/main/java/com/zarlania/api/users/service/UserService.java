@@ -21,7 +21,10 @@ public class UserService {
   /** Name of the email unique constraint in {@code V1__create_users_table.sql}. */
   private static final String EMAIL_UNIQUE_CONSTRAINT = "uq_users_email";
 
-  /** Name of the username unique constraint in {@code V3__...sql}. */
+  /**
+   * Name of the username unique constraint in {@code
+   * V3__replace_user_display_name_with_username.sql}.
+   */
   private static final String USERNAME_UNIQUE_CONSTRAINT = "uq_users_username";
 
   private final UserRepository userRepository;
