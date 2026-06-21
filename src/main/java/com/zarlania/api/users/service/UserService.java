@@ -3,6 +3,7 @@ package com.zarlania.api.users.service;
 import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.entity.UserEntity;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
+import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
 import com.zarlania.api.users.repository.UserRepository;
 import java.util.Locale;
 import java.util.Optional;
@@ -20,57 +21,83 @@ public class UserService {
   /** Name of the email unique constraint in {@code V1__create_users_table.sql}. */
   private static final String EMAIL_UNIQUE_CONSTRAINT = "uq_users_email";
 
+  /**
+   * Name of the username unique constraint in {@code
+   * V3__replace_user_display_name_with_username.sql}.
+   */
+  private static final String USERNAME_UNIQUE_CONSTRAINT = "uq_users_username";
+
+  /** Maximum email length, matching the {@code users.email VARCHAR(320)} column. */
+  private static final int MAX_EMAIL_LENGTH = 320;
+
+  /** Maximum username length, matching the {@code users.username VARCHAR(100)} column. */
+  private static final int MAX_USERNAME_LENGTH = 100;
+
   private final UserRepository userRepository;
   private final UserMapper userMapper;
 
   /**
-   * Creates a user with the given email and display name.
+   * Creates a user with the given email and username.
    *
    * @param email a non-blank email, unique across users
-   * @param displayName a non-blank public name other users know this user by
+   * @param username a non-blank unique public handle
    * @return the created user as a DTO
-   * @throws IllegalArgumentException if {@code email} or {@code displayName} is null or blank
+   * @throws IllegalArgumentException if {@code email} or {@code username} is null, blank, or longer
+   *     than its column allows
    * @throws EmailAlreadyExistsException if a user with that email already exists
+   * @throws UsernameAlreadyExistsException if a user with that username already exists
    */
   @Transactional
-  public User create(String email, String displayName) {
+  public User create(String email, String username) {
     if (email == null || email.isBlank()) {
       throw new IllegalArgumentException("email must not be blank");
     }
-    if (displayName == null || displayName.isBlank()) {
-      throw new IllegalArgumentException("displayName must not be blank");
+    if (email.length() > MAX_EMAIL_LENGTH) {
+      throw new IllegalArgumentException(
+          "email must be at most " + MAX_EMAIL_LENGTH + " characters");
+    }
+    if (username == null || username.isBlank()) {
+      throw new IllegalArgumentException("username must not be blank");
+    }
+    if (username.length() > MAX_USERNAME_LENGTH) {
+      throw new IllegalArgumentException(
+          "username must be at most " + MAX_USERNAME_LENGTH + " characters");
     }
     if (userRepository.existsByEmail(email)) {
       throw EmailAlreadyExistsException.forEmail(email);
     }
+    if (userRepository.existsByUsername(username)) {
+      throw UsernameAlreadyExistsException.forUsername(username);
+    }
     UserEntity entity = new UserEntity();
     entity.setEmail(email);
-    entity.setDisplayName(displayName);
+    entity.setUsername(username);
     try {
-      // saveAndFlush forces the INSERT now so a concurrent duplicate that slipped past the
-      // existsByEmail pre-check surfaces here as the email unique-constraint violation. Only that
-      // specific violation maps to the domain exception; any other integrity failure (e.g. an
-      // over-long column) is unrelated to email uniqueness and is rethrown unchanged.
+      // saveAndFlush forces the INSERT now so a concurrent duplicate that slipped past a pre-check
+      // surfaces here as the relevant unique-constraint violation. Only those specific violations
+      // map to a domain exception; any other integrity failure is rethrown unchanged.
       return userMapper.toDto(userRepository.saveAndFlush(entity));
     } catch (DataIntegrityViolationException ex) {
-      if (isEmailUniquenessViolation(ex)) {
-        throw EmailAlreadyExistsException.forEmail(email);
+      if (isConstraintViolation(ex, EMAIL_UNIQUE_CONSTRAINT)) {
+        throw EmailAlreadyExistsException.forEmail(email, ex);
+      }
+      if (isConstraintViolation(ex, USERNAME_UNIQUE_CONSTRAINT)) {
+        throw UsernameAlreadyExistsException.forUsername(username, ex);
       }
       throw ex;
     }
   }
 
   /**
-   * Reports whether the violation was caused by the email unique constraint. We match the
-   * constraint name in the exception's cause chain rather than catching every {@link
-   * DataIntegrityViolationException} so unrelated failures are not mislabelled as duplicate emails.
-   * Matching the name (which appears in both H2 and PostgreSQL messages) avoids depending on a
-   * JPA-provider-specific typed exception.
+   * Reports whether the violation's cause chain names the given constraint. Matching the constraint
+   * name (which appears in both H2 and PostgreSQL messages) avoids catching unrelated integrity
+   * failures and avoids depending on a JPA-provider-specific typed exception.
    */
-  private static boolean isEmailUniquenessViolation(DataIntegrityViolationException ex) {
+  private static boolean isConstraintViolation(
+      DataIntegrityViolationException ex, String constraintName) {
     for (Throwable cause = ex; cause != null; cause = cause.getCause()) {
       String message = String.valueOf(cause.getMessage()).toLowerCase(Locale.ROOT);
-      if (message.contains(EMAIL_UNIQUE_CONSTRAINT)) {
+      if (message.contains(constraintName)) {
         return true;
       }
     }

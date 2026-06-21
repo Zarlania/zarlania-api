@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import com.zarlania.api.users.entity.UserEntity;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
+import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
 import com.zarlania.api.users.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,32 +22,48 @@ class UserServiceUnitTest {
   @Test
   void createTranslatesEmailUniquenessRaceIntoDomainException() {
     UserService userService = new UserService(userRepository, new UserMapper());
-    // Simulate the concurrent-duplicate race: the pre-check passes, but the persisted INSERT trips
-    // the email unique constraint. The service must surface the domain exception.
     when(userRepository.existsByEmail("race@example.com")).thenReturn(false);
+    when(userRepository.existsByUsername("racer")).thenReturn(false);
     when(userRepository.saveAndFlush(any(UserEntity.class)))
         .thenThrow(
             new DataIntegrityViolationException(
                 "could not execute statement [Unique index or primary key violation: "
                     + "\"PUBLIC.UQ_USERS_EMAIL\"]"));
 
-    assertThatThrownBy(() -> userService.create("race@example.com", "Racer"))
-        .isInstanceOf(EmailAlreadyExistsException.class);
+    assertThatThrownBy(() -> userService.create("race@example.com", "racer"))
+        .isInstanceOf(EmailAlreadyExistsException.class)
+        .hasCauseInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
-  void createRethrowsIntegrityViolationUnrelatedToEmailUniqueness() {
+  void createRethrowsIntegrityViolationUnrelatedToUniqueness() {
     UserService userService = new UserService(userRepository, new UserMapper());
-    // A different integrity failure (e.g. an over-long display_name) must NOT be reported as a
-    // duplicate email — it propagates unchanged.
     when(userRepository.existsByEmail("long@example.com")).thenReturn(false);
+    when(userRepository.existsByUsername("waytoolong")).thenReturn(false);
     when(userRepository.saveAndFlush(any(UserEntity.class)))
         .thenThrow(
             new DataIntegrityViolationException(
-                "Value too long for column \"DISPLAY_NAME VARCHAR(100)\""));
+                "Value too long for column \"USERNAME VARCHAR(100)\""));
 
-    assertThatThrownBy(() -> userService.create("long@example.com", "Way too long"))
+    assertThatThrownBy(() -> userService.create("long@example.com", "waytoolong"))
         .isInstanceOf(DataIntegrityViolationException.class)
-        .isNotInstanceOf(EmailAlreadyExistsException.class);
+        .isNotInstanceOf(EmailAlreadyExistsException.class)
+        .isNotInstanceOf(UsernameAlreadyExistsException.class);
+  }
+
+  @Test
+  void createTranslatesUsernameUniquenessRaceIntoDomainException() {
+    UserService userService = new UserService(userRepository, new UserMapper());
+    when(userRepository.existsByEmail("taken@example.com")).thenReturn(false);
+    when(userRepository.existsByUsername("taken")).thenReturn(false);
+    when(userRepository.saveAndFlush(any(UserEntity.class)))
+        .thenThrow(
+            new DataIntegrityViolationException(
+                "could not execute statement [Unique index or primary key violation: "
+                    + "\"PUBLIC.UQ_USERS_USERNAME\"]"));
+
+    assertThatThrownBy(() -> userService.create("taken@example.com", "taken"))
+        .isInstanceOf(UsernameAlreadyExistsException.class)
+        .hasCauseInstanceOf(DataIntegrityViolationException.class);
   }
 }

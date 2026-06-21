@@ -32,6 +32,6 @@ public class UserEntity extends Auditable {
   private String email;
 
   @Setter
-  @Column(name = "display_name", nullable = false, length = 100)
-  private String displayName;
+  @Column(name = "username", nullable = false, length = 100)
+  private String username;
 }

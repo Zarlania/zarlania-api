@@ -31,7 +31,7 @@ class UserRepositoryTest {
   void savingAssignsIdAndAuditTimestamps() {
     UserEntity user = new UserEntity();
     user.setEmail("ada@example.com");
-    user.setDisplayName("Ada");
+    user.setUsername("ada");
 
     UserEntity saved = userRepository.save(user);
     entityManager.flush();
@@ -45,7 +45,7 @@ class UserRepositoryTest {
   void findByEmailReturnsTheSavedUser() {
     UserEntity user = new UserEntity();
     user.setEmail("grace@example.com");
-    user.setDisplayName("Grace");
+    user.setUsername("grace");
     userRepository.save(user);
     entityManager.flush();
 
@@ -60,7 +60,7 @@ class UserRepositoryTest {
     assertThat(userRepository.existsByEmail("none@example.com")).isFalse();
     UserEntity user = new UserEntity();
     user.setEmail("none@example.com");
-    user.setDisplayName("Nobody");
+    user.setUsername("nobody");
     userRepository.save(user);
     entityManager.flush();
 
@@ -71,13 +71,13 @@ class UserRepositoryTest {
   void duplicateEmailViolatesTheUniqueConstraint() {
     UserEntity first = new UserEntity();
     first.setEmail("dup@example.com");
-    first.setDisplayName("Dup One");
+    first.setUsername("dupOne");
     userRepository.save(first);
     entityManager.flush();
 
     UserEntity second = new UserEntity();
     second.setEmail("dup@example.com");
-    second.setDisplayName("Dup Two");
+    second.setUsername("dupTwo");
 
     assertThatThrownBy(() -> userRepository.saveAndFlush(second))
         .isInstanceOf(DataIntegrityViolationException.class);

@@ -12,9 +12,9 @@ public class UserMapper {
    * Maps an entity to its DTO.
    *
    * @param entity the source entity
-   * @return a DTO carrying the entity's id, email, and display name
+   * @return a DTO carrying the entity's id, email, and username
    */
   public User toDto(UserEntity entity) {
-    return new User(entity.getId(), entity.getEmail(), entity.getDisplayName());
+    return new User(entity.getId(), entity.getEmail(), entity.getUsername());
   }
 }

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.zarlania.api.persistence.JpaConfig;
 import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
+import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,49 +28,69 @@ class UserServiceTest {
 
   @Test
   void createPersistsAndReturnsDtoWithId() {
-    User created = userService.create("alan@example.com", "Alan T");
+    User created = userService.create("alan@example.com", "alan");
 
     assertThat(created.id()).isNotNull();
     assertThat(created.email()).isEqualTo("alan@example.com");
-    assertThat(created.displayName()).isEqualTo("Alan T");
+    assertThat(created.username()).isEqualTo("alan");
     assertThat(userService.findById(created.id())).contains(created);
   }
 
   @Test
   void createRejectsBlankEmail() {
-    assertThatThrownBy(() -> userService.create("  ", "Name"))
+    assertThatThrownBy(() -> userService.create("  ", "name"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
   void createRejectsNullEmail() {
-    assertThatThrownBy(() -> userService.create(null, "Name"))
+    assertThatThrownBy(() -> userService.create(null, "name"))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void createRejectsBlankDisplayName() {
+  void createRejectsBlankUsername() {
     assertThatThrownBy(() -> userService.create("noname@example.com", "  "))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void createRejectsNullDisplayName() {
+  void createRejectsNullUsername() {
     assertThatThrownBy(() -> userService.create("noname@example.com", null))
         .isInstanceOf(IllegalArgumentException.class);
   }
 
   @Test
-  void createRejectsDuplicateEmail() {
-    userService.create("twin@example.com", "Twin One");
+  void createRejectsOverlongUsername() {
+    assertThatThrownBy(() -> userService.create("ok@example.com", "u".repeat(101)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
 
-    assertThatThrownBy(() -> userService.create("twin@example.com", "Twin Two"))
+  @Test
+  void createRejectsOverlongEmail() {
+    assertThatThrownBy(() -> userService.create("e".repeat(321), "ok"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void createRejectsDuplicateEmail() {
+    userService.create("twin@example.com", "twinOne");
+
+    assertThatThrownBy(() -> userService.create("twin@example.com", "twinTwo"))
         .isInstanceOf(EmailAlreadyExistsException.class);
   }
 
   @Test
+  void createRejectsDuplicateUsername() {
+    userService.create("first@example.com", "twin");
+
+    assertThatThrownBy(() -> userService.create("second@example.com", "twin"))
+        .isInstanceOf(UsernameAlreadyExistsException.class);
+  }
+
+  @Test
   void findByEmailReturnsCreatedUser() {
-    User created = userService.create("margaret@example.com", "Maggie");
+    User created = userService.create("margaret@example.com", "maggie");
 
     assertThat(userService.findByEmail("margaret@example.com")).contains(created);
   }

@@ -17,12 +17,12 @@ class UserMapperTest {
     // id has no setter (immutable, DB-generated); set it directly for this mapping unit test.
     ReflectionTestUtils.setField(entity, "id", expectedId);
     entity.setEmail("linus@example.com");
-    entity.setDisplayName("Linus");
+    entity.setUsername("linus");
 
     User dto = new UserMapper().toDto(entity);
 
     assertThat(dto.id()).isEqualTo(expectedId);
     assertThat(dto.email()).isEqualTo("linus@example.com");
-    assertThat(dto.displayName()).isEqualTo("Linus");
+    assertThat(dto.username()).isEqualTo("linus");
   }
 }
