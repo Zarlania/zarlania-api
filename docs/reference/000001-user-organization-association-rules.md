@@ -54,8 +54,9 @@ checks, permission gates, and authentication/secrets.
 - A personal organization has exactly one membership: its owner, with role `OWNER`. No other
   members and no additional owners may be added (`addMember` / `addOwner` are rejected for
   `PERSONAL` orgs).
-- A personal organization is named after the owner's unique `username`, so the global
-  organization-name uniqueness constraint also DB-backs the one-personal-org-per-user rule.
+- A personal organization is intended to be named after the owner's unique `username` (via
+  the future account-creation orchestration), so that the global organization-name uniqueness
+  constraint also DB-backs the one-personal-org-per-user rule.
 
 ### General organizations
 
