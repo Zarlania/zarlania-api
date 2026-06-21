@@ -61,6 +61,18 @@ class UserServiceTest {
   }
 
   @Test
+  void createRejectsOverlongUsername() {
+    assertThatThrownBy(() -> userService.create("ok@example.com", "u".repeat(101)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void createRejectsOverlongEmail() {
+    assertThatThrownBy(() -> userService.create("e".repeat(321), "ok"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
   void createRejectsDuplicateEmail() {
     userService.create("twin@example.com", "twinOne");
 

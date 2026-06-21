@@ -31,7 +31,8 @@ class UserServiceUnitTest {
                     + "\"PUBLIC.UQ_USERS_EMAIL\"]"));
 
     assertThatThrownBy(() -> userService.create("race@example.com", "racer"))
-        .isInstanceOf(EmailAlreadyExistsException.class);
+        .isInstanceOf(EmailAlreadyExistsException.class)
+        .hasCauseInstanceOf(DataIntegrityViolationException.class);
   }
 
   @Test
@@ -62,6 +63,7 @@ class UserServiceUnitTest {
                     + "\"PUBLIC.UQ_USERS_USERNAME\"]"));
 
     assertThatThrownBy(() -> userService.create("taken@example.com", "taken"))
-        .isInstanceOf(UsernameAlreadyExistsException.class);
+        .isInstanceOf(UsernameAlreadyExistsException.class)
+        .hasCauseInstanceOf(DataIntegrityViolationException.class);
   }
 }

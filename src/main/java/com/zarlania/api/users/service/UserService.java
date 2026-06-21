@@ -27,6 +27,12 @@ public class UserService {
    */
   private static final String USERNAME_UNIQUE_CONSTRAINT = "uq_users_username";
 
+  /** Maximum email length, matching the {@code users.email VARCHAR(320)} column. */
+  private static final int MAX_EMAIL_LENGTH = 320;
+
+  /** Maximum username length, matching the {@code users.username VARCHAR(100)} column. */
+  private static final int MAX_USERNAME_LENGTH = 100;
+
   private final UserRepository userRepository;
   private final UserMapper userMapper;
 
@@ -36,7 +42,8 @@ public class UserService {
    * @param email a non-blank email, unique across users
    * @param username a non-blank unique public handle
    * @return the created user as a DTO
-   * @throws IllegalArgumentException if {@code email} or {@code username} is null or blank
+   * @throws IllegalArgumentException if {@code email} or {@code username} is null, blank, or longer
+   *     than its column allows
    * @throws EmailAlreadyExistsException if a user with that email already exists
    * @throws UsernameAlreadyExistsException if a user with that username already exists
    */
@@ -45,8 +52,16 @@ public class UserService {
     if (email == null || email.isBlank()) {
       throw new IllegalArgumentException("email must not be blank");
     }
+    if (email.length() > MAX_EMAIL_LENGTH) {
+      throw new IllegalArgumentException(
+          "email must be at most " + MAX_EMAIL_LENGTH + " characters");
+    }
     if (username == null || username.isBlank()) {
       throw new IllegalArgumentException("username must not be blank");
+    }
+    if (username.length() > MAX_USERNAME_LENGTH) {
+      throw new IllegalArgumentException(
+          "username must be at most " + MAX_USERNAME_LENGTH + " characters");
     }
     if (userRepository.existsByEmail(email)) {
       throw EmailAlreadyExistsException.forEmail(email);
@@ -64,10 +79,10 @@ public class UserService {
       return userMapper.toDto(userRepository.saveAndFlush(entity));
     } catch (DataIntegrityViolationException ex) {
       if (isConstraintViolation(ex, EMAIL_UNIQUE_CONSTRAINT)) {
-        throw EmailAlreadyExistsException.forEmail(email);
+        throw EmailAlreadyExistsException.forEmail(email, ex);
       }
       if (isConstraintViolation(ex, USERNAME_UNIQUE_CONSTRAINT)) {
-        throw UsernameAlreadyExistsException.forUsername(username);
+        throw UsernameAlreadyExistsException.forUsername(username, ex);
       }
       throw ex;
     }

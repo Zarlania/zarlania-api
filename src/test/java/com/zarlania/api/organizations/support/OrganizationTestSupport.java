@@ -21,13 +21,16 @@ public final class OrganizationTestSupport {
    */
   public static UUID seedUser(EntityManager entityManager, String email) {
     UUID id = UUID.randomUUID();
+    // username is NOT NULL and capped at VARCHAR(100); derive it from the already-unique id so it
+    // stays unique and bounded regardless of the email's length.
+    String username = "seed-" + id;
     entityManager
         .createNativeQuery(
             "INSERT INTO users (id, email, username, created_at, updated_at) "
                 + "VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")
         .setParameter(1, id)
         .setParameter(2, email)
-        .setParameter(3, "seed-" + email)
+        .setParameter(3, username)
         .executeUpdate();
     return id;
   }
