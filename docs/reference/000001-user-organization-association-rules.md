@@ -34,7 +34,7 @@ Organizations are the ownership root of the service: data built into the system 
 organization. This doc explains how the `users` and `organizations` domains relate — it
 describes behaviour, it does not decide it. The boundary decisions live in ADR-0011
 (decoupled domains, DB-level integrity) and ADR-0010 (persistence); the code lives in
-`com.zarlania.api.users` and `com.zarlania.api.organizations`.
+`com.zarlania.api.users`, `com.zarlania.api.organizations`, and `com.zarlania.api.identity`.
 
 ## Scope
 
