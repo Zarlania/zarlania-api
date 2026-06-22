@@ -37,7 +37,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
       HttpHeaders headers,
       HttpStatusCode status,
       WebRequest request) {
-    ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+    ProblemDetail problem = ProblemDetail.forStatus(status);
     problem.setDetail("Request validation failed");
     Map<String, String> errors = new LinkedHashMap<>();
     for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
