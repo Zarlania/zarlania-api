@@ -5,22 +5,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zarlania.api.organizations.service.OrganizationService;
+import com.zarlania.api.support.AbstractIntegrationTest;
 import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.service.UserService;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
-import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
-@SpringBootTest
-@TestPropertySource(
-    properties = "spring.datasource.url=jdbc:h2:mem:zarlania;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
-class IdentityControllerTest {
+// @SpringBootTest and H2 pin are inherited from AbstractIntegrationTest.
+class IdentityControllerTest extends AbstractIntegrationTest {
 
   @Autowired private WebApplicationContext context;
   @Autowired private UserService userService;

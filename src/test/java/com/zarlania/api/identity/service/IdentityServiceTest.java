@@ -9,6 +9,7 @@ import com.zarlania.api.organizations.OrganizationType;
 import com.zarlania.api.organizations.dto.Membership;
 import com.zarlania.api.organizations.exception.OrganizationNameAlreadyExistsException;
 import com.zarlania.api.organizations.service.OrganizationService;
+import com.zarlania.api.support.AbstractIntegrationTest;
 import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
 import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
@@ -17,22 +18,15 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.TestPropertySource;
 
 // Full context so createAccount runs in its OWN transaction (real commit/rollback), which the
-// atomicity test depends on. Pin H2 so a SPRING_DATASOURCE_URL in the environment can't bleed in.
-@SpringBootTest
-@TestPropertySource(
-    properties = "spring.datasource.url=jdbc:h2:mem:zarlania;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
-class IdentityServiceTest {
+// atomicity test depends on. @SpringBootTest and H2 pin are inherited from AbstractIntegrationTest.
+class IdentityServiceTest extends AbstractIntegrationTest {
 
   @Autowired private IdentityService identityService;
   @Autowired private UserService userService;
   @Autowired private OrganizationService organizationService;
 
-  // The in-memory DB is shared across tests in this context, and emails/usernames/org-names are
-  // globally unique, so each test uses fresh values.
   private static String unique(String prefix) {
     return prefix + UUID.randomUUID().toString().substring(0, 8);
   }
