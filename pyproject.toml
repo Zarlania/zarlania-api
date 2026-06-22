@@ -1,7 +1,12 @@
 [tool.pytest.ini_options]
-pythonpath = ["scripts/adr_tool", "scripts/release_tool"]
-testpaths = ["scripts/adr_tool/tests", "scripts/release_tool/tests"]
-addopts = "--cov=lib --cov=cli --cov=release --cov=release_cli --cov-branch --cov-report=term-missing --cov-fail-under=80"
+pythonpath = ["scripts/adr_tool", "scripts/release_tool", "scripts/doc_core", "scripts/ref_tool"]
+testpaths = [
+    "scripts/adr_tool/tests",
+    "scripts/release_tool/tests",
+    "scripts/doc_core/tests",
+    "scripts/ref_tool/tests",
+]
+addopts = "--cov=lib --cov=cli --cov=release --cov=release_cli --cov=core --cov=ref --cov=ref_cli --cov-branch --cov-report=term-missing --cov-fail-under=80"
 
 [tool.ruff]
 line-length = 100

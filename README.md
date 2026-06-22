@@ -72,9 +72,10 @@ Useful operational URLs that are *not* part of the API docs:
 
 - `src/` — the Spring Boot application.
 - `docs/adrs/` — Architecture Decision Records: the binding decisions. Use `./scripts/adr`.
+- `docs/reference/` — living explanatory docs (how the system behaves). Use `./scripts/ref`.
 - `docs/superpowers/` — implementation specs and plans (see note below).
 - `docs/ai-prompts/` — git-ignored personal scratchpad for AI prompts (see note below).
-- `scripts/` — dev, ADR, and release tooling (`setup-dev`, `check`, `adr`, `bump-version`).
+- `scripts/` — dev, ADR, reference, and release tooling (`setup-dev`, `check`, `adr`, `ref`, `bump-version`).
 - `.github/` — CI workflows, issue/PR templates, CODEOWNERS.
 - `pom.xml`, `Dockerfile`, `docker-compose.yml`, `render.yaml` — build, container, and deploy config.
 
@@ -89,6 +90,19 @@ Useful operational URLs that are *not* part of the API docs:
 
 Recording a new decision is itself an ADR change — `./scripts/adr new` (or the `adr-create`
 skill) scaffolds one from the template.
+
+## Working with reference docs
+
+```bash
+./scripts/ref list             # list reference docs
+./scripts/ref find "<query>"   # search reference docs
+./scripts/ref show <id>        # show one doc (e.g. ./scripts/ref show 000001)
+./scripts/ref check            # validate reference docs (no drift, valid tags, fresh index)
+```
+
+Reference docs are **living explanations** of how the system behaves — edited in place,
+unlike the immutable ADRs. Author one with `./scripts/ref new --title "<title>" --tags
+<tag1,tag2>`. See `docs/reference/` and ADR-0013.
 
 ## Making a change
 
@@ -108,6 +122,15 @@ are **point-in-time** artifacts — written before or while a change was built, 
 intentionally diverge from what shipped once the implementer learned more. They are not a
 coding standard and are not a reason for code to look a certain way: the authoritative
 sources are the ADRs and the code itself. Treat them as historical context, not rules.
+
+## About `docs/reference/`
+
+`docs/reference/` holds **living reference docs** — numbered, editable explanations of how
+the system actually behaves (e.g. the user/organization association rules). Unlike the ADRs,
+which are immutable decisions, reference docs are updated in place as the system evolves;
+unlike `docs/superpowers/`, they are not point-in-time implementation artifacts. They explain
+behaviour, they do not decide it — the binding decisions remain the ADRs. Manage them with
+`./scripts/ref` (see ADR-0013).
 
 ## About `docs/ai-prompts/`
 

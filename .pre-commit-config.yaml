@@ -72,3 +72,9 @@ repos:
         language: system
         files: ^docs/adrs/
         pass_filenames: false
+      - id: ref-check
+        name: Reference docs validation (./scripts/ref check)
+        entry: ./scripts/ref check
+        language: system
+        files: ^docs/reference/
+        pass_filenames: false
