@@ -93,7 +93,8 @@ class IdentityControllerTest {
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(email, unique("n"))))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail").value("An account with this email already exists"));
   }
 
   @Test
@@ -111,7 +112,8 @@ class IdentityControllerTest {
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(unique("e") + "@example.com", username)))
-        .andExpect(status().isConflict());
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail").value("This username is already taken"));
   }
 
   @Test

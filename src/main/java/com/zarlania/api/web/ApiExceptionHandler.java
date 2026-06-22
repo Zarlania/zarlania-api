@@ -47,7 +47,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     return handleExceptionInternal(ex, problem, headers, status, request);
   }
 
-  /** Service-layer input rejections that bypass bean validation (defensive): 400. */
+  /**
+   * Maps service-layer input rejections (thrown before bean validation runs) to 400. Intentionally
+   * broad: any {@link IllegalArgumentException} not claimed by a more specific handler — including
+   * infrastructure-thrown ones — lands here rather than escalating to 500.
+   */
   @ExceptionHandler(IllegalArgumentException.class)
   ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
     return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
