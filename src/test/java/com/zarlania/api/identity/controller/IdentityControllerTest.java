@@ -4,6 +4,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.zarlania.api.organizations.service.OrganizationService;
+import com.zarlania.api.users.dto.User;
+import com.zarlania.api.users.service.UserService;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +23,8 @@ import org.springframework.web.context.WebApplicationContext;
 class IdentityControllerTest {
 
   @Autowired private WebApplicationContext context;
+  @Autowired private UserService userService;
+  @Autowired private OrganizationService organizationService;
 
   private MockMvc mockMvc() {
     return MockMvcBuilders.webAppContextSetup(context).build();
@@ -71,5 +76,56 @@ class IdentityControllerTest {
                 .content(body("not-an-email", "ok")))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.errors.email").exists());
+  }
+
+  @Test
+  void createAccountReturns409ForDuplicateEmail() throws Exception {
+    String email = unique("dupe") + "@example.com";
+    mockMvc()
+        .perform(
+            post("/accounts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(email, unique("n"))))
+        .andExpect(status().isCreated());
+
+    mockMvc()
+        .perform(
+            post("/accounts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(email, unique("n"))))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  void createAccountReturns409ForDuplicateUsername() throws Exception {
+    String username = unique("dupn");
+    mockMvc()
+        .perform(
+            post("/accounts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(unique("e") + "@example.com", username)))
+        .andExpect(status().isCreated());
+
+    mockMvc()
+        .perform(
+            post("/accounts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(unique("e") + "@example.com", username)))
+        .andExpect(status().isConflict());
+  }
+
+  @Test
+  void createAccountReturns409WhenUsernameCollidesWithExistingOrgName() throws Exception {
+    String collidingName = unique("org");
+    User owner = userService.create(unique("o") + "@example.com", unique("o"));
+    organizationService.createGeneralOrganization(owner.id(), collidingName);
+
+    mockMvc()
+        .perform(
+            post("/accounts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(unique("v") + "@example.com", collidingName)))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.detail").value("The requested username is unavailable"));
   }
 }

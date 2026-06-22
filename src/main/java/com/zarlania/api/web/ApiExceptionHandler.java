@@ -1,5 +1,9 @@
 package com.zarlania.api.web;
 
+import com.zarlania.api.organizations.exception.OrganizationNameAlreadyExistsException;
+import com.zarlania.api.organizations.exception.PersonalOrganizationAlreadyExistsException;
+import com.zarlania.api.users.exception.EmailAlreadyExistsException;
+import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.http.HttpHeaders;
@@ -9,6 +13,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
@@ -40,5 +45,41 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     }
     problem.setProperty("errors", errors);
     return handleExceptionInternal(ex, problem, headers, status, request);
+  }
+
+  /** Service-layer input rejections that bypass bean validation (defensive): 400. */
+  @ExceptionHandler(IllegalArgumentException.class)
+  ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
+    return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+  }
+
+  /** Email already registered: 409. Detail is fixed so the attempted value is not echoed back. */
+  @ExceptionHandler(EmailAlreadyExistsException.class)
+  ProblemDetail handleEmailConflict(EmailAlreadyExistsException ex) {
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.CONFLICT, "An account with this email already exists");
+  }
+
+  /** Username already taken: 409. */
+  @ExceptionHandler(UsernameAlreadyExistsException.class)
+  ProblemDetail handleUsernameConflict(UsernameAlreadyExistsException ex) {
+    return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "This username is already taken");
+  }
+
+  /**
+   * The chosen username collides with an existing organization's globally-unique name, so the
+   * personal org cannot be created: surfaced to the caller as an unavailable username (409).
+   */
+  @ExceptionHandler(OrganizationNameAlreadyExistsException.class)
+  ProblemDetail handleUsernameUnavailable(OrganizationNameAlreadyExistsException ex) {
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.CONFLICT, "The requested username is unavailable");
+  }
+
+  /** Defensive: cannot occur for a brand-new user, but mapped to 409 rather than 500. */
+  @ExceptionHandler(PersonalOrganizationAlreadyExistsException.class)
+  ProblemDetail handlePersonalOrgConflict(PersonalOrganizationAlreadyExistsException ex) {
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.CONFLICT, "The user already owns a personal organization");
   }
 }
