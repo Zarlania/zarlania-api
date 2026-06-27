@@ -18,10 +18,13 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 
 // Full context so createAccount runs in its OWN transaction (real commit/rollback), which the
-// atomicity test depends on. @SpringBootTest and H2 pin are inherited from AbstractIntegrationTest.
-class IdentityServiceTest extends AbstractIntegrationTest {
+// atomicity test depends on — the cross-domain orchestration can't run on the @DataJpaTest slice.
+// The H2 pin and between-test cleanup come from AbstractIntegrationTest.
+@SpringBootTest
+class IdentityServiceIntegrationTest extends AbstractIntegrationTest {
 
   @Autowired private IdentityService identityService;
   @Autowired private UserService userService;

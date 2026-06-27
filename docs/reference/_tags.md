@@ -12,3 +12,4 @@ registry or doc whose tags are not sorted.
 | --- | --- |
 | architecture | System structure, boundaries, and cross-domain conventions |
 | domain-model | Domain entities, relationships, and invariants |
+| testing | Test strategy, layering, and conventions |

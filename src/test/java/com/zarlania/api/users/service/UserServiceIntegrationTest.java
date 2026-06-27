@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.zarlania.api.persistence.JpaConfig;
+import com.zarlania.api.support.AbstractIntegrationTest;
 import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
 import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
@@ -13,16 +14,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
-import org.springframework.test.context.TestPropertySource;
 
+// Fast JPA slice for the service over a real DB. The H2 pin and between-test cleanup are inherited
+// from AbstractIntegrationTest.
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaConfig.class, UserService.class, UserMapper.class})
-// Pin to H2 so a SPRING_DATASOURCE_URL in the environment can't bleed into tests
-// (@TestPropertySource outranks OS env vars).
-@TestPropertySource(
-    properties = "spring.datasource.url=jdbc:h2:mem:zarlania;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
-class UserServiceTest {
+class UserServiceIntegrationTest extends AbstractIntegrationTest {
 
   @Autowired private UserService userService;
 

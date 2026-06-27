@@ -14,6 +14,7 @@ import com.zarlania.api.organizations.exception.PersonalOrganizationAlreadyExist
 import com.zarlania.api.organizations.exception.PersonalOrganizationMembershipException;
 import com.zarlania.api.organizations.support.OrganizationTestSupport;
 import com.zarlania.api.persistence.JpaConfig;
+import com.zarlania.api.support.AbstractIntegrationTest;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -22,16 +23,13 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
-import org.springframework.test.context.TestPropertySource;
 
+// Fast JPA slice for the service over a real DB. The H2 pin and between-test cleanup are inherited
+// from AbstractIntegrationTest.
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaConfig.class, OrganizationService.class, OrganizationMapper.class})
-// Pin to H2 so a SPRING_DATASOURCE_URL in the environment can't bleed into tests
-// (@TestPropertySource outranks OS env vars).
-@TestPropertySource(
-    properties = "spring.datasource.url=jdbc:h2:mem:zarlania;DB_CLOSE_DELAY=-1;MODE=PostgreSQL")
-class OrganizationServiceTest {
+class OrganizationServiceIntegrationTest extends AbstractIntegrationTest {
 
   @Autowired private OrganizationService service;
   @Autowired private TestEntityManager entityManager;
