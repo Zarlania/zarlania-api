@@ -1,5 +1,6 @@
 package com.zarlania.api.config;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -48,5 +49,17 @@ class CorsConfigTest {
                 .header("Access-Control-Request-Method", "GET"))
         .andExpect(status().isOk())
         .andExpect(header().string("Access-Control-Allow-Origin", "https://zarlania.com"));
+  }
+
+  @Test
+  void allowedOriginPostPreflightSucceeds() throws Exception {
+    mockMvc()
+        .perform(
+            options("/accounts")
+                .header("Origin", "https://zarlania.com")
+                .header("Access-Control-Request-Method", "POST"))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Access-Control-Allow-Origin", "https://zarlania.com"))
+        .andExpect(header().string("Access-Control-Allow-Methods", containsString("POST")));
   }
 }

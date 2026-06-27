@@ -24,11 +24,12 @@ public class WebConfig implements WebMvcConfigurer {
     // NOTE: FindSecBugs' CorsRegistryCORSDetector cannot analyze this method — it NPEs on the
     // config-sourced String[] of origins (see issue #23), so PERMISSIVE_CORS is not statically
     // checked here. CORS behavior is guarded by CorsConfigTest (allowed/disallowed origin +
-    // preflight) instead. Methods/headers are scoped to the current GET-only API surface.
+    // preflight) instead. Methods/headers are scoped to the current API surface: GET reads plus
+    // POST writes (e.g. POST /accounts).
     registry
         .addMapping("/**")
         .allowedOrigins(cors.allowedOrigins().toArray(String[]::new))
-        .allowedMethods("GET", "OPTIONS")
+        .allowedMethods("GET", "POST", "OPTIONS")
         .allowedHeaders("Content-Type", "Accept");
   }
 }

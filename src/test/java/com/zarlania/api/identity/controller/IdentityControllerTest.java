@@ -9,6 +9,7 @@ import com.zarlania.api.support.AbstractIntegrationTest;
 import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.service.UserService;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -23,8 +24,11 @@ class IdentityControllerTest extends AbstractIntegrationTest {
   @Autowired private UserService userService;
   @Autowired private OrganizationService organizationService;
 
-  private MockMvc mockMvc() {
-    return MockMvcBuilders.webAppContextSetup(context).build();
+  private MockMvc mockMvc;
+
+  @BeforeEach
+  void setUp() {
+    mockMvc = MockMvcBuilders.webAppContextSetup(context).build();
   }
 
   private static String unique(String prefix) {
@@ -40,7 +44,7 @@ class IdentityControllerTest extends AbstractIntegrationTest {
     String username = unique("u");
     String email = username + "@example.com";
 
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -55,7 +59,7 @@ class IdentityControllerTest extends AbstractIntegrationTest {
 
   @Test
   void createAccountReturns400ForBlankUsername() throws Exception {
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -66,7 +70,7 @@ class IdentityControllerTest extends AbstractIntegrationTest {
 
   @Test
   void createAccountReturns400ForMalformedEmail() throws Exception {
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -78,14 +82,14 @@ class IdentityControllerTest extends AbstractIntegrationTest {
   @Test
   void createAccountReturns409ForDuplicateEmail() throws Exception {
     String email = unique("dupe") + "@example.com";
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(email, unique("n"))))
         .andExpect(status().isCreated());
 
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -97,14 +101,14 @@ class IdentityControllerTest extends AbstractIntegrationTest {
   @Test
   void createAccountReturns409ForDuplicateUsername() throws Exception {
     String username = unique("dupn");
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(unique("e") + "@example.com", username)))
         .andExpect(status().isCreated());
 
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -119,7 +123,7 @@ class IdentityControllerTest extends AbstractIntegrationTest {
     User owner = userService.create(unique("o") + "@example.com", unique("o"));
     organizationService.createGeneralOrganization(owner.id(), collidingName);
 
-    mockMvc()
+    mockMvc
         .perform(
             post("/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
