@@ -1,11 +1,13 @@
 package com.zarlania.api.web;
 
+import com.zarlania.api.logging.LogSanitizer;
 import com.zarlania.api.organizations.exception.OrganizationNameAlreadyExistsException;
 import com.zarlania.api.organizations.exception.PersonalOrganizationAlreadyExistsException;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
 import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -28,6 +30,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * Boot's auto-configured {@code ProblemDetailsExceptionHandler} for the same exception types.
  */
 @RestControllerAdvice
+@Slf4j
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
   /** Bean-validation failures at the HTTP edge: 400 with a per-field {@code errors} map. */
@@ -54,20 +57,23 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
    */
   @ExceptionHandler(IllegalArgumentException.class)
   ProblemDetail handleIllegalArgument(IllegalArgumentException ex) {
+    // WARN, not INFO: bean validation (@Valid) rejects malformed payloads at the edge before the
+    // service runs, so an IllegalArgumentException reaching here is input that bypassed that edge —
+    // a rare, defensive path worth surfacing in the logs.
+    log.warn("Request rejected (400 Bad Request): {}", LogSanitizer.forLog(ex.getMessage()));
     return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
   }
 
   /** Email already registered: 409. Detail is fixed so the attempted value is not echoed back. */
   @ExceptionHandler(EmailAlreadyExistsException.class)
   ProblemDetail handleEmailConflict(EmailAlreadyExistsException ex) {
-    return ProblemDetail.forStatusAndDetail(
-        HttpStatus.CONFLICT, "An account with this email already exists");
+    return conflict("An account with this email already exists");
   }
 
   /** Username already taken: 409. */
   @ExceptionHandler(UsernameAlreadyExistsException.class)
   ProblemDetail handleUsernameConflict(UsernameAlreadyExistsException ex) {
-    return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "This username is already taken");
+    return conflict("This username is already taken");
   }
 
   /**
@@ -76,14 +82,23 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
    */
   @ExceptionHandler(OrganizationNameAlreadyExistsException.class)
   ProblemDetail handleUsernameUnavailable(OrganizationNameAlreadyExistsException ex) {
-    return ProblemDetail.forStatusAndDetail(
-        HttpStatus.CONFLICT, "The requested username is unavailable");
+    return conflict("The requested username is unavailable");
   }
 
   /** Defensive: cannot occur for a brand-new user, but mapped to 409 rather than 500. */
   @ExceptionHandler(PersonalOrganizationAlreadyExistsException.class)
   ProblemDetail handlePersonalOrgConflict(PersonalOrganizationAlreadyExistsException ex) {
-    return ProblemDetail.forStatusAndDetail(
-        HttpStatus.CONFLICT, "The user already owns a personal organization");
+    return conflict("The user already owns a personal organization");
+  }
+
+  /**
+   * Builds a 409 {@link ProblemDetail} from a fixed, safe detail and logs the conflict at INFO.
+   * Conflicts are expected outcomes of concurrent sign-ups, so INFO (not WARN) gives visibility
+   * into collision rates without raising noise; the detail is a fixed string, so no attempted value
+   * (PII) is logged.
+   */
+  private static ProblemDetail conflict(String detail) {
+    log.info("Request rejected (409 Conflict): {}", LogSanitizer.forLog(detail));
+    return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, detail);
   }
 }
