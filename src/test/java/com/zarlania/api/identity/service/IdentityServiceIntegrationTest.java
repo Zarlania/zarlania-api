@@ -7,27 +7,26 @@ import com.zarlania.api.identity.dto.Account;
 import com.zarlania.api.organizations.MembershipRole;
 import com.zarlania.api.organizations.OrganizationType;
 import com.zarlania.api.organizations.dto.Membership;
-import com.zarlania.api.organizations.exception.OrganizationNameAlreadyExistsException;
 import com.zarlania.api.organizations.service.OrganizationService;
 import com.zarlania.api.support.AbstractIntegrationTest;
-import com.zarlania.api.users.dto.User;
 import com.zarlania.api.users.exception.EmailAlreadyExistsException;
 import com.zarlania.api.users.exception.UsernameAlreadyExistsException;
-import com.zarlania.api.users.service.UserService;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
-// Full context so createAccount runs in its OWN transaction (real commit/rollback), which the
-// atomicity test depends on — the cross-domain orchestration can't run on the @DataJpaTest slice.
-// The H2 pin and between-test cleanup come from AbstractIntegrationTest.
+// Cross-domain orchestration over a real database, rolled back per method. These cases only need to
+// observe behavior and responses (creation, duplicate rejection), not a real commit, so they run in
+// the test's transaction and stay parallel-safe. The atomicity case — which must observe a real
+// rollback — lives in IdentityServiceTransactionalTest instead (see its comment).
 @SpringBootTest
+@Transactional
 class IdentityServiceIntegrationTest extends AbstractIntegrationTest {
 
   @Autowired private IdentityService identityService;
-  @Autowired private UserService userService;
   @Autowired private OrganizationService organizationService;
 
   private static String unique(String prefix) {
@@ -74,21 +73,5 @@ class IdentityServiceIntegrationTest extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> identityService.createAccount(unique("e") + "@example.com", username))
         .isInstanceOf(UsernameAlreadyExistsException.class);
-  }
-
-  @Test
-  void createAccountRollsBackUserWhenPersonalOrgNameCollides() {
-    // Arrange: a general org whose name will collide with the next account's username.
-    String collidingName = unique("collide");
-    User owner = userService.create(unique("owner") + "@example.com", unique("owner"));
-    organizationService.createGeneralOrganization(owner.id(), collidingName);
-
-    String victimEmail = unique("victim") + "@example.com";
-
-    assertThatThrownBy(() -> identityService.createAccount(victimEmail, collidingName))
-        .isInstanceOf(OrganizationNameAlreadyExistsException.class);
-
-    // The user insert must have rolled back together with the failed org creation.
-    assertThat(userService.findByEmail(victimEmail)).isEmpty();
   }
 }

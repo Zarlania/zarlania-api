@@ -108,6 +108,32 @@
 			</plugin>
 
 			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<!-- The default (parallel) suite: every test except the serial *TransactionalTest
+						     suite, which runs separately via the transactional-tests profile below. -->
+						<excludes>
+							<exclude>**/*TransactionalTest.java</exclude>
+						</excludes>
+						<!-- Run test classes across forks in parallel (one per core). Each fork gets its
+						     OWN in-memory database (zarlania-<forkNumber>) so fixed-key tests can't collide
+						     on unique constraints across forks; the parallel suite has no committing tests,
+						     so nothing leaks within a fork. -->
+						<forkCount>1C</forkCount>
+						<reuseForks>true</reuseForks>
+						<!-- Pin every test to in-memory H2, above any SPRING_DATASOURCE_URL in the
+					     environment. A JVM system property outranks OS env vars in Spring's property
+					     precedence, so tests never touch a real database even on a machine configured
+					     to run the app against one. Lives here (committed, one place, auto-applied) so
+					     no one has to remember a -D flag per run. -->
+					<systemPropertyVariables>
+						<spring.datasource.url>jdbc:h2:mem:zarlania-${surefire.forkNumber};DB_CLOSE_DELAY=-1;MODE=PostgreSQL</spring.datasource.url>
+					</systemPropertyVariables>
+				</configuration>
+			</plugin>
+
+			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
 				<executions>
@@ -242,5 +268,31 @@
 			</plugin>
 		</plugins>
 	</build>
+
+	<profiles>
+		<!-- The serial *TransactionalTest suite: integration tests that must commit/roll back for
+		     real and therefore can't be parallelised. Run on its own (CI runs it as a separate
+		     check): ./mvnw test -Ptransactional-tests -->
+		<profile>
+			<id>transactional-tests</id>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>org.apache.maven.plugins</groupId>
+						<artifactId>maven-surefire-plugin</artifactId>
+						<configuration>
+							<!-- Run ONLY the transactional suite, serially (single fork). The shared H2
+							     pin in systemPropertyVariables is inherited from the base configuration. -->
+							<includes>
+								<include>**/*TransactionalTest.java</include>
+							</includes>
+							<excludes combine.self="override"/>
+							<forkCount>1</forkCount>
+						</configuration>
+					</plugin>
+				</plugins>
+			</build>
+		</profile>
+	</profiles>
 
 </project>
