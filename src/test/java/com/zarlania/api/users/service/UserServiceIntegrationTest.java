@@ -15,8 +15,9 @@ import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.context.annotation.Import;
 
-// Fast JPA slice for the service over a real DB. The H2 pin and between-test cleanup are inherited
-// from AbstractIntegrationTest.
+// Fast JPA slice for the service over a real DB. Isolation comes from @DataJpaTest's per-test
+// rollback; H2 is pinned centrally via Surefire (pom.xml). AbstractIntegrationTest is the shared
+// integration-test anchor, not a cleanup source.
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({JpaConfig.class, UserService.class, UserMapper.class})

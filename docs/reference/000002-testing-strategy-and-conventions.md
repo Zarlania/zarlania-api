@@ -88,9 +88,11 @@ the source of truth there, per ADR-0003) nor the production code structure.
   therefore can't collide across forks, and the parallel suite has no committing tests, so nothing
   leaks within a fork. This is why committing tests are quarantined: they'd break both rollback
   isolation and cross-fork safety.
-- **Datasource pin.** H2 is pinned centrally via the Surefire `spring.datasource.url` system
-  property (`pom.xml`), which outranks any `SPRING_DATASOURCE_URL` env var — tests never touch a
-  real database.
+- **Datasource pin.** Under Maven/Surefire, H2 is pinned centrally via the `spring.datasource.url`
+  system property (`pom.xml`), which outranks any `SPRING_DATASOURCE_URL` env var — so the Maven
+  test run never touches a real database. Direct IDE or ad-hoc runs bypass Surefire and fall back to
+  `application.properties` (which still honors `SPRING_DATASOURCE_URL`); pin H2 yourself if you run
+  tests outside Maven.
 - **Real-port HTTP** fidelity (if ever needed) belongs in a future, separate snapshot suite, not in
   the controller MockMvc tests.
 

@@ -1,6 +1,7 @@
 package com.zarlania.api.config;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.containsStringIgnoringCase;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -53,13 +54,21 @@ class CorsConfigTest {
 
   @Test
   void allowedOriginPostPreflightSucceeds() throws Exception {
+    // Model the real browser preflight for the JSON POST /accounts flow: it sends
+    // Access-Control-Request-Headers: content-type, so assert that header is allowed back too —
+    // otherwise the test could pass while the actual cross-origin request fails at preflight.
     mockMvc()
         .perform(
             options("/accounts")
                 .header("Origin", "https://zarlania.com")
-                .header("Access-Control-Request-Method", "POST"))
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type"))
         .andExpect(status().isOk())
         .andExpect(header().string("Access-Control-Allow-Origin", "https://zarlania.com"))
-        .andExpect(header().string("Access-Control-Allow-Methods", containsString("POST")));
+        .andExpect(header().string("Access-Control-Allow-Methods", containsString("POST")))
+        .andExpect(
+            header()
+                .string(
+                    "Access-Control-Allow-Headers", containsStringIgnoringCase("content-type")));
   }
 }

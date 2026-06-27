@@ -44,9 +44,15 @@ public class CleanDatabaseTestExecutionListener extends AbstractTestExecutionLis
       // H2) actually spans the deletes that follow.
       JdbcTemplate jdbc = new JdbcTemplate(new SingleConnectionDataSource(connection, true));
       jdbc.execute("SET REFERENTIAL_INTEGRITY FALSE");
-      List<String> tables = jdbc.queryForList(SELECT_APPLICATION_TABLES, String.class);
-      JdbcTestUtils.deleteFromTables(jdbc, tables.toArray(new String[0]));
-      jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
+      try {
+        List<String> tables = jdbc.queryForList(SELECT_APPLICATION_TABLES, String.class);
+        JdbcTestUtils.deleteFromTables(jdbc, tables.toArray(new String[0]));
+      } finally {
+        // Always re-enable, even if discovery/deletion throws: integrity is session-scoped and this
+        // connection returns to the pool, so leaving it FALSE would silently disable FK checks for
+        // whichever test reuses the connection next.
+        jdbc.execute("SET REFERENTIAL_INTEGRITY TRUE");
+      }
     }
   }
 }

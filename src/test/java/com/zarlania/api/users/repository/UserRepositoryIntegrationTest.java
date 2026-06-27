@@ -15,7 +15,9 @@ import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 
-// The H2 pin and between-test cleanup are inherited from AbstractIntegrationTest.
+// Isolation comes from @DataJpaTest's per-test rollback; H2 is pinned centrally via Surefire
+// (pom.xml). AbstractIntegrationTest is the shared anchor for integration tests, not a cleanup
+// source.
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(JpaConfig.class)
