@@ -5,4 +5,17 @@
     <Class name="com.zarlania.api.ZarlaniaApiApplication"/>
   </Match>
 
+  <!--
+    FindSecBugs SPRING_ENDPOINT: informational audit detector that reports every
+    @RestController as a "Found Spring endpoint." It identifies no actual
+    vulnerability — only that the class is a controller. Suppressed here because
+    the finding adds no actionable signal; security of individual endpoints is
+    reviewed through integration tests and code review. See issue #48 (durable
+    record for this exclusion). Related but distinct: issue #23 (CORS detector
+    NPE on WebConfig, a different FindSecBugs detector-quality issue).
+  -->
+  <Match>
+    <Bug pattern="SPRING_ENDPOINT"/>
+  </Match>
+
 </FindBugsFilter>

@@ -88,6 +88,13 @@ Use the CLI — **do not hand-scan `docs/reference/`**:
 Decide when to consult or author a reference doc as the situation warrants. No content lives
 in CLAUDE.md.
 
+When a change alters documented behavior, update the relevant reference doc (or author a new
+one) **as part of that change** — reference docs are living and must not drift from the code.
+
+Reference docs document **behavior and rules**, not API endpoint contracts. The public
+springdoc OpenAPI (`/v3/api-docs`, see ADR-0003) is the source of truth for endpoints —
+do not duplicate endpoint shapes, request/response bodies, or status codes in a reference doc.
+
 ## Specs and plans are implementation-time only — not law
 
 `docs/superpowers/` holds specs and plans. They guide a change **while it is being built**:

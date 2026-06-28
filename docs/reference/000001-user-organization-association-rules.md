@@ -12,6 +12,7 @@ related:
 - ADR-0011
 - com.zarlania.api.users
 - com.zarlania.api.organizations
+- com.zarlania.api.identity
 ---
 # User–organization association rules
 
@@ -24,7 +25,7 @@ related:
 | Tags | architecture, domain-model |
 | Created | 2026-06-21 |
 | Updated | 2026-06-21 |
-| Related | ADR-0010, ADR-0011, com.zarlania.api.users, com.zarlania.api.organizations |
+| Related | ADR-0010, ADR-0011, com.zarlania.api.users, com.zarlania.api.organizations, com.zarlania.api.identity |
 <!-- ref-meta:end -->
 
 ## Overview
@@ -33,32 +34,29 @@ Organizations are the ownership root of the service: data built into the system 
 organization. This doc explains how the `users` and `organizations` domains relate — it
 describes behaviour, it does not decide it. The boundary decisions live in ADR-0011
 (decoupled domains, DB-level integrity) and ADR-0010 (persistence); the code lives in
-`com.zarlania.api.users` and `com.zarlania.api.organizations`.
+`com.zarlania.api.users`, `com.zarlania.api.organizations`, and `com.zarlania.api.identity`.
 
 ## Scope
 
 Covers the association rules and invariants between users and organizations as they exist
 today: personal vs general organizations, ownership and membership, and the uniqueness
-guarantees. Out of scope (and deferred to a future `identity` domain): account-creation
-orchestration that creates a user and their personal org atomically, cross-domain existence
-checks, permission gates, and authentication/secrets.
+guarantees. Account-creation orchestration that atomically creates a user and their personal
+org now exists in `com.zarlania.api.identity`. Still out of scope (deferred): cross-domain
+existence checks, permission gates, and authentication/secrets.
 
 ## Rules / constraints
 
 ### Personal organizations
 
-- A user has a one-to-one relationship with a single `PERSONAL` organization. Today the
-  `organizations` domain enforces only the uniqueness half — it rejects creating a second
-  personal org for an owner who already has one, so a user has **at most one** personal org.
-  The other half (that one always exists) belongs to the future account-creation
-  orchestration; once it lands, the two halves together yield **exactly one** personal org
-  per user.
+- A user has **exactly one** `PERSONAL` organization. The `organizations` domain rejects
+  creating a second personal org for an owner who already has one; the `identity` domain
+  ensures one is always created at account creation — together they enforce the invariant.
 - A personal organization has exactly one membership: its owner, with role `OWNER`. No other
   members and no additional owners may be added (`addMember` / `addOwner` are rejected for
   `PERSONAL` orgs).
-- A personal organization is intended to be named after the owner's unique `username` (via
-  the future account-creation orchestration), so that the global organization-name uniqueness
-  constraint also DB-backs the one-personal-org-per-user rule.
+- A personal organization is named after the owner's unique `username` by the `identity`
+  domain, so that the global organization-name uniqueness constraint also DB-backs the
+  one-personal-org-per-user rule.
 
 ### General organizations
 
@@ -93,3 +91,4 @@ checks, permission gates, and authentication/secrets.
 - ADR-0011 — decoupled domains in code with DB-level referential integrity.
 - `com.zarlania.api.users` — the `users` domain (entity, repository, DTO, service).
 - `com.zarlania.api.organizations` — the `organizations` domain and its invariants.
+- `com.zarlania.api.identity` — account-creation orchestration; atomically creates a user and their personal org.

@@ -32,7 +32,9 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
-      - name: Maven verify (Spotless, Checkstyle, SpotBugs+FindSecBugs, tests, JaCoCo)
+      - name: Maven verify (Spotless, Checkstyle, SpotBugs+FindSecBugs, parallel tests, JaCoCo)
+        # The default suite runs in parallel (one fork per core, each with its own H2). The serial
+        # *TransactionalTest suite runs in the separate transactional-tests job below.
         run: ./mvnw -B clean verify
       - name: JaCoCo coverage report comment
         if: github.event_name == 'pull_request'
@@ -43,6 +45,24 @@ jobs:
           min-coverage-overall: 80
           min-coverage-changed-files: 80
           title: JaCoCo Coverage
+
+  transactional-tests:
+    name: Transactional tests (serial)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up JDK 25
+        uses: actions/setup-java@ad2b38190b15e4d6bdf0c97fb4fca8412226d287 # v5.3.0
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Run the serial *TransactionalTest suite
+        # Tests that must commit/roll back for real, so they can't be parallelised or rolled back.
+        # Small and scenario-specific; coverage is gated by the main build job, not here.
+        run: ./mvnw -B clean test -Ptransactional-tests
 
   checks:
     name: Lint & ADR tests
