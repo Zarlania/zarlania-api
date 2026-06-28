@@ -67,6 +67,9 @@ jobs:
   checks:
     name: Lint & ADR tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # for the Python coverage PR comment
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -87,6 +90,17 @@ jobs:
         run: SKIP=java-quality pre-commit run --all-files --show-diff-on-failure
       - name: ADR tooling tests
         run: pytest --cov-report=xml
+      - name: Python coverage report comment
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('coverage.xml') != '' }}
+        uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
+        with:
+          path: coverage.xml
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          minimum_coverage: 80
+          fail_below_threshold: false
+          only_changed_files: true
+          show_branch: true
+          report_name: Python Coverage
 
   secrets:
     name: Secret scan
