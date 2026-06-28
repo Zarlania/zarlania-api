@@ -70,6 +70,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write # for the Python coverage PR comment
+      checks: write # the cobertura action publishes a check run alongside the comment
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -98,7 +99,10 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           minimum_coverage: 80
           fail_below_threshold: false
-          only_changed_files: true
+          # Report all measured modules, not only changed files: the action paginates
+          # changed files at 30/page (omitting Python files on later pages of large PRs),
+          # and the module set here is small — a full table is both correct and readable.
+          only_changed_files: false
           show_branch: true
           report_name: Python Coverage
 
