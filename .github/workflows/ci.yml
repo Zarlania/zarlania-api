@@ -37,7 +37,7 @@ jobs:
         # *TransactionalTest suite runs in the separate transactional-tests job below.
         run: ./mvnw -B clean verify
       - name: JaCoCo coverage report comment
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('**/jacoco.xml') != '' }}
         uses: madrapps/jacoco-report@e51ce1f46f7f8b5331593f935e59cbaf44b84920 # v1.8.0
         with:
           paths: ${{ github.workspace }}/target/site/jacoco/jacoco.xml
@@ -67,6 +67,10 @@ jobs:
   checks:
     name: Lint & ADR tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # for the Python coverage PR comment
+      checks: write # the cobertura action publishes a check run alongside the comment
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -86,7 +90,21 @@ jobs:
       - name: Run lint hooks (Java gates run in the build job)
         run: SKIP=java-quality pre-commit run --all-files --show-diff-on-failure
       - name: ADR tooling tests
-        run: pytest --cov-fail-under=80
+        run: pytest --cov-report=xml
+      - name: Python coverage report comment
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && hashFiles('coverage.xml') != '' }}
+        uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
+        with:
+          path: coverage.xml
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          minimum_coverage: 80
+          fail_below_threshold: false
+          # Report all measured modules, not only changed files: the action paginates
+          # changed files at 30/page (omitting Python files on later pages of large PRs),
+          # and the module set here is small — a full table is both correct and readable.
+          only_changed_files: false
+          show_branch: true
+          report_name: Python Coverage
 
   secrets:
     name: Secret scan
