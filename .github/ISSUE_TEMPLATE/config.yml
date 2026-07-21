@@ -1,0 +1,11 @@
+# Every change needs a tracking issue, so blank issues stay disabled — pick a
+# template or start a discussion.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Question or idea
+    url: https://github.com/Zarlania/zarlania-api/discussions
+    about: Ask a question or float an idea before it becomes a tracked issue.
+  - name: Report a security vulnerability
+    url: https://github.com/Zarlania/zarlania-api/security/advisories/new
+    about: Report privately. Please do not open a public issue for security problems.

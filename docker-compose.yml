@@ -1,0 +1,35 @@
+# Local development only. Render builds its own image from the Dockerfile and
+# does not read this file.
+#
+#   docker compose up --build      start the API on http://localhost:8080
+#   docker compose down            stop and remove containers
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: ${APP_VERSION:-0.0.0-dev}
+    image: zarlania-api:local
+    container_name: zarlania-api
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      PORT: 8080
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+# Placeholder: no datastore is defined yet because the hello-world service does
+# not persist anything. When one is added, declare it as a service here, add its
+# volume below, and give `api` a `depends_on` with `condition: service_healthy`.
+#
+# volumes:
+#   postgres-data:

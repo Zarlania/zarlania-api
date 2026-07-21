@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: zarlania-api
+
+server:
+  # Render injects PORT; 8080 is the local default.
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Only the health endpoint is public. Add endpoints deliberately —
+        # everything exposed here is reachable without authentication today.
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+# Placeholder: CORS is not configured yet because zarlania-app does not call this
+# API. When the browser client is wired up, add the allowed origins here and read
+# them in a WebMvcConfigurer.
+zarlania:
+  cors:
+    allowed-origins: ${ZARLANIA_CORS_ALLOWED_ORIGINS:http://localhost:5173}

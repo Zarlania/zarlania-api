@@ -1,0 +1,92 @@
+version: 2
+
+updates:
+  # ----- Java / Maven -----
+  - package-ecosystem: maven
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 10
+    labels:
+      - dependencies
+      - java
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      # Spring releases its modules in lockstep, so a split across PRs would
+      # produce combinations that were never tested together.
+      spring:
+        patterns:
+          - "org.springframework*:*"
+          - "io.micrometer:*"
+        update-types:
+          - minor
+          - patch
+      testing:
+        patterns:
+          - "org.junit*:*"
+          - "org.mockito:*"
+          - "org.assertj:*"
+          - "org.testcontainers:*"
+          - "com.tngtech.archunit:*"
+        update-types:
+          - minor
+          - patch
+      build-plugins:
+        patterns:
+          - "*maven-plugin*"
+          - "com.diffplug.spotless:*"
+          - "com.google.googlejavaformat:*"
+        update-types:
+          - minor
+          - patch
+      # Everything else that is not a major bump, so routine upkeep is one PR.
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ----- GitHub Actions -----
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  # ----- Docker base images -----
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

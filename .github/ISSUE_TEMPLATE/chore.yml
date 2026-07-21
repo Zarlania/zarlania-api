@@ -1,0 +1,59 @@
+name: Chore
+description: Maintenance, refactoring, tooling, CI or dependency work
+title: "chore: "
+labels: [chore, needs triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for work with no user-facing behaviour change. Every change needs
+        a tracking issue — including maintenance — because branches and pull
+        requests are validated against an issue number.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of work
+      options:
+        - Refactor
+        - Build or tooling
+        - CI / workflows
+        - Dependency upgrade
+        - Test coverage
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What needs doing?
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why now?
+      description: What does this unblock, simplify, or reduce risk of?
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: What is explicitly out of scope, so this does not sprawl.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: This change does not alter user-facing behaviour (otherwise file a bug or feature request).
+          required: true

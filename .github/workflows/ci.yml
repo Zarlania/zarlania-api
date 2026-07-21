@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch; the newest commit is the only one
+# whose result matters.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required to post the coverage comment on pull requests.
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # `verify` runs the tests plus the Spotless and JaCoCo checks bound to that
+      # phase, so formatting violations and coverage below 80% fail the build here.
+      - name: Build, test, check formatting and coverage
+        run: ./mvnw -B -ntp verify
+
+      - name: Comment coverage on pull request
+        if: github.event_name == 'pull_request'
+        # Pull requests from forks get a read-only token, so the comment cannot be
+        # posted there. The coverage gate itself already ran in the step above —
+        # this is reporting only, and must not fail the build.
+        continue-on-error: true
+        uses: madrapps/jacoco-report@v1.8.0
+        with:
+          paths: ${{ github.workspace }}/target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          title: Coverage report
+          update-comment: true
+          min-coverage-overall: 80
+          min-coverage-changed-files: 80
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Build only — this proves the Dockerfile is valid without publishing
+      # anything. Render builds its own image on deploy.
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: false
+          tags: zarlania-api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

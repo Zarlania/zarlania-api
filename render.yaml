@@ -1,0 +1,37 @@
+# Render Blueprint — infrastructure as code for this repository.
+# https://render.com/docs/blueprint-spec
+#
+# Deploys are gated on releases, not on pushes: `autoDeploy: false` means Render
+# only ships when .github/workflows/release.yml calls the service's deploy hook
+# after publishing a new version tag.
+#
+# First-time setup:
+#   1. In Render, create a Blueprint instance pointing at this repository.
+#   2. Open the created service -> Settings -> Deploy Hook, copy the URL.
+#   3. Add it to this repository as the RENDER_DEPLOY_HOOK_URL secret.
+
+services:
+  - type: web
+    name: zarlania-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    branch: master
+    autoDeploy: false
+    healthCheckPath: /actuator/health
+    envVars:
+      # Render assigns PORT; the application reads it in application.yml.
+      - key: SPRING_PROFILES_ACTIVE
+        value: production
+      - key: JAVA_OPTS
+        # The free instance has 512 MB. Leave headroom for the JVM's
+        # non-heap memory or the container gets OOM-killed.
+        value: -XX:MaxRAMPercentage=70
+      # Placeholder: set this once zarlania-app is deployed and calling the API.
+      - key: ZARLANIA_CORS_ALLOWED_ORIGINS
+        sync: false
+
+# Note on the free plan: instances sleep after 15 minutes without traffic and
+# take roughly 50 seconds to wake. There are no persistent disks, so anything
+# written to the filesystem is lost on restart.

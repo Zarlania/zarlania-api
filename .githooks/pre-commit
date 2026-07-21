@@ -1,0 +1,24 @@
+#!/bin/sh
+# Pre-commit checks for zarlania-api.
+#
+# Enable it once per clone with:
+#
+#   git config core.hooksPath .githooks
+
+set -e
+
+# Reformat staged Java sources, then re-stage whatever Spotless changed. This
+# keeps formatting out of code review entirely.
+if git diff --cached --name-only --diff-filter=ACM | grep -q '\.java$'; then
+  echo "pre-commit: applying Spotless..."
+  ./mvnw -q -B -ntp spotless:apply
+  git diff --cached --name-only --diff-filter=ACM | grep '\.java$' | xargs -r git add
+fi
+
+# Scan staged changes for secrets, mirroring the CI gitleaks check. Skipped
+# silently when Docker is unavailable so the hook never blocks on tooling.
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  echo "pre-commit: scanning for secrets..."
+  docker run --rm -v "$(pwd):/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+    protect --staged --source=/repo --config=/repo/.gitleaks.toml --redact --verbose
+fi
