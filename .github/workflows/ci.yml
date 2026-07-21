@@ -78,10 +78,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Required for the GitHub Actions cache backend below: the default docker
+      # driver cannot export a build cache, only the docker-container driver
+      # this sets up can.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
       # Build only — this proves the Dockerfile is valid without publishing
       # anything. Render builds its own image on deploy.
       - name: Build image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: false
