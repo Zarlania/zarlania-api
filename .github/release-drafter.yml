@@ -22,12 +22,12 @@ categories:
   - title: "Breaking changes"
     semver-increment: major
     when:
-      labels: [major, breaking]
+      labels: [breaking]
 
   - title: "Features"
     semver-increment: minor
     when:
-      labels: [feature, enhancement, minor]
+      labels: [feature, enhancement]
 
   - title: "Bug fixes"
     semver-increment: patch
@@ -50,10 +50,21 @@ categories:
     when:
       labels: [dependencies]
 
-  # `patch` is the one release label with no changelog section of its own — it
-  # states the bump without saying what kind of change it is. Carried here so it
-  # still resolves a version; the pull request itself is grouped by whichever
-  # other label it carries.
+  # `major`, `minor` and `patch` set the version and nothing else. They say how
+  # big a change is, never what kind, so they must not group it — pr-lint.yml
+  # requires one on every pull request, so listing them above would file almost
+  # every change under two headings at once. Grouping comes from the descriptive
+  # labels; these only carry the bump.
+  - type: version-resolver
+    semver-increment: major
+    when:
+      label: major
+
+  - type: version-resolver
+    semver-increment: minor
+    when:
+      label: minor
+
   - type: version-resolver
     semver-increment: patch
     when:
