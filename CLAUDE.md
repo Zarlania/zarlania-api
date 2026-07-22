@@ -26,6 +26,8 @@ written in Java. The browser client lives in a separate repository,
 | Build      | Maven, via the committed `./mvnw` wrapper  |
 | Formatting | Spotless with Google Java Style            |
 | Static analysis | Checkstyle (design rules), SpotBugs with FindSecBugs |
+| Boilerplate | Lombok, restricted by `lombok.config`     |
+| Linting    | yamllint and markdownlint, in CI           |
 | Testing    | JUnit 5 and Spring Boot test slices        |
 | Container  | Docker, with Compose for local development |
 | Hosting    | Render, configured in `render.yaml`        |
@@ -46,7 +48,7 @@ Always use `./mvnw`, never a system `mvn` — the wrapper pins the Maven version
 
 ## Layout
 
-```
+```text
 src/main/java/com/zarlania/api/
   ZarlaniaApiApplication.java   Entry point
   hello/                        Feature package: controller + response record
@@ -86,7 +88,7 @@ without reading the rest of the codebase.
 ### DRY — do not repeat yourself
 
 - Extract duplicated logic into a well-named method or class. Duplicated
-  *knowledge* is the problem, not duplicated characters — two methods that look
+  _knowledge_ is the problem, not duplicated characters — two methods that look
   alike but change for different reasons should stay separate.
 - **Wait for the third occurrence.** Abstracting two similar blocks prematurely
   creates a wrong abstraction, which is harder to unwind than the duplication
@@ -126,6 +128,13 @@ without reading the rest of the codebase.
   collections maps `/collections`, not `/api/collections`. The one exception is
   `/actuator/**`, which Spring owns.
 - Use records for immutable data carriers such as request and response bodies.
+- **Lombok is available, but narrowed.** `@Data`, `@Value`, `@Getter` and
+  `@Setter` are compile errors, because a record already does that job and two
+  competing ways to declare a data carrier is worse than one. So are
+  `@SneakyThrows`, `@val`, `@var` and `@Cleanup`, which hide control flow or
+  types. Use `@RequiredArgsConstructor` for constructor injection, `@Slf4j` for
+  a logger, and `@Builder` once a constructor takes too many arguments. The full
+  list and reasoning is in `lombok.config`.
 - Configuration is read from `application.yml` with environment-variable
   overrides. Never hardcode a value that differs between environments.
 - Name tests after the behaviour they assert (`helloReturnsGreeting`), not the
@@ -146,11 +155,21 @@ contradictory failures.
 | SpotBugs + FindSecBugs | Bytecode defects and security patterns | `config/spotbugs/` |
 | JaCoCo | Line and branch coverage at 80% | `pom.xml` |
 | CodeQL | Deeper security analysis, in CI only | `.github/workflows/` |
+| yamllint | YAML defects, in CI only | `.yamllint.yml` |
+| markdownlint | Markdown structure, in CI only | `.markdownlint-cli2.jsonc` |
+
+The YAML and Markdown linters run in the `Lint` workflow rather than in `verify`,
+since neither needs a Java toolchain. Both are pinned to an exact version,
+because a new upstream release can enable a rule by default and fail an unrelated
+pull request. Dependabot does not track them — bump them by hand.
+
+Run them locally with `npx markdownlint-cli2` and `yamllint --strict -c
+.yamllint.yml .`; `markdownlint-cli2 --fix` repairs most Markdown findings.
 
 Checkstyle enforces the numbers behind the principles above: methods stay under
 40 lines and files under 400, complexity under 10, nesting under 2, no magic
 numbers, no field injection. Those ceilings sit deliberately above the guidance
-in *Engineering principles* — the guidance is the review signal, the gate catches
+in _Engineering principles_ — the guidance is the review signal, the gate catches
 what has clearly got away from us. **Do not add formatting rules to Checkstyle;
 Spotless owns formatting.**
 
@@ -174,7 +193,7 @@ followed.
    chore — and fill in every required field. Blank issues are disabled, so an
    issue written free-form is missing sections the templates require. Use
    `gh issue create --template <bug_report|feature_request|chore>.yml`, and keep
-   the template's title prefix (`bug: `, `feat: `, `chore: `).
+   the template's title prefix (`bug:`, `feat:`, `chore:`).
 2. **Branch name:** `<issue-number>-<slug>`, e.g. `42-add-hello-endpoint`.
 3. **Pull request title:** `#<issue-number> <type>: <description>`, e.g.
    `#42 feat: add hello endpoint`. Types: `feat`, `fix`, `chore`, `docs`,

@@ -1,0 +1,41 @@
+# yamllint configuration for zarlania-api.
+#
+# Formatting is not the point — the goal is catching YAML that parses but does
+# not mean what it looks like. Cosmetic rules are switched off so that every
+# remaining rule is worth failing the build for, and CI runs with --strict so
+# that warnings are errors. A linter that only ever warns gets ignored.
+
+extends: default
+
+ignore: |
+  target/
+  .git/
+  .serena/
+
+rules:
+  # The single most valuable rule here. A duplicate key silently overwrites the
+  # earlier one, so a workflow can lose an entire step with no error anywhere.
+  key-duplicates: enable
+
+  # `on:` in a workflow is GitHub's trigger block, not the boolean true.
+  # Quoting it to satisfy a linter would stop the workflow from triggering.
+  truthy:
+    allowed-values: ["true", "false", "on", "off"]
+    check-keys: false
+
+  # Off, not raised: the long lines in this repo are a shell error message and a
+  # Code of Conduct URL, and both get worse if wrapped. Line length is a style
+  # preference, and this file is reserved for defects.
+  line-length: disable
+
+  # Dependabot writes SHA pin comments as `@<sha> # v1.2.3` with a single space.
+  # Requiring two would fail every dependency update PR the moment it opens.
+  comments:
+    min-spaces-from-content: 1
+
+  # Comments need not align with their block; several configs here deliberately
+  # align them with the value being described instead.
+  comments-indentation: disable
+
+  # Workflows and Compose files conventionally omit the `---` document marker.
+  document-start: disable

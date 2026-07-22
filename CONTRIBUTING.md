@@ -33,10 +33,12 @@ issue number.
    — bug report, feature request, or chore. For open-ended ideas, start a
    [discussion](https://github.com/Zarlania/zarlania-api/discussions) instead.
 2. **Branch off `master`**, naming the branch after the issue.
+
    ```bash
    git switch master && git pull
    git switch -c 42-add-hello-endpoint
    ```
+
 3. **Make the change**, with tests.
 4. **Verify locally** — see below.
 5. **Open a pull request** against `master` using the required title format.
@@ -66,6 +68,14 @@ cd zarlania-api
 ```
 
 `./mvnw verify` is what CI runs. If it passes locally it should pass in CI.
+
+YAML and Markdown are linted in a separate `Lint` workflow, since neither needs
+Java. If you have touched either, check them the same way CI does:
+
+```bash
+npx markdownlint-cli2 --fix                 # repairs most findings in place
+yamllint --strict -c .yamllint.yml .
+```
 
 To install the pre-commit hook (formats staged Java files and scans for secrets):
 
