@@ -1,0 +1,40 @@
+// markdownlint configuration for zarlania-api.
+//
+// Aimed at structural problems a reader would trip over — broken heading
+// hierarchy, malformed lists, unlabelled code fences — rather than cosmetics.
+{
+  "config": {
+    "default": true,
+
+    // Prose is hard-wrapped at roughly 80 columns in this repo, but tables and
+    // long links cannot be wrapped without breaking them. Line length is a
+    // style preference rather than a defect, so it is off.
+    "MD013": false,
+
+    // Duplicate headings are fine when nested under different parents, which
+    // happens in CONTRIBUTING.md and the templates.
+    "MD024": { "siblings_only": true },
+
+    // Table pipe alignment. Off for the same reason as MD013: it is cosmetic,
+    // it has no autofixer, and it would force a full realignment of every table
+    // whenever one cell changes width. Rendered output is identical either way.
+    "MD060": false,
+
+    // The repo's Markdown intentionally contains inline HTML: <details> blocks,
+    // badges and anchors that Markdown cannot express.
+    "MD033": false,
+
+    // A bare URL in angle brackets (<http://localhost:8080>) is valid Markdown
+    // and renders as a link, which the README relies on.
+    "MD034": false,
+
+    // Requires a language on every fenced block, so code samples highlight.
+    "MD040": true,
+
+    // The first line need not be a top-level heading: issue templates start
+    // with YAML front matter.
+    "MD041": false
+  },
+  "globs": ["**/*.md"],
+  "ignores": ["target/**", ".git/**", "node_modules/**"]
+}

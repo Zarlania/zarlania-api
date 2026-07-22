@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Two pushes to master must not race to cut the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Tag and publish release
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to create the tag and the GitHub Release.
+      contents: write
+      pull-requests: read
+    outputs:
+      tag: ${{ steps.drafter.outputs.tag_name }}
+      version: ${{ steps.drafter.outputs.resolved_version }}
+    steps:
+      # Publishes immediately rather than leaving a draft: every merge to master
+      # cuts a version. The bump level comes from the merged PR's label
+      # (major/minor/patch), defaulting to patch. Set `publish: false` to
+      # restore a manual review step before releasing.
+      - name: Draft and publish release
+        id: drafter
+        uses: release-drafter/release-drafter@eada3c96a64734dd381cfbda23511034e328ddb0 # v7.6.0
+        with:
+          config-name: release-drafter.yml
+          publish: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: release
+    # A tag created with GITHUB_TOKEN does not trigger other workflows, so the
+    # deploy cannot live in a separate `on: push: tags` workflow — it would
+    # never fire. Chaining it here is what makes the release gate real.
+    if: needs.release.outputs.tag != ''
+    steps:
+      - name: Trigger Render deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          TAG: ${{ needs.release.outputs.tag }}
+          # The commit this workflow run is building. release-drafter tagged this
+          # exact commit in the job above, so it and TAG name the same thing.
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ -z "$RENDER_DEPLOY_HOOK_URL" ]]; then
+            echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set — skipping deploy of $TAG."
+            echo "Create the service from render.yaml, then add its deploy hook URL as a repository secret."
+            exit 0
+          fi
+          # Without `ref`, the hook builds whatever is at the service's linked
+          # branch right now — so a second merge landing between the release and
+          # this call would ship unreleased code under the tag we just cut.
+          #
+          # Pinned by commit SHA rather than by tag: Render documents `ref` as
+          # taking a commit, and says nothing about tags. An unresolvable ref
+          # would most likely fall back to branch head, reintroducing exactly the
+          # race this guards against — and doing it silently.
+          #
+          # Render's hook URL already carries `?key=`, hence the `&`.
+          case "$RENDER_DEPLOY_HOOK_URL" in
+            *\?*) separator='&' ;;
+            *) separator='?' ;;
+          esac
+          echo "Deploying $TAG ($SHA) to Render..."
+          curl --fail --silent --show-error --location \
+            --request POST "${RENDER_DEPLOY_HOOK_URL}${separator}ref=${SHA}"
+          echo "Deploy triggered for $TAG ($SHA)."

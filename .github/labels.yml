@@ -1,0 +1,79 @@
+# Source of truth for this repository's labels, applied by .github/workflows/labels.yml.
+# Labels created by hand in the GitHub UI are removed on the next sync.
+
+# ----- Release bump level (read by release-drafter) -----
+- name: major
+  color: "b60205"
+  description: Breaking change — bumps the major version
+- name: minor
+  color: "0e8a16"
+  description: Backwards-compatible feature — bumps the minor version
+- name: patch
+  color: "c2e0c6"
+  description: Fix or maintenance — bumps the patch version
+
+# ----- Change type -----
+- name: bug
+  color: "d73a4a"
+  description: Something is not working
+- name: feature
+  color: "a2eeef"
+  description: New functionality
+- name: enhancement
+  color: "a2eeef"
+  description: Improvement to existing functionality
+- name: chore
+  color: "fef2c0"
+  description: Maintenance work with no user-facing change
+- name: documentation
+  color: "0075ca"
+  description: Documentation only
+- name: refactor
+  color: "d4c5f9"
+  description: Code restructuring with no behaviour change
+- name: test
+  color: "bfd4f2"
+  description: Test coverage only
+
+# ----- Area -----
+- name: dependencies
+  color: "0366d6"
+  description: Dependency updates
+- name: ci
+  color: "1d76db"
+  description: Continuous integration and workflows
+- name: build
+  color: "1d76db"
+  description: Build system and tooling
+- name: docker
+  color: "1d76db"
+  description: Container images and Compose
+- name: java
+  color: "b07219"
+  description: Java and Spring Boot code
+- name: security
+  color: "ee0701"
+  description: Security-relevant change or report
+
+# ----- Triage and process -----
+- name: good first issue
+  color: "7057ff"
+  description: A well-scoped starting point for new contributors
+- name: help wanted
+  color: "008672"
+  description: Maintainer is looking for assistance
+- name: needs triage
+  color: "ededed"
+  description: Awaiting initial review by a maintainer
+- name: blocked
+  color: "5319e7"
+  description: Cannot proceed until something else lands
+- name: duplicate
+  color: "cfd3d7"
+  description: Already tracked elsewhere
+- name: wontfix
+  color: "ffffff"
+  description: Deliberately not being worked on
+- name: skip-changelog
+  color: "ededed"
+  description: Exclude this pull request from the release notes

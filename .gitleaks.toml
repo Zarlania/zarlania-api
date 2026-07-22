@@ -1,0 +1,32 @@
+# Gitleaks configuration. Run locally with:
+#   docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+#     detect --source=/repo --config=/repo/.gitleaks.toml --redact --verbose
+#
+# CI runs the same scan on every push and pull request (.github/workflows/gitleaks.yml).
+
+title = "zarlania-api gitleaks config"
+
+# Start from the maintained default rule set, then narrow it below.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Paths and values that are safe by construction"
+
+paths = [
+  # Example environment files exist to be committed and hold no real values.
+  '''\.env\.example$''',
+  # Lockfiles contain integrity hashes that look like high-entropy secrets.
+  '''(^|/)package-lock\.json$''',
+  # This file necessarily contains patterns that resemble secrets.
+  '''(^|/)\.gitleaks\.toml$''',
+]
+
+regexes = [
+  # Common placeholder values used in documentation and examples.
+  '''(?i)(changeme|placeholder|example|dummy|your[-_]?(secret|token|key)|xxx+)''',
+]
+
+# Add project-specific exceptions here as they come up. Prefer a narrow path or
+# regex over disabling a rule outright, and never allowlist a real credential —
+# rotate it instead.

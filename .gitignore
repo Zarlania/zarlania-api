@@ -1,0 +1,53 @@
+# --- Maven ---
+# The wrapper uses distributionType=only-script, so there is no
+# maven-wrapper.jar to either commit or ignore.
+target/
+!**/src/main/**/target/
+!**/src/test/**/target/
+.mvn/timing.properties
+
+# --- IntelliJ IDEA ---
+.idea/
+.idea_modules/
+*.iml
+*.ipr
+*.iws
+out/
+
+# --- Eclipse ---
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+# --- NetBeans ---
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+
+# --- VS Code ---
+.vscode/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Local agent + tooling state ---
+.serena/
+.claude/settings.local.json
+
+# --- Logs ---
+*.log

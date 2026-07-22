@@ -1,0 +1,41 @@
+name: Lint
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: lint-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: YAML and Markdown
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Both linters are pinned to an exact version rather than tracking latest.
+      # A new upstream release can enable a rule by default and turn an
+      # unrelated pull request red — markdownlint's MD060 did exactly that while
+      # this workflow was being written. Bump these deliberately.
+      #
+      # Dependabot cannot see these versions: neither is declared in a manifest
+      # it parses, so they need updating by hand.
+      - name: Lint YAML
+        # --strict promotes warnings to errors. The config switches off every
+        # cosmetic rule, so anything left is worth failing for.
+        run: |
+          pipx install yamllint==1.38.0
+          yamllint --strict -c .yamllint.yml .
+
+      - name: Lint Markdown
+        # Config, including which files are covered, lives in
+        # .markdownlint-cli2.jsonc.
+        run: npx --yes markdownlint-cli2@0.23.1

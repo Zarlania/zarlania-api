@@ -1,0 +1,45 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+
+# There is no CHANGELOG.md in this repository by design — the GitHub Release
+# notes generated here are the changelog.
+template: |
+  ## What's changed
+
+  $CHANGES
+
+  **Full changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
+
+categories:
+  - title: "Breaking changes"
+    labels: [major, breaking]
+  - title: "Features"
+    labels: [feature, enhancement, minor]
+  - title: "Bug fixes"
+    labels: [bug, fix]
+  - title: "Documentation"
+    labels: [documentation, docs]
+  - title: "Maintenance"
+    labels: [chore, refactor, ci, build, test]
+  - title: "Dependencies"
+    labels: [dependencies]
+    collapse-after: 5
+
+# The bump level comes from the merged PR's label. PR Lint fails a pull request
+# carrying none of these, so the `default` below is only a backstop for releases
+# cut outside that path (a direct push to master, or a manual run).
+version-resolver:
+  major:
+    labels: [major, breaking]
+  minor:
+    labels: [minor, feature, enhancement]
+  patch:
+    labels: [patch, bug, fix, chore, documentation, docs, dependencies, ci, build, test, refactor]
+  default: patch
+
+change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
+# Escape characters that would otherwise be interpreted as markdown in titles.
+change-title-escapes: '\<*_&`#@'
+
+exclude-labels:
+  - skip-changelog

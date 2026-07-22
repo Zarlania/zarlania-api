@@ -1,0 +1,110 @@
+name: PR Lint
+
+on:
+  pull_request:
+    # `labeled`/`unlabeled` matter because the release-label check below fails a
+    # PR that has no version label. Without them, applying the label would not
+    # re-run this workflow and the failure could never be cleared.
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+    branches: [master]
+
+concurrency:
+  group: pr-lint-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  traceability:
+    name: Branch, title and issue traceability
+    runs-on: ubuntu-latest
+    # Dependabot opens PRs from `dependabot/<ecosystem>/<dep>` branches with its
+    # own title convention and no backing issue. Those cannot satisfy the rules
+    # below, so they are exempt rather than permanently red.
+    if: github.actor != 'dependabot[bot]'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ github.head_ref }}
+      TITLE: ${{ github.event.pull_request.title }}
+      BODY: ${{ github.event.pull_request.body }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Validate branch name
+        run: |
+          echo "Branch: $BRANCH"
+          if ! [[ "$BRANCH" =~ ^([0-9]+)-[a-z0-9]+([._-][a-z0-9]+)*$ ]]; then
+            echo "::error::Branch '$BRANCH' does not match '<issue-number>-<slug>' (e.g. 42-add-hello-endpoint)."
+            echo "Every change must be tracked by an issue, and the branch must start with that issue number."
+            exit 1
+          fi
+          echo "BRANCH_ISSUE=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+
+      - name: Validate PR title
+        run: |
+          echo "Title: $TITLE"
+          types='feat|fix|chore|docs|refactor|perf|test|build|ci|style|revert'
+          if ! [[ "$TITLE" =~ ^#([0-9]+)\ ($types)(\([a-z0-9._-]+\))?!?:\ .+ ]]; then
+            echo "::error::PR title '$TITLE' does not match '#<issue-number> <type>: <description>'."
+            echo "Example: '#42 feat: add hello endpoint'. Allowed types: $types"
+            exit 1
+          fi
+          echo "TITLE_ISSUE=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+
+      - name: Validate closing keyword in PR body
+        run: |
+          shopt -s nocasematch
+          if ! [[ "$BODY" =~ (close[sd]?|fix(e[sd])?|resolve[sd]?)[[:space:]]+\#([0-9]+) ]]; then
+            echo "::error::PR body must link its issue with a closing keyword, e.g. 'Closes #42'."
+            echo "This is what auto-closes the issue when the PR merges."
+            exit 1
+          fi
+          echo "BODY_ISSUE=${BASH_REMATCH[3]}" >> "$GITHUB_ENV"
+
+      - name: Ensure branch, title and body reference the same issue
+        run: |
+          echo "branch=#$BRANCH_ISSUE title=#$TITLE_ISSUE body=#$BODY_ISSUE"
+          if [[ "$BRANCH_ISSUE" != "$TITLE_ISSUE" || "$BRANCH_ISSUE" != "$BODY_ISSUE" ]]; then
+            echo "::error::Issue number mismatch — branch #$BRANCH_ISSUE, title #$TITLE_ISSUE, body #$BODY_ISSUE must all agree."
+            exit 1
+          fi
+
+      - name: Ensure the referenced issue exists and is open
+        run: |
+          if ! payload=$(gh api "repos/$REPO/issues/$BRANCH_ISSUE" 2>/dev/null); then
+            echo "::error::Issue #$BRANCH_ISSUE does not exist in $REPO."
+            exit 1
+          fi
+          # The issues endpoint also serves pull requests; a PR is not an issue.
+          if [[ "$(jq -r '.pull_request // empty' <<<"$payload")" != "" ]]; then
+            echo "::error::#$BRANCH_ISSUE is a pull request, not an issue."
+            exit 1
+          fi
+          state=$(jq -r '.state' <<<"$payload")
+          if [[ "$state" != "open" ]]; then
+            echo "::error::Issue #$BRANCH_ISSUE is '$state'. Work must track an open issue."
+            exit 1
+          fi
+          echo "Issue #$BRANCH_ISSUE: $(jq -r '.title' <<<"$payload")"
+
+  labels:
+    name: Release label present
+    runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
+    steps:
+      # release-drafter derives the next version from PR labels. Without one it
+      # silently falls back to a patch bump, which is easy to not notice — so
+      # this fails rather than warns, making the bump level a deliberate choice.
+      - name: Check for a version label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          echo "Labels: $LABELS"
+          if jq -e 'any(.[]; . == "major" or . == "minor" or . == "patch")' <<<"$LABELS" >/dev/null; then
+            exit 0
+          fi
+          echo "::error::This PR needs a 'major', 'minor' or 'patch' label — it sets the released version."
+          exit 1
