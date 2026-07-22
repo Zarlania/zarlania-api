@@ -16,7 +16,7 @@ body:
     attributes:
       label: Summary
       description: What is going wrong?
-      placeholder: Requests to /api/hello return 500 instead of the greeting.
+      placeholder: Requests to /hello return 500 instead of the greeting.
     validations:
       required: true
 

@@ -117,6 +117,11 @@ without reading the rest of the codebase.
 - Constructor injection only — never field injection. It keeps dependencies
   explicit and the class testable without Spring.
 - Keep controllers thin; business logic belongs in services.
+- **Map routes from the root — no `/api` prefix.** This service is backend-only
+  and is deployed at `api.zarlania.com`, so the host already identifies it as the
+  API; prefixing every route would repeat that in the path. A controller for
+  collections maps `/collections`, not `/api/collections`. The one exception is
+  `/actuator/**`, which Spring owns.
 - Use records for immutable data carriers such as request and response bodies.
 - Configuration is read from `application.yml` with environment-variable
   overrides. Never hardcode a value that differs between environments.

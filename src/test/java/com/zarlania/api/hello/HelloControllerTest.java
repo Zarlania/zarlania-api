@@ -17,7 +17,7 @@ class HelloControllerTest {
   @Test
   void helloReturnsGreeting() throws Exception {
     mockMvc
-        .perform(get("/api/hello"))
+        .perform(get("/hello"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.message").value("Hello from Zarlania!"));
   }

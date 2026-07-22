@@ -30,7 +30,7 @@ cd zarlania-api
 The API listens on <http://localhost:8080>.
 
 ```bash
-curl http://localhost:8080/api/hello
+curl http://localhost:8080/hello
 # {"message":"Hello from Zarlania!"}
 ```
 
@@ -42,9 +42,13 @@ docker compose up --build
 
 ## Endpoints
 
+Routes are served from the root. This service is backend-only and is deployed at
+`api.zarlania.com`, so the host already says it is the API — an `/api` prefix on
+top of that would only repeat it.
+
 | Method | Path                | Description                     |
 | ------ | ------------------- | ------------------------------- |
-| `GET`  | `/api/hello`        | Returns a greeting as JSON.     |
+| `GET`  | `/hello`            | Returns a greeting as JSON.     |
 | `GET`  | `/actuator/health`  | Health probe used by Render.    |
 
 ## Common tasks
