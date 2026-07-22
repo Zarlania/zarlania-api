@@ -161,4 +161,5 @@ the only source of truth for versions.** Do not bump the POM version; merging to
   limited to `health`. Anything added there is publicly reachable without
   authentication.
 - Do not add a `CHANGELOG.md`. Release notes replace it.
-- Do not commit secrets — Gitleaks scans every push and the full history weekly.
+- Do not commit secrets — Gitleaks scans full history on every push and pull
+  request.

@@ -51,8 +51,8 @@ that require physical access or a compromised developer machine.
 
 ## Our practices
 
-- [Gitleaks](https://github.com/gitleaks/gitleaks) scans every push and pull
-  request, plus a weekly full-history sweep.
+- [Gitleaks](https://github.com/gitleaks/gitleaks) scans full history on every
+  push and pull request.
 - [CodeQL](https://codeql.github.com/) static analysis runs on every push, pull
   request, and weekly.
 - [Dependabot](https://docs.github.com/code-security/dependabot) opens weekly
