@@ -131,7 +131,12 @@ These are not suggestions; the `PR Lint` workflow fails the build if they are no
 followed.
 
 1. **Every change requires a tracking issue.** If there is no issue, one must be
-   created before opening a pull request.
+   created before opening a pull request. **File it through one of the issue
+   templates** in `.github/ISSUE_TEMPLATE/` — bug report, feature request, or
+   chore — and fill in every required field. Blank issues are disabled, so an
+   issue written free-form is missing sections the templates require. Use
+   `gh issue create --template <bug_report|feature_request|chore>.yml`, and keep
+   the template's title prefix (`bug: `, `feat: `, `chore: `).
 2. **Branch name:** `<issue-number>-<slug>`, e.g. `42-add-hello-endpoint`.
 3. **Pull request title:** `#<issue-number> <type>: <description>`, e.g.
    `#42 feat: add hello endpoint`. Types: `feat`, `fix`, `chore`, `docs`,

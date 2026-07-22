@@ -9,16 +9,42 @@ set -e
 
 # Reformat staged Java sources, then re-stage whatever Spotless changed. This
 # keeps formatting out of code review entirely.
-if git diff --cached --name-only --diff-filter=ACM | grep -q '\.java$'; then
+staged_java=$(git diff --cached --name-only --diff-filter=ACM | grep '\.java$' || true)
+
+if [ -n "$staged_java" ]; then
+  # Which of those files also have unstaged changes — i.e. are staged only in
+  # part. This has to be measured before Spotless runs, because reformatting
+  # creates unstaged changes of its own and would make every file look partial.
+  partially_staged=$(git diff --name-only -- $staged_java)
+
   echo "pre-commit: applying Spotless..."
   ./mvnw -q -B -ntp spotless:apply
-  git diff --cached --name-only --diff-filter=ACM | grep '\.java$' | xargs -r git add
+
+  # `git add <path>` stages a whole file, so re-adding a partially staged one
+  # would sweep its unstaged hunks into the commit. Those are left for the
+  # developer to stage deliberately, even though it means the commit may carry
+  # unformatted code that CI then rejects.
+  echo "$staged_java" | while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    if echo "$partially_staged" | grep -qxF "$file"; then
+      echo "pre-commit: $file is partially staged — formatted, but not re-staged."
+    else
+      git add -- "$file"
+    fi
+  done
 fi
 
 # Scan staged changes for secrets, mirroring the CI gitleaks check. Skipped
 # silently when Docker is unavailable so the hook never blocks on tooling.
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
   echo "pre-commit: scanning for secrets..."
-  docker run --rm -v "$(pwd):/repo" ghcr.io/gitleaks/gitleaks:v8.30.1 \
+  # The bind-mounted repo is owned by the host user, not by root inside the
+  # container, so Git rejects it as dubious-ownership unless /repo is marked
+  # safe. GIT_CONFIG_* does that without writing a config file into the image.
+  docker run --rm -v "$(pwd):/repo" \
+    -e GIT_CONFIG_COUNT=1 \
+    -e GIT_CONFIG_KEY_0=safe.directory \
+    -e GIT_CONFIG_VALUE_0=/repo \
+    ghcr.io/gitleaks/gitleaks:v8.30.1 \
     protect --staged --source=/repo --config=/repo/.gitleaks.toml --redact --verbose
 fi

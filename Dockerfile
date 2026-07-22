@@ -18,8 +18,9 @@ RUN ./mvnw -B -ntp -DskipTests -Dspotless.check.skip=true package \
 # ---------- Runtime stage ----------
 FROM eclipse-temurin:25-jre-alpine AS runtime
 
-# Injected by the release workflow from the git tag; git tags are the single
-# source of truth for the version.
+# Nothing supplies this today: Render builds from source and cannot receive
+# build arguments from a deploy hook, so production images are labelled
+# 0.0.0-dev. Pass --build-arg to stamp a real version on a locally built image.
 ARG APP_VERSION=0.0.0-dev
 ENV APP_VERSION=${APP_VERSION}
 

@@ -25,8 +25,9 @@ categories:
     labels: [dependencies]
     collapse-after: 5
 
-# The bump level comes from the merged PR's label. PR Lint warns when none of
-# these are present, in which case `default-version-resolver` applies.
+# The bump level comes from the merged PR's label. PR Lint fails a pull request
+# carrying none of these, so the `default` below is only a backstop for releases
+# cut outside that path (a direct push to master, or a manual run).
 version-resolver:
   major:
     labels: [major, breaking]

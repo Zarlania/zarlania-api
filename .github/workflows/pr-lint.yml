@@ -2,7 +2,10 @@ name: PR Lint
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
+    # `labeled`/`unlabeled` matter because the release-label check below fails a
+    # PR that has no version label. Without them, applying the label would not
+    # re-run this workflow and the failure could never be cleared.
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
     branches: [master]
 
 concurrency:
@@ -92,7 +95,8 @@ jobs:
     if: github.actor != 'dependabot[bot]'
     steps:
       # release-drafter derives the next version from PR labels. Without one it
-      # silently falls back to a patch bump, which is easy to not notice.
+      # silently falls back to a patch bump, which is easy to not notice — so
+      # this fails rather than warns, making the bump level a deliberate choice.
       - name: Check for a version label
         env:
           GH_TOKEN: ${{ github.token }}
@@ -102,4 +106,5 @@ jobs:
           if jq -e 'any(.[]; . == "major" or . == "minor" or . == "patch")' <<<"$LABELS" >/dev/null; then
             exit 0
           fi
-          echo "::warning::No 'major', 'minor' or 'patch' label on this PR — the release will default to a patch bump."
+          echo "::error::This PR needs a 'major', 'minor' or 'patch' label — it sets the released version."
+          exit 1

@@ -31,7 +31,7 @@ jobs:
       # restore a manual review step before releasing.
       - name: Draft and publish release
         id: drafter
-        uses: release-drafter/release-drafter@v7
+        uses: release-drafter/release-drafter@eada3c96a64734dd381cfbda23511034e328ddb0 # v7.6.0
         with:
           config-name: release-drafter.yml
           publish: true
@@ -57,7 +57,15 @@ jobs:
             echo "Create the service from render.yaml, then add its deploy hook URL as a repository secret."
             exit 0
           fi
+          # Without `ref`, the hook builds whatever is at the service's linked
+          # branch right now — so a second merge landing between the release and
+          # this call would ship unreleased code under the tag we just cut.
+          # Render's hook URL already carries `?key=`, hence the `&`.
+          case "$RENDER_DEPLOY_HOOK_URL" in
+            *\?*) separator='&' ;;
+            *) separator='?' ;;
+          esac
           echo "Deploying $TAG to Render..."
           curl --fail --silent --show-error --location \
-            --request POST "$RENDER_DEPLOY_HOOK_URL"
+            --request POST "${RENDER_DEPLOY_HOOK_URL}${separator}ref=${TAG}"
           echo "Deploy triggered for $TAG."

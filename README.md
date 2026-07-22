@@ -71,7 +71,7 @@ overridden with an environment variable.
 
 ## Project layout
 
-```
+```text
 src/main/java/com/zarlania/api/
   ZarlaniaApiApplication.java   Spring Boot entry point
   hello/HelloController.java    Hello-world endpoint
@@ -85,6 +85,13 @@ src/test/java/                  Tests, mirroring the main package structure
 Contributions are welcome. **Every change needs a tracking issue**, a branch named
 `<issue-number>-<slug>`, and a pull request titled `#<issue-number> <type>: <description>`.
 CI enforces this. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+
+Open issues through the
+[issue templates](https://github.com/Zarlania/zarlania-api/issues/new/choose) —
+bug report, feature request, or chore — rather than free-form. Blank issues are
+disabled, and the templates capture the detail needed to triage the work. For
+open-ended ideas, start a
+[discussion](https://github.com/Zarlania/zarlania-api/discussions) instead.
 
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security policy](SECURITY.md)
