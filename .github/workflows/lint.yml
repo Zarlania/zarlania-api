@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   lint:
-    name: YAML and Markdown
+    name: YAML, Markdown and labels
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -39,3 +39,40 @@ jobs:
         # Config, including which files are covered, lives in
         # .markdownlint-cli2.jsonc.
         run: npx --yes markdownlint-cli2@0.23.1
+
+      # A release-drafter category matching a label that does not exist fails
+      # silently: no error, the heading simply never renders. "Breaking changes"
+      # sat dead behind an undefined `breaking` label because nothing checked
+      # this. .github/labels.yml is the source of truth and deletes any label not
+      # listed in it, so a label the drafter matches on but labels.yml omits can
+      # never reach a pull request.
+      - name: Check release-drafter labels are defined
+        run: |
+          pip install --quiet pyyaml==6.0.3
+          python3 - <<'PY'
+          import sys, yaml
+
+          with open('.github/labels.yml') as f:
+              defined = {label['name'] for label in yaml.safe_load(f)}
+          with open('.github/release-drafter.yml') as f:
+              categories = yaml.safe_load(f).get('categories', [])
+
+          referenced = set()
+          for category in categories:
+              conditions = category.get('when', [])
+              if isinstance(conditions, dict):
+                  conditions = [conditions]
+              # `labels`/`label` directly on a category are the deprecated
+              # shorthand; release-drafter still honours them, so check both.
+              for source in [category, *conditions]:
+                  referenced.update(source.get('labels', []))
+                  if source.get('label'):
+                      referenced.add(source['label'])
+
+          missing = sorted(referenced - defined)
+          if missing:
+              print(f"::error file=.github/release-drafter.yml::Matched by release-drafter but "
+                    f"missing from .github/labels.yml: {', '.join(missing)}")
+              sys.exit(1)
+          print(f"All {len(referenced)} labels matched by release-drafter are defined.")
+          PY

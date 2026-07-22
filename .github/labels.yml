@@ -13,6 +13,9 @@
   description: Fix or maintenance — bumps the patch version
 
 # ----- Change type -----
+- name: breaking
+  color: "d93f0b"
+  description: Removes or alters existing behaviour
 - name: bug
   color: "d73a4a"
   description: Something is not working
