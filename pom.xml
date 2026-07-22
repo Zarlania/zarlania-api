@@ -38,7 +38,7 @@
   <properties>
     <java.version>25</java.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <spotless-maven-plugin.version>2.44.5</spotless-maven-plugin.version>
+    <spotless-maven-plugin.version>3.8.0</spotless-maven-plugin.version>
     <google-java-format.version>1.27.0</google-java-format.version>
     <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
