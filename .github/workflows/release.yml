@@ -51,6 +51,9 @@ jobs:
         env:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
           TAG: ${{ needs.release.outputs.tag }}
+          # The commit this workflow run is building. release-drafter tagged this
+          # exact commit in the job above, so it and TAG name the same thing.
+          SHA: ${{ github.sha }}
         run: |
           if [[ -z "$RENDER_DEPLOY_HOOK_URL" ]]; then
             echo "::warning::RENDER_DEPLOY_HOOK_URL secret is not set — skipping deploy of $TAG."
@@ -60,12 +63,18 @@ jobs:
           # Without `ref`, the hook builds whatever is at the service's linked
           # branch right now — so a second merge landing between the release and
           # this call would ship unreleased code under the tag we just cut.
+          #
+          # Pinned by commit SHA rather than by tag: Render documents `ref` as
+          # taking a commit, and says nothing about tags. An unresolvable ref
+          # would most likely fall back to branch head, reintroducing exactly the
+          # race this guards against — and doing it silently.
+          #
           # Render's hook URL already carries `?key=`, hence the `&`.
           case "$RENDER_DEPLOY_HOOK_URL" in
             *\?*) separator='&' ;;
             *) separator='?' ;;
           esac
-          echo "Deploying $TAG to Render..."
+          echo "Deploying $TAG ($SHA) to Render..."
           curl --fail --silent --show-error --location \
-            --request POST "${RENDER_DEPLOY_HOOK_URL}${separator}ref=${TAG}"
-          echo "Deploy triggered for $TAG."
+            --request POST "${RENDER_DEPLOY_HOOK_URL}${separator}ref=${SHA}"
+          echo "Deploy triggered for $TAG ($SHA)."
