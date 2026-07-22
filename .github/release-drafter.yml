@@ -10,36 +10,64 @@ template: |
 
   **Full changelog**: https://github.com/$OWNER/$REPOSITORY/compare/$PREVIOUS_TAG...v$RESOLVED_VERSION
 
+# Each category does two jobs: it groups the pull request in the release notes,
+# and its `semver-increment` decides the version bump. Keeping both on one entry
+# means a label's meaning is stated once — the previous config repeated every
+# label in a separate `version-resolver` block, where the two lists could drift
+# apart without anything noticing.
+#
+# A pull request matching several categories takes the largest increment, so
+# `minor` + `chore` resolves to a minor bump.
 categories:
   - title: "Breaking changes"
-    labels: [major, breaking]
-  - title: "Features"
-    labels: [feature, enhancement, minor]
-  - title: "Bug fixes"
-    labels: [bug, fix]
-  - title: "Documentation"
-    labels: [documentation, docs]
-  - title: "Maintenance"
-    labels: [chore, refactor, ci, build, test]
-  - title: "Dependencies"
-    labels: [dependencies]
-    collapse-after: 5
+    semver-increment: major
+    when:
+      labels: [major, breaking]
 
-# The bump level comes from the merged PR's label. PR Lint fails a pull request
-# carrying none of these, so the `default` below is only a backstop for releases
-# cut outside that path (a direct push to master, or a manual run).
-version-resolver:
-  major:
-    labels: [major, breaking]
-  minor:
-    labels: [minor, feature, enhancement]
-  patch:
-    labels: [patch, bug, fix, chore, documentation, docs, dependencies, ci, build, test, refactor]
-  default: patch
+  - title: "Features"
+    semver-increment: minor
+    when:
+      labels: [feature, enhancement, minor]
+
+  - title: "Bug fixes"
+    semver-increment: patch
+    when:
+      labels: [bug, fix]
+
+  - title: "Documentation"
+    semver-increment: patch
+    when:
+      labels: [documentation, docs]
+
+  - title: "Maintenance"
+    semver-increment: patch
+    when:
+      labels: [chore, refactor, ci, build, test]
+
+  - title: "Dependencies"
+    semver-increment: patch
+    collapse-after: 5
+    when:
+      labels: [dependencies]
+
+  # `patch` is the one release label with no changelog section of its own — it
+  # states the bump without saying what kind of change it is. Carried here so it
+  # still resolves a version; the pull request itself is grouped by whichever
+  # other label it carries.
+  - type: version-resolver
+    semver-increment: patch
+    when:
+      label: patch
+
+  # Replaces the former top-level `exclude-labels`.
+  - type: pre-exclude
+    when:
+      label: skip-changelog
 
 change-template: "- $TITLE (#$NUMBER) @$AUTHOR"
 # Escape characters that would otherwise be interpreted as markdown in titles.
 change-title-escapes: '\<*_&`#@'
 
-exclude-labels:
-  - skip-changelog
+# No `version-resolver` block: the bump now lives on each category above. When
+# nothing matches, release-drafter falls back to a patch bump, which is the same
+# behaviour the removed `default: patch` gave.
