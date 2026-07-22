@@ -40,10 +40,10 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <spotless-maven-plugin.version>3.8.0</spotless-maven-plugin.version>
     <google-java-format.version>1.27.0</google-java-format.version>
-    <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
+    <jacoco-maven-plugin.version>0.8.15</jacoco-maven-plugin.version>
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
     <checkstyle.version>13.8.0</checkstyle.version>
-    <spotbugs-maven-plugin.version>4.9.3.0</spotbugs-maven-plugin.version>
+    <spotbugs-maven-plugin.version>4.10.3.0</spotbugs-maven-plugin.version>
     <findsecbugs-plugin.version>1.14.0</findsecbugs-plugin.version>
     <!--
       SpotBugs 4.9.3 ships an ASM that cannot read Java 25 bytecode and fails
