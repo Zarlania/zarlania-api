@@ -53,6 +53,10 @@ that require physical access or a compromised developer machine.
 
 - [Gitleaks](https://github.com/gitleaks/gitleaks) scans full history on every
   push and pull request.
+- [SpotBugs](https://spotbugs.github.io/) with
+  [FindSecBugs](https://find-sec-bugs.github.io/) analyses compiled bytecode on
+  every build, so security defects fail `./mvnw verify` locally rather than
+  waiting for CI.
 - [CodeQL](https://codeql.github.com/) static analysis runs on every push, pull
   request, and weekly.
 - [Dependabot](https://docs.github.com/code-security/dependabot) opens weekly

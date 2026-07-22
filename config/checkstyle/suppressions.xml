@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<!--
+  Rules relaxed for test sources. Tests are held to the same standards as
+  production code by default; these are the specific cases where applying a rule
+  makes the test worse rather than better.
+-->
+<suppressions>
+  <!--
+    Literals are the point of a test. Asserting `hasSize(3)` states the expected
+    value at the assertion, which is clearer than indirecting through a constant
+    that the reader then has to go and look up.
+  -->
+  <suppress checks="MagicNumber" files="[\\/]src[\\/]test[\\/]"/>
+
+  <!--
+    @Autowired fields are the idiomatic way to obtain MockMvc and friends from a
+    Spring test slice. The constructor-injection rule exists to keep production
+    dependencies explicit and the class usable without a Spring context; a test
+    slice is a Spring context by definition, so neither concern applies.
+  -->
+  <suppress checks="RegexpSinglelineJava" files="[\\/]src[\\/]test[\\/]"/>
+
+  <!--
+    Test classes and their methods are package-private by JUnit 5 convention,
+    and fixtures are naturally mutable state.
+  -->
+  <suppress checks="VisibilityModifier" files="[\\/]src[\\/]test[\\/]"/>
+
+  <!--
+    The Spring Boot entry point holds only main(), so Checkstyle reads it as a
+    utility class and asks for a private constructor. Satisfying that would plant
+    a landmine: @SpringBootApplication implies @Configuration, and the moment
+    this class gains a @Bean method Spring must CGLIB-enhance it, which fails
+    with "No visible constructors" against a private one. Verified — the app
+    starts fine with a private constructor today and dies as soon as a @Bean
+    method is added.
+
+    The class is a bootstrap shim Spring owns, which is the same reason the
+    JaCoCo config excludes it from coverage.
+  -->
+  <suppress checks="HideUtilityClassConstructor"
+            files="[\\/]ZarlaniaApiApplication\.java$"/>
+</suppressions>

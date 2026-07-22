@@ -41,6 +41,17 @@
     <spotless-maven-plugin.version>2.44.5</spotless-maven-plugin.version>
     <google-java-format.version>1.27.0</google-java-format.version>
     <jacoco-maven-plugin.version>0.8.13</jacoco-maven-plugin.version>
+    <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
+    <checkstyle.version>10.26.1</checkstyle.version>
+    <spotbugs-maven-plugin.version>4.9.3.0</spotbugs-maven-plugin.version>
+    <findsecbugs-plugin.version>1.14.0</findsecbugs-plugin.version>
+    <!--
+      SpotBugs 4.9.3 ships an ASM that cannot read Java 25 bytecode and fails
+      with "Unsupported class file major version 69". Overriding ASM on the
+      plugin's classpath is the fix until SpotBugs bundles a newer one; drop
+      this once a SpotBugs release supports Java 25 directly.
+    -->
+    <asm.version>9.10.1</asm.version>
     <!-- Minimum line and branch coverage. The build fails below this. -->
     <jacoco.coverage.minimum>0.80</jacoco.coverage.minimum>
   </properties>
@@ -101,6 +112,112 @@
         </configuration>
         <executions>
           <execution>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Checkstyle enforces design and complexity rules a formatter cannot
+        decide - size, nesting, magic values, banned constructs. It deliberately
+        checks no formatting, because Spotless already owns that.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>${maven-checkstyle-plugin.version}</version>
+        <configuration>
+          <configLocation>config/checkstyle/checkstyle.xml</configLocation>
+          <suppressionsLocation>config/checkstyle/suppressions.xml</suppressionsLocation>
+          <!-- Referenced as ${checkstyle.suppressions.file} inside the config. -->
+          <suppressionsFileExpression>checkstyle.suppressions.file</suppressionsFileExpression>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          <consoleOutput>true</consoleOutput>
+          <failsOnError>true</failsOnError>
+          <violationSeverity>error</violationSeverity>
+        </configuration>
+        <dependencies>
+          <!-- Pin Checkstyle rather than inheriting the older version the plugin ships with. -->
+          <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>${checkstyle.version}</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <execution>
+            <id>checkstyle</id>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <!-- Bound to verify, not validate, so `./mvnw test` stays tests only. -->
+            <phase>verify</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        SpotBugs analyses compiled bytecode, so it finds defects source analysis
+        cannot see: null dereferences, ignored return values, resource leaks.
+        FindSecBugs adds security detectors to the same pass.
+      -->
+      <plugin>
+        <groupId>com.github.spotbugs</groupId>
+        <artifactId>spotbugs-maven-plugin</artifactId>
+        <version>${spotbugs-maven-plugin.version}</version>
+        <configuration>
+          <!--
+            Max effort at the lowest reporting threshold. There is no legacy
+            backlog to wade through, so starting strict costs nothing now and
+            avoids having to ratchet later.
+          -->
+          <effort>Max</effort>
+          <threshold>Low</threshold>
+          <failOnError>true</failOnError>
+          <includeTests>false</includeTests>
+          <excludeFilterFile>config/spotbugs/exclude.xml</excludeFilterFile>
+          <plugins>
+            <plugin>
+              <groupId>com.h3xstream.findsecbugs</groupId>
+              <artifactId>findsecbugs-plugin</artifactId>
+              <version>${findsecbugs-plugin.version}</version>
+            </plugin>
+          </plugins>
+        </configuration>
+        <dependencies>
+          <!-- See the asm.version property for why these overrides exist. -->
+          <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm</artifactId>
+            <version>${asm.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-analysis</artifactId>
+            <version>${asm.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-commons</artifactId>
+            <version>${asm.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-tree</artifactId>
+            <version>${asm.version}</version>
+          </dependency>
+          <dependency>
+            <groupId>org.ow2.asm</groupId>
+            <artifactId>asm-util</artifactId>
+            <version>${asm.version}</version>
+          </dependency>
+        </dependencies>
+        <executions>
+          <execution>
+            <id>spotbugs</id>
             <goals>
               <goal>check</goal>
             </goals>

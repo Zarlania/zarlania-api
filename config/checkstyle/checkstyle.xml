@@ -1,0 +1,143 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<!--
+  Design and complexity rules for zarlania-api.
+
+  This config deliberately contains no formatting rules. Spotless runs
+  google-java-format over every source file and `verify` fails on any deviation,
+  so indentation, wrapping, whitespace and import order are already guaranteed.
+  Re-checking them here would produce a second, redundant source of failure that
+  could disagree with the formatter.
+
+  What is left is what a formatter cannot decide: how large a unit may grow, how
+  tangled its control flow may become, and which constructs are banned outright.
+  These encode the engineering principles in CLAUDE.md so they fail the build
+  rather than relying on someone noticing them in review.
+-->
+<module name="Checker">
+  <property name="severity" value="error"/>
+  <property name="fileExtensions" value="java"/>
+
+  <!-- Lets `// CHECKSTYLE:OFF` and @SuppressWarnings("checkstyle:...") work. -->
+  <module name="SuppressWarningsFilter"/>
+  <module name="SuppressionFilter">
+    <property name="file" value="${checkstyle.suppressions.file}"/>
+  </module>
+
+  <!--
+    CLAUDE.md treats a class past roughly 200 lines as a signal that it holds
+    more than one responsibility. That is a review signal, not a build rule, so
+    the hard ceiling sits at double it — the guidance still does the day-to-day
+    work, and this catches only what has clearly got away from us.
+  -->
+  <module name="FileLength">
+    <property name="max" value="400"/>
+  </module>
+
+  <module name="TreeWalker">
+    <module name="SuppressWarningsHolder"/>
+
+    <!-- === Size and shape === -->
+
+    <!-- Same reasoning as FileLength: CLAUDE.md's signal is ~20 lines. -->
+    <module name="MethodLength">
+      <property name="max" value="40"/>
+      <property name="countEmpty" value="false"/>
+    </module>
+    <module name="ParameterNumber">
+      <property name="max" value="7"/>
+    </module>
+    <module name="OuterTypeNumber"/>
+    <module name="OneTopLevelClass"/>
+
+    <!-- === Control flow ===
+      CLAUDE.md asks for shallow control flow. Note the absence of ReturnCount:
+      guard clauses and early returns are explicitly preferred there, and
+      capping returns would push code back towards the nesting these rules
+      exist to prevent.
+    -->
+    <module name="CyclomaticComplexity">
+      <property name="max" value="10"/>
+    </module>
+    <module name="BooleanExpressionComplexity">
+      <property name="max" value="3"/>
+    </module>
+    <module name="NestedIfDepth">
+      <property name="max" value="2"/>
+    </module>
+    <module name="NestedTryDepth">
+      <property name="max" value="2"/>
+    </module>
+    <module name="SimplifyBooleanExpression"/>
+    <module name="SimplifyBooleanReturn"/>
+    <module name="MissingSwitchDefault"/>
+    <module name="FallThrough"/>
+    <module name="DefaultComesLast"/>
+
+    <!-- === Correctness === -->
+
+    <module name="EqualsHashCode"/>
+    <module name="CovariantEquals"/>
+    <module name="StringLiteralEquality"/>
+    <module name="EmptyStatement"/>
+    <module name="EmptyBlock">
+      <property name="option" value="text"/>
+    </module>
+    <module name="EmptyCatchBlock">
+      <property name="exceptionVariableName" value="expected|ignored"/>
+    </module>
+    <module name="IllegalCatch"/>
+    <module name="IllegalThrows"/>
+    <module name="IllegalImport"/>
+    <module name="MissingOverride"/>
+
+    <!--
+      CLAUDE.md: no magic values. -1, 0, 1 and 2 stay allowed because they are
+      loop and offset arithmetic rather than encoded knowledge, and annotation
+      values are exempt because those are declarations, not logic.
+    -->
+    <module name="MagicNumber">
+      <property name="ignoreNumbers" value="-1, 0, 1, 2"/>
+      <property name="ignoreAnnotation" value="true"/>
+      <property name="ignoreFieldDeclaration" value="true"/>
+    </module>
+
+    <!-- === Naming === -->
+
+    <module name="TypeName"/>
+    <module name="MethodName"/>
+    <module name="MemberName"/>
+    <module name="ParameterName"/>
+    <module name="LocalVariableName"/>
+    <module name="ConstantName"/>
+    <module name="PackageName"/>
+
+    <!-- === Structure === -->
+
+    <module name="FinalClass"/>
+    <module name="HideUtilityClassConstructor"/>
+    <module name="VisibilityModifier">
+      <property name="protectedAllowed" value="true"/>
+    </module>
+
+    <!--
+      CLAUDE.md mandates constructor injection: field injection hides
+      dependencies and makes the class untestable without a Spring context.
+
+      Matching @Autowired that reaches a `;` without an intervening `(` selects
+      field declarations while leaving annotated constructors alone. This relies
+      on the annotation and the field sharing a line, which google-java-format
+      guarantees for the single-modifier case. A hand-wrapped declaration would
+      slip past — that is a missed catch, never a false alarm.
+    -->
+    <module name="RegexpSinglelineJava">
+      <property name="format" value="@Autowired[^(;]*;"/>
+      <property name="message"
+                value="Field injection is not allowed — inject through the constructor instead."/>
+      <property name="ignoreComments" value="true"/>
+    </module>
+  </module>
+</module>

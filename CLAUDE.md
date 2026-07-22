@@ -25,6 +25,7 @@ written in Java. The browser client lives in a separate repository,
 | Framework  | Spring Boot 4.1                            |
 | Build      | Maven, via the committed `./mvnw` wrapper  |
 | Formatting | Spotless with Google Java Style            |
+| Static analysis | Checkstyle (design rules), SpotBugs with FindSecBugs |
 | Testing    | JUnit 5 and Spring Boot test slices        |
 | Container  | Docker, with Compose for local development |
 | Hosting    | Render, configured in `render.yaml`        |
@@ -33,9 +34,11 @@ written in Java. The browser client lives in a separate repository,
 
 | Command                  | Purpose                                                  |
 | ------------------------ | -------------------------------------------------------- |
-| `./mvnw verify`          | Compile, test, and check formatting. **This is what CI runs.** |
+| `./mvnw verify`          | Compile, test, and run every quality gate. **This is what CI runs.** |
 | `./mvnw test`            | Tests only.                                              |
 | `./mvnw spotless:apply`  | Reformat. Run this before committing.                    |
+| `./mvnw checkstyle:check` | Design and complexity rules only.                       |
+| `./mvnw spotbugs:check`  | Bug and security analysis only. Needs a `compile` first. |
 | `./mvnw spring-boot:run` | Run locally on port 8080.                                |
 | `docker compose up --build` | Run in a container.                                   |
 
@@ -129,6 +132,36 @@ without reading the rest of the codebase.
   method under test.
 - Prefer Spring Boot test slices (`@WebMvcTest`) over `@SpringBootTest` when the
   full context is not needed — they are dramatically faster.
+
+## Quality gates
+
+`./mvnw verify` runs five gates, each owning a distinct concern. They do not
+overlap, and that is deliberate — a second tool checking the same thing produces
+contradictory failures.
+
+| Gate | Owns | Config |
+| ---- | ---- | ------ |
+| Spotless | Formatting: layout, wrapping, import order | `pom.xml` |
+| Checkstyle | Design: size, nesting, complexity, banned constructs | `config/checkstyle/` |
+| SpotBugs + FindSecBugs | Bytecode defects and security patterns | `config/spotbugs/` |
+| JaCoCo | Line and branch coverage at 80% | `pom.xml` |
+| CodeQL | Deeper security analysis, in CI only | `.github/workflows/` |
+
+Checkstyle enforces the numbers behind the principles above: methods stay under
+40 lines and files under 400, complexity under 10, nesting under 2, no magic
+numbers, no field injection. Those ceilings sit deliberately above the guidance
+in *Engineering principles* — the guidance is the review signal, the gate catches
+what has clearly got away from us. **Do not add formatting rules to Checkstyle;
+Spotless owns formatting.**
+
+When a gate fires, fix the code. Suppress only when the tool is wrong about that
+specific code, and say why:
+
+- Checkstyle: add to `config/checkstyle/suppressions.xml` with a comment.
+- SpotBugs: prefer `@SuppressFBWarnings` at the site; use
+  `config/spotbugs/exclude.xml` only when the finding is project-wide.
+
+A suppression without a checkable reason is a bug someone will inherit.
 
 ## Workflow rules that CI enforces
 

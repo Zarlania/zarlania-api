@@ -55,9 +55,11 @@ top of that would only repeat it.
 
 | Command                  | What it does                                          |
 | ------------------------ | ----------------------------------------------------- |
-| `./mvnw verify`          | Compiles, runs tests, and fails on formatting issues. |
+| `./mvnw verify`          | Compiles, tests, and runs every quality gate.         |
 | `./mvnw test`            | Runs the tests only.                                  |
 | `./mvnw spotless:apply`  | Reformats the code to Google Java Style.              |
+| `./mvnw checkstyle:check` | Checks design and complexity rules.                  |
+| `./mvnw spotbugs:check`  | Runs bug and security analysis.                       |
 | `./mvnw spring-boot:run` | Runs the service locally with live reload.            |
 | `docker compose up`      | Runs the service in a container.                      |
 

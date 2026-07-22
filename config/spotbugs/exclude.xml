@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  SpotBugs findings suppressed for this project.
+
+  Keep this file small and each entry justified. A suppression is a claim that
+  the detector is wrong about this specific code, so it needs a reason someone
+  can check later. Prefer fixing the code, and prefer a narrow @SuppressFBWarnings
+  at the site over a project-wide rule here when only one place is affected.
+-->
+<FindBugsFilter>
+  <!--
+    SPRING_ENDPOINT is a FindSecBugs notification detector, not a defect report:
+    it fires on every @Controller to flag it for manual security review. As a
+    build gate it would report "this service has HTTP endpoints" on every
+    controller forever, which is the point of the service.
+
+    Excluded by bug type rather than by raising the reporting threshold, so that
+    genuinely low-priority findings are still surfaced.
+  -->
+  <Match>
+    <Bug pattern="SPRING_ENDPOINT"/>
+  </Match>
+</FindBugsFilter>

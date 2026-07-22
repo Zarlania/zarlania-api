@@ -95,6 +95,17 @@ enforced by [Spotless](https://github.com/diffplug/spotless). Formatting is not 
 matter of preference here — `./mvnw verify` fails on any deviation, and
 `./mvnw spotless:apply` fixes it. There is no need to discuss formatting in review.
 
+[Checkstyle](https://checkstyle.org/) and [SpotBugs](https://spotbugs.github.io/)
+run in the same `verify` build. Checkstyle covers what a formatter cannot decide
+— method and file size, nesting, complexity, magic numbers, and a ban on field
+injection — while SpotBugs analyses the compiled bytecode for defects and, via
+[FindSecBugs](https://find-sec-bugs.github.io/), security patterns. Neither
+checks formatting; Spotless owns that.
+
+If a rule fires, fix the code. Suppress only when the tool is genuinely wrong
+about that code, and leave a comment explaining why:
+`config/checkstyle/suppressions.xml` or `config/spotbugs/exclude.xml`.
+
 Beyond formatting, this project holds itself to a few principles — the full
 version, with examples, is in [CLAUDE.md](CLAUDE.md).
 
