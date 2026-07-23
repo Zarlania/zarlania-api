@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   lint:
-    name: YAML, Markdown and labels
+    name: YAML, Markdown, workflows, Docker and labels
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,3 +76,17 @@ jobs:
               sys.exit(1)
           print(f"All {len(referenced)} labels matched by release-drafter are defined.")
           PY
+
+      # Lints workflow files and the shell inside every `run:` block (actionlint
+      # bundles shellcheck). This is what catches an `on:` typo that silently
+      # stops a workflow triggering, or a shell mistake CI would otherwise run
+      # blind. Pinned by commit SHA like every other third-party action here.
+      - name: Lint workflows and their shell
+        uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+
+      # This Dockerfile is the production image the service ships, so it is held
+      # to the same bar as the code. hadolint also shellchecks each RUN line.
+      - name: Lint Dockerfile
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
+        with:
+          dockerfile: Dockerfile
