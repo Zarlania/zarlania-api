@@ -34,8 +34,9 @@ jobs:
           java-version: "25"
           cache: maven
 
-      # `verify` runs the tests plus the Spotless and JaCoCo checks bound to that
-      # phase, so formatting violations and coverage below 80% fail the build here.
+      # `verify` runs the tests plus the Spotless, Checkstyle, SpotBugs and
+      # JaCoCo checks bound to that phase (and the enforcer rules at `validate`),
+      # so formatting, style, bug and coverage violations all fail the build here.
       - name: Build, test, check formatting and coverage
         run: ./mvnw -B -ntp verify
 

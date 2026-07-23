@@ -66,7 +66,7 @@ jobs:
       - name: Ensure branch, title and body reference the same issue
         run: |
           echo "branch=#$BRANCH_ISSUE title=#$TITLE_ISSUE body=#$BODY_ISSUE"
-          if [[ "$BRANCH_ISSUE" != "$TITLE_ISSUE" || "$BRANCH_ISSUE" != "$BODY_ISSUE" ]]; then
+          if [[ "$BRANCH_ISSUE" != "$TITLE_ISSUE" ]] || [[ "$BRANCH_ISSUE" != "$BODY_ISSUE" ]]; then
             echo "::error::Issue number mismatch — branch #$BRANCH_ISSUE, title #$TITLE_ISSUE, body #$BODY_ISSUE must all agree."
             exit 1
           fi
