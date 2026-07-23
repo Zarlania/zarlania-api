@@ -80,9 +80,15 @@ jobs:
       # Lints workflow files and the shell inside every `run:` block (actionlint
       # bundles shellcheck). This is what catches an `on:` typo that silently
       # stops a workflow triggering, or a shell mistake CI would otherwise run
-      # blind. Pinned by commit SHA like every other third-party action here.
+      # blind.
       - name: Lint workflows and their shell
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
+        with:
+          # Pin the actionlint tool, not just the wrapper action: this action's
+          # `version` input defaults to `latest`, which would let a new upstream
+          # release fail unchanged PRs — exactly what the YAML and Markdown
+          # linters above are pinned to avoid.
+          version: 1.7.12
 
       # This Dockerfile is the production image the service ships, so it is held
       # to the same bar as the code. hadolint also shellchecks each RUN line.
