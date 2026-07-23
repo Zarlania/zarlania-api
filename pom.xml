@@ -86,6 +86,42 @@
 
   <build>
     <plugins>
+      <!--
+        Enforcer locks the build environment itself, which the formatters and
+        bytecode analysers do not police: the JDK and Maven the build runs on,
+        and that no dependency is a duplicate, a SNAPSHOT, or leaves transitive
+        versions in disagreement. Bound to `validate` so it fails before any
+        compilation work. Version is managed by the Spring Boot parent.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>enforce-build-environment</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <phase>validate</phase>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>[${java.version},)</version>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[3.9.0,)</version>
+                </requireMavenVersion>
+                <banDuplicatePomDependencyVersions/>
+                <requireReleaseDeps>
+                  <message>No SNAPSHOT dependencies are allowed.</message>
+                </requireReleaseDeps>
+                <dependencyConvergence/>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
