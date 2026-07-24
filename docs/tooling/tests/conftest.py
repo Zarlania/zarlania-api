@@ -13,8 +13,8 @@ _TAGS = """# Reference tags
 <!-- reference-tags -->
 | Tag | Description |
 | --- | ----------- |
-| http | HTTP request/response handling. |
 | controllers | Spring MVC controllers. |
+| http | HTTP request/response handling. |
 """
 
 _README = """# References

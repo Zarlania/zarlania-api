@@ -58,3 +58,8 @@ def test_render_round_trips_and_preserves_order():
 def test_split_rejects_duplicate_keys():
     with pytest.raises(FrontmatterError):
         split_frontmatter('---\nid: "1"\nid: "2"\n---\nbody\n')
+
+
+def test_split_rejects_non_string_keys():
+    with pytest.raises(FrontmatterError):
+        split_frontmatter("---\n? [a, b]\n: v\n---\nbody\n")

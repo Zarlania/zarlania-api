@@ -27,3 +27,9 @@ def test_missing_markers_raise():
         replace_region("no markers", "t", "x")
     with pytest.raises(MarkerError):
         extract_region("no markers", "t")
+
+
+def test_replace_region_rejects_duplicate_markers():
+    dup = "<!-- t:start -->\nA\n<!-- t:end -->\n<!-- t:start -->\nB\n<!-- t:end -->\n"
+    with pytest.raises(MarkerError):
+        replace_region(dup, "t", "X")

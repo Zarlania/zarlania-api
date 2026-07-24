@@ -18,12 +18,14 @@ agents. They are NOT ADRs and NOT OpenAPI reference.
    existing tag wherever it fits** — only add a new row to `_tags.md` when none
    of the existing tags cover the change, and keep the registry alphabetical.
 3. Scaffold (this allocates the next id, fills dates, sorts tags, and syncs):
-   `python references_cli.py create --title "<Title>" --description "<one line>" --tags "tag1,tag2" --related "000003"`
+   `cd docs/tooling && python references_cli.py create --title "<Title>" --description "<one line>" --tags "tag1,tag2"`
+   Add `--related "<existing-id>"` only when linking to a doc that already exists
+   (`create` rejects unknown tags and related ids).
 4. Open the created file and write the prose body below the sister table. Explain
    behaviour and structure as they are today. Use ```mermaid blocks where a
    diagram is clearer than prose.
 5. Re-sync and validate:
-   `python references_cli.py sync && python references_cli.py validate`
+   `cd docs/tooling && python references_cli.py sync && python references_cli.py validate`
    Fix any reported error before continuing.
 6. **Finalize:** dispatch the `technical-writer` agent (Task tool, subagent_type
    `technical-writer`) to review the new doc for clarity and for repetition or

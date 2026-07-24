@@ -31,6 +31,13 @@ def _construct_mapping_no_duplicates(
     for key_node, value_node in node.value:
         # construct_object is untyped in the PyYAML stubs; the calls are safe.
         key = loader.construct_object(key_node, deep=deep)  # type: ignore[no-untyped-call]
+        if not isinstance(key, str):
+            raise yaml.constructor.ConstructorError(
+                None,
+                None,
+                f"frontmatter keys must be strings, got {type(key).__name__}",
+                key_node.start_mark,
+            )
         if key in mapping:
             raise yaml.constructor.ConstructorError(
                 None, None, f"duplicate frontmatter key: {key!r}", key_node.start_mark

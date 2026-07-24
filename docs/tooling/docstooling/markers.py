@@ -13,6 +13,8 @@ def _markers(name: str) -> tuple[str, str]:
 
 def _bounds(text: str, name: str) -> tuple[str, int, str, int]:
     start, end = _markers(name)
+    if text.count(start) > 1 or text.count(end) > 1:
+        raise MarkerError(f"region '{name}' has duplicate markers")
     si = text.find(start)
     ei = text.find(end)
     if si == -1 or ei == -1 or ei < si:

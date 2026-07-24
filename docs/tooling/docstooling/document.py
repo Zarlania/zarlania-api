@@ -19,6 +19,7 @@ REQUIRED_FIELDS: tuple[str, ...] = (
 
 # tags/related may legitimately be empty (null → []); a null scalar is a defect.
 _NULLABLE_LIST_FIELDS = ("tags", "related")
+_SCALAR_FIELDS = tuple(f for f in REQUIRED_FIELDS if f not in _NULLABLE_LIST_FIELDS)
 
 
 @dataclass
@@ -53,6 +54,11 @@ def load_document(path: Path) -> Document:
             isinstance(value, list) and all(isinstance(item, str) for item in value)
         ):
             raise FrontmatterError(f"{path.name}: '{field}' must be null or a list of strings")
+    for field in _SCALAR_FIELDS:
+        if isinstance(data[field], (list, dict)):
+            raise FrontmatterError(
+                f"{path.name}: '{field}' must be a scalar, not a list or mapping"
+            )
     return Document(
         id=str(data["id"]),
         title=str(data["title"]),

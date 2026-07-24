@@ -20,3 +20,11 @@ def test_sync_is_idempotent(reference_dt):
     first = reference_dt.root.joinpath("000001-hello.md").read_text()
     sync(reference_dt)
     assert reference_dt.root.joinpath("000001-hello.md").read_text() == first
+
+
+def test_sync_readme_index_is_idempotent(reference_dt):
+    write_doc(reference_dt.root, "000001", "hello", title="Hello", tags=["http"], related=[])
+    sync(reference_dt)
+    first = reference_dt.readme_path.read_text()
+    sync(reference_dt)
+    assert reference_dt.readme_path.read_text() == first

@@ -49,3 +49,13 @@ def test_load_document_rejects_non_list_related(reference_root):
     )
     with pytest.raises(FrontmatterError):
         load_document(reference_root / "000001-x.md")
+
+
+def test_load_document_rejects_non_scalar_title(reference_root):
+    (reference_root / "000001-x.md").write_text(
+        '---\nid: "000001"\ntitle: [a, b]\ndescription: d\ntags: []\n'
+        "created: 2026-07-23\nupdated: 2026-07-23\nrelated: []\n---\n\n# X\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(FrontmatterError):
+        load_document(reference_root / "000001-x.md")

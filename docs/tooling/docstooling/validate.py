@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from .config import DocType
 from .document import Document, load_document
 from .frontmatter import FrontmatterError
@@ -9,7 +11,10 @@ from .index import render_index
 from .markers import MarkerError, extract_region
 from .sequence import validate_sequence
 from .table import render_table
-from .tags import load_tags
+from .tags import load_tags_ordered
+
+_SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_H1 = re.compile(r"^# (.+)$", re.MULTILINE)
 
 
 def validate(dt: DocType) -> list[str]:
@@ -33,10 +38,16 @@ def validate(dt: DocType) -> list[str]:
     errors.extend(validate_sequence(docs, dt.id_width))
 
     for doc in docs:
-        if not doc.path.name.startswith(f"{doc.id}-"):
-            errors.append(f"{doc.path.name}: filename must start with id '{doc.id}-'")
+        name = doc.path.name
+        if not name.startswith(f"{doc.id}-"):
+            errors.append(f"{name}: filename must start with id '{doc.id}-'")
+        elif not _SLUG.fullmatch(name[len(doc.id) + 1 : -len(".md")]):
+            errors.append(f"{name}: filename slug must be kebab-case ([a-z0-9] and '-')")
 
-    known = load_tags(dt.tags_path)
+    ordered_tags = load_tags_ordered(dt.tags_path)
+    if ordered_tags != sorted(ordered_tags):
+        errors.append(f"{dt.tags_path.name}: tags must be in alphabetical order")
+    known = set(ordered_tags)
     for doc in docs:
         if doc.tags != sorted(doc.tags):
             errors.append(f"{doc.path.name}: tags must be in alphabetical order")
@@ -46,6 +57,16 @@ def validate(dt: DocType) -> list[str]:
         for rid in doc.related:
             if rid not in by_id:
                 errors.append(f"{doc.path.name}: related id '{rid}' does not exist")
+
+    for doc in docs:
+        heading = _H1.search(doc.body)
+        if heading is None:
+            errors.append(f"{doc.path.name}: body must have an H1 heading")
+        elif heading.group(1).strip() != doc.title:
+            errors.append(
+                f"{doc.path.name}: H1 '{heading.group(1).strip()}' "
+                f"must match frontmatter title '{doc.title}'"
+            )
 
     for doc in docs:
         try:

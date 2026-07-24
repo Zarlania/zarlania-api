@@ -11,6 +11,7 @@ from .frontmatter import render_frontmatter, split_frontmatter
 from .markers import replace_region
 from .sequence import next_id
 from .sync import sync
+from .tags import load_tags
 
 _NON_SLUG = re.compile(r"[^a-z0-9]+")
 
@@ -38,6 +39,17 @@ def create(
 ) -> Path:
     docs = load_all(dt.root)
     new_id = next_id(docs, dt.id_width)
+    # Reject inputs validate() would later reject, so create never writes a
+    # document that immediately fails the structural check.
+    unknown_tags = sorted(set(tags) - load_tags(dt.tags_path))
+    if unknown_tags:
+        raise ValueError(
+            f"unknown tags (register in {dt.tags_path.name} first): {', '.join(unknown_tags)}"
+        )
+    known_ids = {doc.id for doc in docs} | {new_id}
+    unknown_related = sorted(set(related) - known_ids)
+    if unknown_related:
+        raise ValueError(f"unknown related ids: {', '.join(unknown_related)}")
     path = dt.root / f"{new_id}-{slugify(title)}.md"
     frontmatter = render_frontmatter(
         {

@@ -11,3 +11,8 @@ def test_escape_cell_collapses_line_breaks():
 
 def test_escape_cell_leaves_plain_text_unchanged():
     assert escape_cell("hello world") == "hello world"
+
+
+def test_escape_cell_escapes_backslash_before_pipe():
+    # A literal backslash then pipe must stay a backslash+pipe, not a column break.
+    assert escape_cell("a\\|b") == "a\\\\\\|b"

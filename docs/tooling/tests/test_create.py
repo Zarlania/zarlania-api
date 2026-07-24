@@ -1,4 +1,7 @@
+import pytest
+
 from docstooling.create import create, slugify
+from docstooling.document import load_document
 from docstooling.validate import validate
 
 
@@ -42,10 +45,32 @@ def test_create_sorts_tags_alphabetically(reference_dt):
         reference_dt,
         title="Sorted",
         description="d",
-        tags=["http", "controllers", "architecture"],
+        tags=["http", "controllers"],
         related=[],
         today="2026-07-24",
     )
-    from docstooling.document import load_document
+    assert load_document(path).tags == ["controllers", "http"]
 
-    assert load_document(path).tags == ["architecture", "controllers", "http"]
+
+def test_create_rejects_unknown_tag(reference_dt):
+    with pytest.raises(ValueError, match="unknown tags"):
+        create(
+            reference_dt,
+            title="Nope",
+            description="d",
+            tags=["nonexistent"],
+            related=[],
+            today="2026-07-24",
+        )
+
+
+def test_create_rejects_unknown_related(reference_dt):
+    with pytest.raises(ValueError, match="unknown related"):
+        create(
+            reference_dt,
+            title="Nope",
+            description="d",
+            tags=[],
+            related=["000999"],
+            today="2026-07-24",
+        )

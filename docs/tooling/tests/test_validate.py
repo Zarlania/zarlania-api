@@ -105,3 +105,28 @@ def test_validate_flags_unsorted_tags(reference_dt):
     )
     sync(reference_dt)
     assert any("alphabetical order" in e for e in validate(reference_dt))
+
+
+def test_validate_flags_non_kebab_filename_slug(reference_dt):
+    write_doc(reference_dt.root, "000001", "BadSlug", title="Bad", tags=["http"], related=[])
+    sync(reference_dt)
+    assert any("kebab-case" in e for e in validate(reference_dt))
+
+
+def test_validate_flags_unsorted_registry(reference_dt):
+    (reference_dt.root / "_tags.md").write_text(
+        "# Reference tags\n\n| Tag | Description |\n| --- | ----------- |\n"
+        "| http | h |\n| controllers | c |\n",
+        encoding="utf-8",
+    )
+    write_doc(reference_dt.root, "000001", "hello", title="Hello", tags=["http"], related=[])
+    sync(reference_dt)
+    assert any("_tags.md: tags must be in alphabetical order" in e for e in validate(reference_dt))
+
+
+def test_validate_flags_h1_not_matching_title(reference_dt):
+    write_doc(reference_dt.root, "000001", "hello", title="Hello", tags=["http"], related=[])
+    doc = reference_dt.root / "000001-hello.md"
+    doc.write_text(doc.read_text().replace("# Hello", "# Different"), encoding="utf-8")
+    sync(reference_dt)
+    assert any("must match frontmatter title" in e for e in validate(reference_dt))

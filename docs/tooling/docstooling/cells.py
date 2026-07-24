@@ -12,4 +12,6 @@ def escape_cell(value: str) -> str:
     keeping every cell on one line.
     """
     collapsed = value.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
-    return collapsed.replace("|", "\\|")
+    # Escape backslashes first: otherwise a literal "\|" would become "\\|",
+    # which Markdown reads as an escaped backslash followed by a column break.
+    return collapsed.replace("\\", "\\\\").replace("|", "\\|")
