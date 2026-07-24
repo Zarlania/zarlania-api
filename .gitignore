@@ -51,3 +51,13 @@ Thumbs.db
 
 # --- Logs ---
 *.log
+
+# --- Python (docs/tooling) ---
+docs/tooling/.venv/
+docs/tooling/**/__pycache__/
+docs/tooling/**/*.egg-info/
+docs/tooling/.mypy_cache/
+docs/tooling/.ruff_cache/
+docs/tooling/.pytest_cache/
+docs/tooling/.coverage
+docs/tooling/htmlcov/
