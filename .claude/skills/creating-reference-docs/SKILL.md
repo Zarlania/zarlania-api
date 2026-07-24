@@ -13,8 +13,11 @@ agents. They are NOT ADRs and NOT OpenAPI reference.
 1. Check for overlap first — do not duplicate an existing doc:
    `cd docs/tooling && python references_cli.py meta`
    and `python references_cli.py search "<topic>"`.
-2. Register any new tag you need in `docs/references/_tags.md` before using it.
-3. Scaffold (this allocates the next id, fills dates, and syncs):
+2. Choose tags by first reading the registry in `docs/references/_tags.md`
+   (or the `tags` across existing docs via `references_cli.py meta`). **Reuse an
+   existing tag wherever it fits** — only add a new row to `_tags.md` when none
+   of the existing tags cover the change, and keep the registry alphabetical.
+3. Scaffold (this allocates the next id, fills dates, sorts tags, and syncs):
    `python references_cli.py create --title "<Title>" --description "<one line>" --tags "tag1,tag2" --related "000003"`
 4. Open the created file and write the prose body below the sister table. Explain
    behaviour and structure as they are today. Use ```mermaid blocks where a

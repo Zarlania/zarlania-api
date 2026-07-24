@@ -14,7 +14,10 @@ retro-edit docs/superpowers plans/specs — those are historical snapshots.)
    `cd docs/tooling && python references_cli.py search "<topic>"`
    or list everything with `python references_cli.py meta`.
 2. Edit the prose and, if fields changed, the YAML frontmatter. Set `updated:`
-   to today's date. Register any new tag in `docs/references/_tags.md` first.
+   to today's date. Keep `tags` alphabetical and **reuse existing tags from
+   `docs/references/_tags.md`** — only add a new row (kept alphabetical) when no
+   existing tag covers the change. Make sure `description` and `tags` still
+   reflect what the doc now says.
 3. Re-sync and validate (regenerates the sister table and README index):
    `python references_cli.py sync && python references_cli.py validate`
    Fix any reported error.

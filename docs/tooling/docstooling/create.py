@@ -44,7 +44,7 @@ def create(
             "id": new_id,
             "title": title,
             "description": description,
-            "tags": tags,
+            "tags": sorted(tags),
             "created": today,
             "updated": today,
             "related": related,

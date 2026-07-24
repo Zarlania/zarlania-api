@@ -35,3 +35,17 @@ def test_create_increments_ids(reference_dt):
     )
     assert second.name.startswith("000002-")
     assert validate(reference_dt) == []
+
+
+def test_create_sorts_tags_alphabetically(reference_dt):
+    path = create(
+        reference_dt,
+        title="Sorted",
+        description="d",
+        tags=["http", "controllers", "architecture"],
+        related=[],
+        today="2026-07-24",
+    )
+    from docstooling.document import load_document
+
+    assert load_document(path).tags == ["architecture", "controllers", "http"]

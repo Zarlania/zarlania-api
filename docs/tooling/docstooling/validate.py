@@ -38,6 +38,8 @@ def validate(dt: DocType) -> list[str]:
 
     known = load_tags(dt.tags_path)
     for doc in docs:
+        if doc.tags != sorted(doc.tags):
+            errors.append(f"{doc.path.name}: tags must be in alphabetical order")
         for tag in doc.tags:
             if tag not in known:
                 errors.append(f"{doc.path.name}: unknown tag '{tag}' (not in {dt.tags_path.name})")

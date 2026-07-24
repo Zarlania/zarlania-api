@@ -92,3 +92,16 @@ def test_validate_flags_unexpected_non_numbered_file(reference_dt):
     (reference_dt.root / "overview.md").write_text("# Stray\n", encoding="utf-8")
     sync(reference_dt)
     assert any("unexpected file" in e for e in validate(reference_dt))
+
+
+def test_validate_flags_unsorted_tags(reference_dt):
+    write_doc(
+        reference_dt.root,
+        "000001",
+        "hello",
+        title="Hello",
+        tags=["http", "controllers"],
+        related=[],
+    )
+    sync(reference_dt)
+    assert any("alphabetical order" in e for e in validate(reference_dt))

@@ -104,6 +104,10 @@ jobs:
   docs-tooling:
     name: Reference docs tooling
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed only to post the coverage comment on same-repo pull requests.
+      pull-requests: write
     defaults:
       run:
         working-directory: docs/tooling
@@ -133,6 +137,31 @@ jobs:
 
       - name: Test with coverage
         run: pytest
+
+      # Publish the line-coverage number as a sticky PR comment. Only same-repo
+      # pull requests get a writable token (fork PRs run read-only), so both
+      # steps are guarded on that condition to avoid failing a fork's CI.
+      - name: Summarize coverage
+        id: coverage
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          coverage json -o coverage.json
+          pct=$(python -c "import json; print(f\"{json.load(open('coverage.json'))['totals']['percent_covered']:.2f}\")")
+          echo "pct=$pct" >> "$GITHUB_OUTPUT"
+
+      - name: Comment coverage on the PR
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: docs-tooling-coverage
+          message: |
+            ### Reference docs tooling — Python coverage
+
+            **${{ steps.coverage.outputs.pct }}%** line coverage (gate: 80%).
 
       - name: Validate reference docs
         run: python references_cli.py validate

@@ -19,14 +19,23 @@ updated a reference doc. Your job:
    same ground, consolidate and cross-link via the `related` field rather than
    repeating. If two docs disagree, fix the stale one (or flag clearly in your
    report if you cannot tell which is correct).
-4. **Do not touch generated regions.** Never hand-edit the `reference-table` or
-   `reference-index` regions or the frontmatter's structure. If a field changed,
-   run `python references_cli.py sync` instead.
-5. **Never invent facts.** Only document what the code and the author's text
+4. **Check the metadata fits the content.** Make sure the `description` is an
+   accurate one-line summary of what the doc actually says, and that the `tags`
+   reflect its real subject matter. Reuse existing registered tags from
+   `docs/references/_tags.md`; only add a new tag (kept alphabetical) when none
+   fit, and keep each doc's `tags` alphabetical. You may edit these frontmatter
+   field *values*; after changing any field, run
+   `cd docs/tooling && python references_cli.py sync` so the sister table and
+   index regenerate.
+5. **Do not touch generated regions or frontmatter structure.** Never hand-edit
+   the `reference-table`/`reference-index` regions, the `<!-- … -->` markers, or
+   the frontmatter keys/layout — only field values (per step 4), then `sync`.
+6. **Never invent facts.** Only document what the code and the author's text
    support. If something is unclear, note it in your report rather than guessing.
-6. **Finish clean:** run `cd docs/tooling && python references_cli.py validate`
+7. **Finish clean:** run `cd docs/tooling && python references_cli.py validate`
    and ensure it passes. Report what you changed and anything the author must
    resolve.
 
-Scope: prose quality and cross-doc coherence only. Structural rules (ids, tags,
-sync) are enforced by the tooling and CI — do not duplicate that work.
+Scope: prose quality, metadata accuracy, and cross-doc coherence. The remaining
+structural rules (ids, id sequence, sync in CI) are enforced by the tooling — do
+not duplicate that work.
