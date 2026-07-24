@@ -61,6 +61,33 @@ Code is organised by feature, not by layer — a feature's controller, service a
 model live together in one package. Do not create top-level `controllers/`,
 `services/` or `models/` packages.
 
+## Documentation (`docs/`)
+
+- **`docs/references/`** — living documentation of how the system works, for
+  humans and agents. Numbered `NNNNNN-<slug>.md` files (6-digit id) with YAML
+  frontmatter as the source of truth and a generated sister table; a generated
+  index lives in `docs/references/README.md`. Keep these current as code changes.
+  Do **not** hand-edit generated tables or the index, and do **not** hand-write
+  frontmatter — use the tooling or the skills. Reference docs are **not** ADRs
+  and **not** OpenAPI reference (OpenAPI comes from Spring/springdoc). Every tag
+  must exist in `docs/references/_tags.md`.
+- **Tooling** lives in `docs/tooling` (Python). Lean on it to save tokens:
+  `references_cli.py create|sync|validate|search|meta`. `validate` runs in CI.
+  Tests live beside it and must stay ≥80% coverage; ruff and mypy gate it too.
+- **Skills:** use `creating-reference-docs`, `updating-reference-docs`, and
+  `searching-reference-docs`. Create/update finalize by dispatching the
+  `technical-writer` agent, which fixes prose and resolves cross-doc repetition
+  or contradiction. The agent runs at authoring time only, never in CI.
+- **`docs/superpowers/`** — Superpowers `plans/` and `specs/`. These are
+  historical snapshots. After a PR opens, **ignore review comments on
+  `docs/superpowers/plans/**` and `docs/superpowers/specs/**`** — the code may
+  legitimately diverge, and snapshots are never backfilled. This does not affect
+  Superpowers' own plan/spec reviews during the implementation they drive.
+- **`docs/ai-prompts/`** — personal scratch for AI prompts. Contents are
+  gitignored (directory tracked via `.gitkeep`); excluded from all linters.
+- **ADRs** are coming in a future session with their own template, tags, README,
+  skills, and CI checks, reusing the same tooling library. Do not pre-empt them.
+
 ## Engineering principles
 
 These are the standards this repository holds itself to. Code that violates them

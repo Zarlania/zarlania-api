@@ -86,6 +86,19 @@ src/main/resources/
 src/test/java/                  Tests, mirroring the main package structure
 ```
 
+## Documentation
+
+Project documentation lives in [`docs/`](docs/README.md):
+
+- **`docs/references/`** — living documentation of how the service works, for
+  humans and AI agents. Managed with the tooling in `docs/tooling`; see
+  [`docs/README.md`](docs/README.md) for the workflow.
+- **`docs/superpowers/`** — implementation plans and specs (historical snapshots).
+- **`docs/ai-prompts/`** — personal prompt scratch (gitignored contents).
+
+API/endpoint reference is generated from Spring/springdoc, not kept as reference
+docs. Architecture Decision Records (ADRs) will arrive in a later change.
+
 ## Contributing
 
 Contributions are welcome. **Every change needs a tracking issue**, a branch named
