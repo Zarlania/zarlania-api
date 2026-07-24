@@ -74,3 +74,16 @@ def test_create_rejects_unknown_related(reference_dt):
             related=["000999"],
             today="2026-07-24",
         )
+
+
+def test_create_treats_title_as_literal_in_h1(reference_dt):
+    # A backslash in the title must not be interpreted as a regex replacement.
+    path = create(
+        reference_dt,
+        title=r"Back\slash",
+        description="d",
+        tags=[],
+        related=[],
+        today="2026-07-24",
+    )
+    assert r"# Back\slash" in path.read_text(encoding="utf-8")

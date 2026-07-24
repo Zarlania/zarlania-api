@@ -23,7 +23,9 @@ def slugify(title: str) -> str:
 
 def _scaffold_body(dt: DocType, title: str) -> str:
     _fm, body = split_frontmatter(dt.template_path.read_text(encoding="utf-8"))
-    body = re.sub(r"^# .*$", f"# {title}", body, count=1, flags=re.MULTILINE)
+    # Use a function replacement so the title is treated as literal data — a
+    # backslash or "\g<0>" in the title must not be read as a regex substitution.
+    body = re.sub(r"^# .*$", lambda _m: f"# {title}", body, count=1, flags=re.MULTILINE)
     body = replace_region(body, dt.table_marker, "")
     return body.lstrip("\n")
 
