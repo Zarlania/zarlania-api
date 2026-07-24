@@ -6,6 +6,10 @@ def test_slugify():
     assert slugify("Hello, World! 2") == "hello-world-2"
 
 
+def test_slugify_fallback_for_punctuation_only_title():
+    assert slugify("!!!") == "untitled"
+
+
 def test_create_allocates_id_and_validates(reference_dt):
     path = create(
         reference_dt,

@@ -16,7 +16,8 @@ _NON_SLUG = re.compile(r"[^a-z0-9]+")
 
 
 def slugify(title: str) -> str:
-    return _NON_SLUG.sub("-", title.lower()).strip("-")
+    slug = _NON_SLUG.sub("-", title.lower()).strip("-")
+    return slug or "untitled"
 
 
 def _scaffold_body(dt: DocType, title: str) -> str:

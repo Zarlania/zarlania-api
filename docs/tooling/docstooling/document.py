@@ -17,6 +17,9 @@ REQUIRED_FIELDS: tuple[str, ...] = (
     "related",
 )
 
+# tags/related may legitimately be empty (null → []); a null scalar is a defect.
+_NULLABLE_LIST_FIELDS = ("tags", "related")
+
 
 @dataclass
 class Document:
@@ -34,8 +37,16 @@ class Document:
 def load_document(path: Path) -> Document:
     data, body = split_frontmatter(path.read_text(encoding="utf-8"))
     missing = [f for f in REQUIRED_FIELDS if f not in data]
-    if missing:
-        raise FrontmatterError(f"{path.name}: missing frontmatter fields: {', '.join(missing)}")
+    null_scalars = [
+        f
+        for f in REQUIRED_FIELDS
+        if f not in _NULLABLE_LIST_FIELDS and f in data and data[f] is None
+    ]
+    problems = sorted(set(missing) | set(null_scalars))
+    if problems:
+        raise FrontmatterError(
+            f"{path.name}: missing or null frontmatter fields: {', '.join(problems)}"
+        )
     return Document(
         id=str(data["id"]),
         title=str(data["title"]),

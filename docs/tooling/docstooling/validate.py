@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from .config import DocType
-from .document import load_all
+from .document import Document, load_document
+from .frontmatter import FrontmatterError
 from .index import render_index
 from .markers import MarkerError, extract_region
 from .sequence import validate_sequence
@@ -12,9 +13,15 @@ from .tags import load_tags
 
 
 def validate(dt: DocType) -> list[str]:
-    docs = load_all(dt.root)
+    errors: list[str] = []
+    docs: list[Document] = []
+    for path in sorted(dt.root.glob("[0-9]*.md")):
+        try:
+            docs.append(load_document(path))
+        except FrontmatterError as exc:
+            errors.append(str(exc))
     by_id = {d.id: d for d in docs}
-    errors: list[str] = list(validate_sequence(docs, dt.id_width))
+    errors.extend(validate_sequence(docs, dt.id_width))
 
     for doc in docs:
         if not doc.path.name.startswith(f"{doc.id}-"):
