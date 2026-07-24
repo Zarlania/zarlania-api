@@ -20,6 +20,15 @@ def validate(dt: DocType) -> list[str]:
             docs.append(load_document(path))
         except FrontmatterError as exc:
             errors.append(str(exc))
+
+    # Any other Markdown file is unexpected: reference docs must be numbered, and
+    # only README.md (the generated index) and the _*.md support files are allowed.
+    for path in sorted(dt.root.glob("*.md")):
+        name = path.name
+        if name[0].isdigit() or name == dt.readme_path.name or name.startswith("_"):
+            continue
+        errors.append(f"{name}: unexpected file (reference docs must be NNNNNN-<slug>.md)")
+
     by_id = {d.id: d for d in docs}
     errors.extend(validate_sequence(docs, dt.id_width))
 

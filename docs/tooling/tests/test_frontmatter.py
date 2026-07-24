@@ -53,3 +53,8 @@ def test_render_round_trips_and_preserves_order():
     back, _ = split_frontmatter(rendered + "\nbody\n")
     assert back == data
     assert list(back.keys()) == ["id", "title", "tags"]
+
+
+def test_split_rejects_duplicate_keys():
+    with pytest.raises(FrontmatterError):
+        split_frontmatter('---\nid: "1"\nid: "2"\n---\nbody\n')

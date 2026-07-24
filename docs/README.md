@@ -21,7 +21,7 @@ files. From `docs/tooling`:
 | ------- | ------- |
 | `python references_cli.py create --title T --description D --tags a,b --related 000003` | Scaffold a new doc (allocates id, fills dates, syncs). |
 | `python references_cli.py sync` | Regenerate every sister table and the README index from frontmatter. |
-| `python references_cli.py validate` | Structural check (ids, tags, sync, links). Runs in CI. |
+| `python references_cli.py validate` | Structural check (ids, tags, related IDs, tables/index in sync). Runs in CI. |
 | `python references_cli.py search "<query>"` | Search titles, descriptions, tags, and body text. |
 | `python references_cli.py meta [--id NNNNNN]` | Dump frontmatter (no bodies) for a cheap overview. |
 

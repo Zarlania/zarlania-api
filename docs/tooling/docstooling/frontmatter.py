@@ -13,6 +13,37 @@ class FrontmatterError(ValueError):
     """Raised when a document's frontmatter is missing or malformed."""
 
 
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """A SafeLoader that rejects duplicate mapping keys.
+
+    PyYAML's default loader silently keeps the last value when a key repeats, so
+    a hand-edited or conflict-resolved doc could regenerate its table and index
+    from overwritten metadata. yamllint's duplicate-key rule does not reach YAML
+    embedded in Markdown frontmatter, so the loader enforces it here.
+    """
+
+
+def _construct_mapping_no_duplicates(
+    loader: _UniqueKeyLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict[Any, Any]:
+    loader.flatten_mapping(node)
+    mapping: dict[Any, Any] = {}
+    for key_node, value_node in node.value:
+        # construct_object is untyped in the PyYAML stubs; the calls are safe.
+        key = loader.construct_object(key_node, deep=deep)  # type: ignore[no-untyped-call]
+        if key in mapping:
+            raise yaml.constructor.ConstructorError(
+                None, None, f"duplicate frontmatter key: {key!r}", key_node.start_mark
+            )
+        mapping[key] = loader.construct_object(value_node, deep=deep)  # type: ignore[no-untyped-call]
+    return mapping
+
+
+_UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_mapping_no_duplicates
+)
+
+
 def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
     """Return ``(frontmatter, body)``.
 
@@ -27,7 +58,7 @@ def split_frontmatter(text: str) -> tuple[dict[str, Any], str]:
             raw = "\n".join(lines[1:i])
             body = "\n".join(lines[i + 1 :])
             try:
-                loaded = yaml.safe_load(raw)
+                loaded = yaml.load(raw, Loader=_UniqueKeyLoader)
             except yaml.YAMLError as exc:
                 raise FrontmatterError(f"frontmatter is not valid YAML: {exc}") from exc
             data = {} if loaded is None else loaded

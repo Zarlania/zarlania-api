@@ -8,6 +8,8 @@ from .document import Document
 def next_id(docs: list[Document], width: int) -> str:
     numbers = [int(d.id) for d in docs if d.id.isdecimal()]
     nxt = max(numbers) + 1 if numbers else 1
+    if nxt >= 10**width:
+        raise ValueError(f"id space exhausted: no {width}-digit id past {10**width - 1}")
     return str(nxt).zfill(width)
 
 

@@ -1,6 +1,8 @@
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from docstooling.document import Document
 from docstooling.sequence import next_id, validate_sequence
 
@@ -55,3 +57,8 @@ def test_validate_sequence_rejects_unicode_digit_lookalikes_without_crashing():
 def test_validate_sequence_rejects_same_width_non_digit():
     errors = validate_sequence([_doc("abcdef")], 6)
     assert any("6 digits" in e for e in errors)
+
+
+def test_next_id_rejects_exhausted_space():
+    with pytest.raises(ValueError, match="exhausted"):
+        next_id([_doc("999999")], 6)

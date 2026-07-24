@@ -47,6 +47,12 @@ def load_document(path: Path) -> Document:
         raise FrontmatterError(
             f"{path.name}: missing or null frontmatter fields: {', '.join(problems)}"
         )
+    for field in _NULLABLE_LIST_FIELDS:
+        value = data[field]
+        if value is not None and not (
+            isinstance(value, list) and all(isinstance(item, str) for item in value)
+        ):
+            raise FrontmatterError(f"{path.name}: '{field}' must be null or a list of strings")
     return Document(
         id=str(data["id"]),
         title=str(data["title"]),

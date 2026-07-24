@@ -29,3 +29,23 @@ def test_load_all_sorted_by_id_and_skips_meta_files(reference_root):
     write_doc(reference_root, "000001", "a", title="A", tags=[], related=[])
     docs = load_all(reference_root)
     assert [d.id for d in docs] == ["000001", "000002"]  # _tags/_template/README skipped
+
+
+def test_load_document_rejects_scalar_tags(reference_root):
+    (reference_root / "000001-x.md").write_text(
+        '---\nid: "000001"\ntitle: X\ndescription: d\ntags: http\n'
+        "created: 2026-07-23\nupdated: 2026-07-23\nrelated: []\n---\n\n# X\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(FrontmatterError):
+        load_document(reference_root / "000001-x.md")
+
+
+def test_load_document_rejects_non_list_related(reference_root):
+    (reference_root / "000001-x.md").write_text(
+        '---\nid: "000001"\ntitle: X\ndescription: d\ntags: []\n'
+        'created: 2026-07-23\nupdated: 2026-07-23\nrelated: "000002"\n---\n\n# X\n',
+        encoding="utf-8",
+    )
+    with pytest.raises(FrontmatterError):
+        load_document(reference_root / "000001-x.md")

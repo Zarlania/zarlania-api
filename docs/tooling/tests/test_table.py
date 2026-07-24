@@ -28,3 +28,10 @@ def test_render_table_uses_dash_for_empty_lists(reference_root):
     table = render_table(docs[0], {d.id: d for d in docs})
     assert "| Tags | — |" in table
     assert "| Related | — |" in table
+
+
+def test_render_table_escapes_pipe_in_title(reference_root):
+    write_doc(reference_root, "000001", "hello", title="a | b", tags=[], related=[])
+    docs = load_all(reference_root)
+    table = render_table(docs[0], {d.id: d for d in docs})
+    assert "| Title | a \\| b |" in table

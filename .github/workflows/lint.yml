@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step needs authenticated Git; don't leave the token in
+          # .git/config where subsequent commands could read it.
+          persist-credentials: false
 
       # Both linters are pinned to an exact version rather than tracking latest.
       # A new upstream release can enable a rule by default and turn an
@@ -105,6 +109,10 @@ jobs:
         working-directory: docs/tooling
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job installs and runs repository-controlled Python; keep the
+          # GitHub token out of .git/config so that code cannot read it.
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0

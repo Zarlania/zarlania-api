@@ -85,3 +85,10 @@ def test_validate_reports_missing_table_markers(reference_dt):
     )
     doc.write_text(text, encoding="utf-8")
     assert any("missing 'reference-table' markers" in e for e in validate(reference_dt))
+
+
+def test_validate_flags_unexpected_non_numbered_file(reference_dt):
+    _seed(reference_dt.root)
+    (reference_dt.root / "overview.md").write_text("# Stray\n", encoding="utf-8")
+    sync(reference_dt)
+    assert any("unexpected file" in e for e in validate(reference_dt))
