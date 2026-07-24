@@ -49,6 +49,12 @@ Thumbs.db
 .serena/
 .claude/settings.local.json
 
+# --- Docs scratch ---
+# ai-prompts is a personal dumping ground for AI prompts: keep the directory,
+# ignore everything in it except the placeholder that keeps it tracked.
+docs/ai-prompts/*
+!docs/ai-prompts/.gitkeep
+
 # --- Logs ---
 *.log
 

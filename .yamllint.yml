@@ -11,6 +11,8 @@ ignore: |
   target/
   .git/
   .serena/
+  docs/superpowers/
+  docs/ai-prompts/
 
 rules:
   # The single most valuable rule here. A duplicate key silently overwrites the

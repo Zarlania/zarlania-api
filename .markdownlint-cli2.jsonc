@@ -42,5 +42,11 @@
     "MD025": { "front_matter_title": "" }
   },
   "globs": ["**/*.md"],
-  "ignores": ["target/**", ".git/**", "node_modules/**"]
+  "ignores": [
+    "target/**",
+    ".git/**",
+    "node_modules/**",
+    "docs/superpowers/**",
+    "docs/ai-prompts/**"
+  ]
 }
