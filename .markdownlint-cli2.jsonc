@@ -33,7 +33,13 @@
 
     // The first line need not be a top-level heading: issue templates start
     // with YAML front matter.
-    "MD041": false
+    "MD041": false,
+
+    // Reference docs carry both a `title:` frontmatter field (the source of
+    // truth the tooling reads) and a matching H1 (so the page renders with a
+    // heading on GitHub). Without this, MD025 treats the frontmatter title as
+    // the document's H1 and flags the real one as a duplicate top-level heading.
+    "MD025": { "front_matter_title": "" }
   },
   "globs": ["**/*.md"],
   "ignores": ["target/**", ".git/**", "node_modules/**"]
