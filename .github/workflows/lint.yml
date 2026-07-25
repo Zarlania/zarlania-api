@@ -20,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # No later step needs authenticated Git; don't leave the token in
+          # .git/config where subsequent commands could read it.
+          persist-credentials: false
 
       # Both linters are pinned to an exact version rather than tracking latest.
       # A new upstream release can enable a rule by default and turn an
@@ -96,3 +100,70 @@ jobs:
         uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: Dockerfile
+
+  docs-tooling:
+    name: Reference docs tooling
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Needed only to post the coverage comment on same-repo pull requests.
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: docs/tooling
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job installs and runs repository-controlled Python; keep the
+          # GitHub token out of .git/config so that code cannot read it.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install tooling
+        run: pip install -e '.[dev]'
+
+      - name: Check formatting
+        run: ruff format --check .
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Type-check
+        run: mypy
+
+      - name: Test with coverage
+        run: pytest
+
+      # Publish the line-coverage number as a sticky PR comment. Only same-repo
+      # pull requests get a writable token (fork PRs run read-only), so both
+      # steps are guarded on that condition to avoid failing a fork's CI.
+      - name: Summarize coverage
+        id: coverage
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.actor != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          coverage json -o coverage.json
+          pct=$(python -c "import json; print(f\"{json.load(open('coverage.json'))['totals']['percent_covered']:.2f}\")")
+          echo "pct=$pct" >> "$GITHUB_OUTPUT"
+
+      - name: Comment coverage on the PR
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.actor != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: docs-tooling-coverage
+          message: |
+            ### Reference docs tooling — Python coverage
+
+            **${{ steps.coverage.outputs.pct }}%** line coverage (gate: 80%).
+
+      - name: Validate reference docs
+        run: python references_cli.py validate
