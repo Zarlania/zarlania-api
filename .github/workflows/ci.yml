@@ -81,8 +81,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Needed only to post the coverage comment on same-repo pull requests.
+      # Both are needed only for the coverage report on same-repo pull requests:
+      # cobertura-action publishes it as a check run, not just a comment, and
+      # without `checks: write` it fails with "Resource not accessible by
+      # integration".
       pull-requests: write
+      checks: write
     defaults:
       run:
         working-directory: docs/tooling
