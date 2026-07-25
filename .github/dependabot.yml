@@ -51,6 +51,52 @@ updates:
           - minor
           - patch
 
+  # ----- Python / reference docs tooling -----
+  # docs/tooling is a self-contained package with its own pinned dependencies.
+  # Nothing in the Maven build reaches it, so it needs an entry of its own or it
+  # never gets updated at all.
+  - package-ecosystem: pip
+    directory: "/docs/tooling"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    labels:
+      - dependencies
+      - python
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    groups:
+      # These two groups include major, because a split major cannot install: a
+      # stub package's version tracks the library it describes, and pytest-cov
+      # caps its pytest peer.
+      pyyaml:
+        patterns:
+          - "pyyaml"
+          - "types-PyYAML"
+        update-types:
+          - minor
+          - patch
+          - major
+      pytest:
+        patterns:
+          - "pytest"
+          - "pytest-cov"
+        update-types:
+          - minor
+          - patch
+          - major
+      # ruff and mypy have no lockstep sibling. Kept to minor and patch so a
+      # major — which is where both tools turn on new diagnostics — arrives as
+      # its own PR rather than bundled with unrelated bumps.
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
   # ----- GitHub Actions -----
   - package-ecosystem: github-actions
     directory: "/"

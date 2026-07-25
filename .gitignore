@@ -66,4 +66,5 @@ docs/tooling/.mypy_cache/
 docs/tooling/.ruff_cache/
 docs/tooling/.pytest_cache/
 docs/tooling/.coverage
+docs/tooling/coverage.xml
 docs/tooling/htmlcov/

@@ -29,6 +29,12 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 strict = true
 files = ["docstooling", "references_cli.py"]
 
+[tool.coverage.run]
+# Branch coverage, so the 80% gate and the CI report both measure decisions
+# taken rather than lines merely executed — the same bar JaCoCo holds the Java
+# side to.
+branch = true
+
 [tool.pytest.ini_options]
 addopts = "--cov=docstooling --cov=references_cli --cov-report=term-missing --cov-fail-under=80"
 testpaths = ["tests"]

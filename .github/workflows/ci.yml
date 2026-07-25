@@ -73,6 +73,71 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The reference docs tooling is a Python package with its own test suite and
+  # coverage gate. Formatting and lint for it run in the Lint workflow; what is
+  # here is the build-and-test half.
+  docs-tooling:
+    name: Reference docs tooling tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Both are needed only for the coverage report on same-repo pull requests:
+      # cobertura-action publishes it as a check run, not just a comment, and
+      # without `checks: write` it fails with "Resource not accessible by
+      # integration".
+      pull-requests: write
+      checks: write
+    defaults:
+      run:
+        working-directory: docs/tooling
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job installs and runs repository-controlled Python; keep the
+          # GitHub token out of .git/config so that code cannot read it.
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: pip install -e '.[dev]'
+
+      - name: Type-check
+        run: mypy
+
+      # The 80% line-and-branch gate is in pyproject.toml, so this step is what
+      # fails the build; the comment below is reporting only.
+      - name: Reference docs tooling tests
+        run: pytest --cov-report=xml
+
+      # Only same-repo pull requests get a writable token — fork and Dependabot
+      # runs are read-only, and posting from them would fail a step over a
+      # comment that is not worth failing for.
+      - name: Python coverage report comment
+        if: >-
+          ${{ !cancelled() &&
+          github.event_name == 'pull_request' &&
+          github.actor != 'dependabot[bot]' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          hashFiles('docs/tooling/coverage.xml') != '' }}
+        uses: 5monkeys/cobertura-action@ee5787cc56634acddedc51f21c7947985531e6eb # v14
+        with:
+          # Paths for an action are workspace-relative; `working-directory`
+          # above only applies to `run:` steps.
+          path: docs/tooling/coverage.xml
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          minimum_coverage: 80
+          fail_below_threshold: false
+          # Report all measured modules, not only changed files: the action paginates
+          # changed files at 30/page (omitting Python files on later pages of large PRs),
+          # and the module set here is small — a full table is both correct and readable.
+          only_changed_files: false
+          show_branch: true
+          report_name: Python Coverage
+
   docker:
     name: Docker image builds
     runs-on: ubuntu-latest
