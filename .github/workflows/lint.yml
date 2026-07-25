@@ -101,13 +101,11 @@ jobs:
         with:
           dockerfile: Dockerfile
 
+  # Formatting and lint only. Type-checking and the test suite are build
+  # concerns and live in the CI workflow's `docs-tooling` job.
   docs-tooling:
-    name: Reference docs tooling
+    name: Reference docs tooling lint
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      # Needed only to post the coverage comment on same-repo pull requests.
-      pull-requests: write
     defaults:
       run:
         working-directory: docs/tooling
@@ -132,38 +130,8 @@ jobs:
       - name: Lint
         run: ruff check .
 
-      - name: Type-check
-        run: mypy
-
-      - name: Test with coverage
-        run: pytest
-
-      # Publish the line-coverage number as a sticky PR comment. Only same-repo
-      # pull requests get a writable token (fork PRs run read-only), so both
-      # steps are guarded on that condition to avoid failing a fork's CI.
-      - name: Summarize coverage
-        id: coverage
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.actor != 'dependabot[bot]' &&
-          github.event.pull_request.head.repo.full_name == github.repository
-        run: |
-          coverage json -o coverage.json
-          pct=$(python -c "import json; print(f\"{json.load(open('coverage.json'))['totals']['percent_covered']:.2f}\")")
-          echo "pct=$pct" >> "$GITHUB_OUTPUT"
-
-      - name: Comment coverage on the PR
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.actor != 'dependabot[bot]' &&
-          github.event.pull_request.head.repo.full_name == github.repository
-        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
-        with:
-          header: docs-tooling-coverage
-          message: |
-            ### Reference docs tooling — Python coverage
-
-            **${{ steps.coverage.outputs.pct }}%** line coverage (gate: 80%).
-
+      # Structural validation of the docs themselves — frontmatter, generated
+      # tables and tags — so it belongs with the other linters, not with the
+      # tooling's own test suite.
       - name: Validate reference docs
         run: python references_cli.py validate
