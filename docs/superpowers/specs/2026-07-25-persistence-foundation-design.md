@@ -4,8 +4,8 @@
 - **Date:** 2026-07-25
 - **Applies to:** `Zarlania/zarlania-api` only.
 - **Spec chain:** 1 of 7 for the account-creation / login / authentication
-  effort. No predecessor. Successor: spec 2, *users, personal organizations &
-  core auth* (written after this one; it references this spec).
+  effort. No predecessor. Successor:
+  [spec 2 — users, personal organizations, and core authentication](2026-07-25-users-personal-orgs-core-auth-design.md).
 
 ## The spec chain
 
