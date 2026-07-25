@@ -54,6 +54,9 @@
 - name: java
   color: "b07219"
   description: Java and Spring Boot code
+- name: python
+  color: "3572a5"
+  description: Reference docs tooling code
 - name: security
   color: "ee0701"
   description: Security-relevant change or report
