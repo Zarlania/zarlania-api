@@ -38,4 +38,15 @@ class ZarlaniaApiApplicationIntegrationTest {
             Integer.class);
     assertThat(tables).isEqualTo(1);
   }
+
+  @Test
+  void migrationCreatesTheAccountTables() {
+    Integer tables =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name IN"
+                + " ('users','organizations','organization_memberships',"
+                + " 'password_credentials','email_verification_tokens','refresh_tokens')",
+            Integer.class);
+    assertThat(tables).isEqualTo(6);
+  }
 }
