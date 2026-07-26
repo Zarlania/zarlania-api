@@ -47,6 +47,14 @@
     ".git/**",
     "node_modules/**",
     "docs/superpowers/**",
-    "docs/ai-prompts/**"
+    "docs/ai-prompts/**",
+
+    // Vendored Markdown from installed Python packages. CI creates this venv to
+    // run the docs tooling, so without this the linter grades third-party
+    // READMEs we do not control.
+    "docs/tooling/.venv/**",
+
+    // Superpowers' own working notes. Untracked scratch, not repository docs.
+    ".superpowers/**"
   ]
 }
