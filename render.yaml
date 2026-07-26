@@ -31,7 +31,45 @@ services:
       # Placeholder: set this once zarlania-app is deployed and calling the API.
       - key: ZARLANIA_CORS_ALLOWED_ORIGINS
         sync: false
+      # Composed into the JDBC URL by application.yml; blueprints cannot
+      # template a URL string, so the parts are injected individually.
+      - key: DB_HOST
+        fromDatabase:
+          name: zarlania-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: zarlania-db
+          property: port
+      - key: DB_NAME
+        fromDatabase:
+          name: zarlania-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: zarlania-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: zarlania-db
+          property: password
 
 # Note on the free plan: instances sleep after 15 minutes without traffic and
 # take roughly 50 seconds to wake. There are no persistent disks, so anything
 # written to the filesystem is lost on restart.
+
+# Free-tier reality (accepted in the spec): this instance expires 30 days after
+# creation and its data is deleted 14 days later. Recreate the database and
+# redeploy; Flyway rebuilds the schema from migrations. Data is gone, structure
+# is not. Upgrading the plan later is a Render-side change only.
+databases:
+  - name: zarlania-db
+    plan: free
+    region: oregon
+    databaseName: zarlania
+    user: zarlania
+    postgresMajorVersion: "17"
+    # Only zarlania-api (same region, same account) ever needs to reach this
+    # database, over Render's private network — an empty list blocks the
+    # public/external connection string entirely.
+    ipAllowList: []

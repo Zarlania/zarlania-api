@@ -9,13 +9,13 @@ canonical set of agent instructions; `AGENTS.md` points here.
 written in Java. The browser client lives in a separate repository,
 [Zarlania/zarlania-app](https://github.com/Zarlania/zarlania-app).
 
-> **Status: early scaffolding.** The service currently exposes a single
-> hello-world endpoint. There is no domain model, persistence layer, or
-> authentication yet.
+> **Status: persistence foundation.** Postgres, Flyway, and JPA are wired
+> (see Stack and Layout below), but there is still no domain model, no domain
+> code, and no authentication yet.
 >
 > **PLACEHOLDER — expand as the project takes shape:** domain concepts and
-> vocabulary, module boundaries, persistence and migration strategy, authentication
-> and authorization model, external integrations, and the API versioning policy.
+> vocabulary, module boundaries, authentication and authorization model,
+> external integrations, and the API versioning policy.
 
 ## Stack
 
@@ -23,12 +23,15 @@ written in Java. The browser client lives in a separate repository,
 | ---------- | ------------------------------------------ |
 | Language   | Java 25 (Temurin)                          |
 | Framework  | Spring Boot 4.1                            |
+| Persistence | Spring Data JPA (Hibernate), `ddl-auto: validate` |
+| Database   | PostgreSQL 17 — compose locally, Render in production, Testcontainers in tests |
+| Migrations | Flyway, plain SQL in `src/main/resources/db/migration` |
 | Build      | Maven, via the committed `./mvnw` wrapper  |
 | Formatting | Spotless with Google Java Style            |
 | Static analysis | Checkstyle (design rules), SpotBugs with FindSecBugs |
 | Boilerplate | Lombok, restricted by `lombok.config`     |
 | Linting    | yamllint and markdownlint, in CI           |
-| Testing    | JUnit 5 and Spring Boot test slices        |
+| Testing    | JUnit 5, Spring Boot test slices, and Testcontainers |
 | Container  | Docker, with Compose for local development |
 | Hosting    | Render, configured in `render.yaml`        |
 
@@ -43,6 +46,7 @@ written in Java. The browser client lives in a separate repository,
 | `./mvnw spotbugs:check`  | Bug and security analysis only. Needs a `compile` first. |
 | `./mvnw spring-boot:run` | Run locally on port 8080.                                |
 | `docker compose up --build` | Run in a container.                                   |
+| `docker compose up postgres` | Just the local database, for `spring-boot:run`. |
 
 Always use `./mvnw`, never a system `mvn` — the wrapper pins the Maven version.
 
@@ -51,15 +55,38 @@ Always use `./mvnw`, never a system `mvn` — the wrapper pins the Maven version
 ```text
 src/main/java/com/zarlania/api/
   ZarlaniaApiApplication.java   Entry point
-  hello/                        Feature package: controller + response record
+  common/                       Domain-agnostic infrastructure only (e.g. persistence
+                                base classes). Nothing with business meaning.
+  <domain>/                     One package per domain, layer sub-packages inside:
+    controllers/                HTTP endpoints
+    services/                   Business rules
+    repositories/               Spring Data interfaces
+    entities/                   JPA entities — never leave the domain
+    dtos/                       Records crossing the domain boundary
 src/main/resources/
   application.yml               Configuration, with env-var overrides
+  db/migration/                 Flyway migrations (V<n>__<slug>.sql) — the only thing
+                                that creates or alters schema
 src/test/java/com/zarlania/api/  Tests, mirroring the main package structure
 ```
 
-Code is organised by feature, not by layer — a feature's controller, service and
-model live together in one package. Do not create top-level `controllers/`,
-`services/` or `models/` packages.
+Code is organised by **domain**. Each domain is a top-level package holding only
+the layer sub-packages it needs. Rules that keep domains separable (so a domain
+can be lifted out of the monolith with minimal work):
+
+- **Entities never leave their domain.** Cross-domain references are plain
+  foreign-key id columns plus DTO lookups through the owning domain's service —
+  never a mapped JPA relation across domains. Within one domain, JPA relations
+  (including lazy loading) are fine.
+- **Aggregating (parent) domains are allowed.** A parent may group sub-domains
+  (`fruit/controllers`, `fruit/apple/controllers`, …). Every sub-domain is a
+  full domain boundary in its own right; the parent level holds orchestration
+  only — never entities.
+- **Every table** gets `id uuid primary key`, `created_at timestamptz(6) not
+  null`, `updated_at timestamptz(6) not null`, with real FK constraints.
+  Case-insensitive unique text columns use `citext`.
+- Do not create top-level `controllers/`, `services/` or `models/` packages for
+  the whole application.
 
 ## Documentation (`docs/`)
 
@@ -164,10 +191,31 @@ without reading the rest of the codebase.
   list and reasoning is in `lombok.config`.
 - Configuration is read from `application.yml` with environment-variable
   overrides. Never hardcode a value that differs between environments.
-- Name tests after the behaviour they assert (`helloReturnsGreeting`), not the
-  method under test.
+- Name tests after the behaviour they assert (`applicationBootsAgainstPostgres`),
+  not the method under test.
+- **Integration tests end in `IntegrationTest`; unit tests end in `Test`.** A test
+  is an integration test when it needs something outside the JVM under test — a
+  database, a Testcontainer, an HTTP call to a real server — or boots a Spring
+  context to get it. So `CollectionServiceTest` unit-tests the service in
+  isolation, and `CollectionRepositoryIntegrationTest` exercises it against
+  Postgres. The two can then sit side by side for the same class. A shared base
+  class may appear later to hold common setup; it does not replace the suffix,
+  because the class name is what tells a reader (and a `-Dtest=` filter) which
+  kind of test they are looking at. Surefire's default `**/*Test.java` include
+  matches both, so both run under `./mvnw verify`.
 - Prefer Spring Boot test slices (`@WebMvcTest`) over `@SpringBootTest` when the
   full context is not needed — they are dramatically faster.
+- **Flyway owns the schema.** Never enable Hibernate DDL generation; write a
+  versioned migration instead. Tests run against real Postgres via
+  Testcontainers, so Docker must be running for `./mvnw verify`.
+- Datasource config comes from `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/
+  `DB_PASSWORD`, defaulting to the local compose stack. Any Postgres provider
+  plugs in through those five variables — never hardcode a JDBC URL.
+- Those two rules are the short form. `docs/references/000001-persistence-foundation.md`
+  is the full picture — why the JDBC URL is composed from five parts instead of
+  supplied whole, what `ddl-auto: validate` and `open-in-view: false` mean for
+  writing services, and the runbook for when the free-tier database expires.
+  Read it before changing anything about persistence.
 
 ## Quality gates
 
