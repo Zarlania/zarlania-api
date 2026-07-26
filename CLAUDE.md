@@ -9,13 +9,13 @@ canonical set of agent instructions; `AGENTS.md` points here.
 written in Java. The browser client lives in a separate repository,
 [Zarlania/zarlania-app](https://github.com/Zarlania/zarlania-app).
 
-> **Status: early scaffolding.** The service currently exposes a single
-> hello-world endpoint. There is no domain model, persistence layer, or
-> authentication yet.
+> **Status: persistence foundation.** Postgres, Flyway, and JPA are wired
+> (see Stack and Layout below), but there is still no domain model, no domain
+> code, and no authentication yet.
 >
 > **PLACEHOLDER — expand as the project takes shape:** domain concepts and
-> vocabulary, module boundaries, persistence and migration strategy, authentication
-> and authorization model, external integrations, and the API versioning policy.
+> vocabulary, module boundaries, authentication and authorization model,
+> external integrations, and the API versioning policy.
 
 ## Stack
 
