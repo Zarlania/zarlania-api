@@ -150,16 +150,21 @@ because `spring-boot-starter-data-jpa` puts a `DataSource` in the context, and
 
 ## Testing
 
-`src/test/java/com/zarlania/api/ZarlaniaApiApplicationTest.java` boots the
-full Spring context against a real `postgres:17-alpine` container via
+`src/test/java/com/zarlania/api/ZarlaniaApiApplicationIntegrationTest.java`
+boots the full Spring context against a real `postgres:17-alpine` container via
 Testcontainers — the same major version `docker-compose.yml` and `render.yaml`
-pin. One test queries the database to prove the context started; the other
-checks that `flyway_schema_history` exists, proving Flyway ran. As migrations
-and entities land, this is the guardrail against broken migrations and
-entity/schema drift: `ddl-auto: validate` only compares entities to whatever
-schema exists, so a migration that does not apply cleanly, or an entity that no
-longer matches the migrated schema, fails here instead of first surfacing in a
-deployed environment.
+pin.
 
-Because this test starts a real Postgres container, Docker must be running
+It holds two tests. `applicationBootsAgainstPostgres` runs `SELECT 1` through an
+injected `JdbcTemplate`, which succeeds only if the context started and the
+datasource connects. `flywayCreatesItsSchemaHistoryTable` checks that
+`flyway_schema_history` exists, which is true only if Flyway ran during startup.
+
+As migrations and entities land, these two tests are the guardrail against
+broken migrations and entity/schema drift. `ddl-auto: validate` only compares
+entities to whatever schema exists, so a migration that does not apply cleanly,
+or an entity that no longer matches the migrated schema, fails here instead of
+first surfacing in a deployed environment.
+
+Because this test class starts a real Postgres container, Docker must be running
 locally for `./mvnw verify` (and for `./mvnw test`) to pass.

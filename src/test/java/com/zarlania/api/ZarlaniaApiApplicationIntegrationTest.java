@@ -15,7 +15,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @SpringBootTest
 @Testcontainers
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
-class ZarlaniaApiApplicationTest {
+class ZarlaniaApiApplicationIntegrationTest {
 
   // Same major version render.yaml and docker-compose.yml pin for production and local dev.
   @Container @ServiceConnection

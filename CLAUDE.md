@@ -193,6 +193,16 @@ without reading the rest of the codebase.
   overrides. Never hardcode a value that differs between environments.
 - Name tests after the behaviour they assert (`applicationBootsAgainstPostgres`),
   not the method under test.
+- **Integration tests end in `IntegrationTest`; unit tests end in `Test`.** A test
+  is an integration test when it needs something outside the JVM under test — a
+  database, a Testcontainer, an HTTP call to a real server — or boots a Spring
+  context to get it. So `CollectionServiceTest` unit-tests the service in
+  isolation, and `CollectionRepositoryIntegrationTest` exercises it against
+  Postgres. The two can then sit side by side for the same class. A shared base
+  class may appear later to hold common setup; it does not replace the suffix,
+  because the class name is what tells a reader (and a `-Dtest=` filter) which
+  kind of test they are looking at. Surefire's default `**/*Test.java` include
+  matches both, so both run under `./mvnw verify`.
 - Prefer Spring Boot test slices (`@WebMvcTest`) over `@SpringBootTest` when the
   full context is not needed — they are dramatically faster.
 - **Flyway owns the schema.** Never enable Hibernate DDL generation; write a
@@ -201,6 +211,11 @@ without reading the rest of the codebase.
 - Datasource config comes from `DB_HOST`/`DB_PORT`/`DB_NAME`/`DB_USER`/
   `DB_PASSWORD`, defaulting to the local compose stack. Any Postgres provider
   plugs in through those five variables — never hardcode a JDBC URL.
+- Those two rules are the short form. `docs/references/000001-persistence-foundation.md`
+  is the full picture — why the JDBC URL is composed from five parts instead of
+  supplied whole, what `ddl-auto: validate` and `open-in-view: false` mean for
+  writing services, and the runbook for when the free-tier database expires.
+  Read it before changing anything about persistence.
 
 ## Quality gates
 
