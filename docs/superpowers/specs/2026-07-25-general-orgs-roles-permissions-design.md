@@ -5,8 +5,8 @@
 - **Applies to:** `Zarlania/zarlania-api` only.
 - **Spec chain:** 3 of 7. Predecessor:
   [spec 2 — users, personal organizations, and core authentication](2026-07-25-users-personal-orgs-core-auth-design.md)
-  (the full decomposition is in spec 1). Successor: spec 4, *admin & machine
-  tokens* (written after this one; it references this spec).
+  (the full decomposition is in spec 1). Successor:
+  [spec 4 — admin and machine tokens](2026-07-25-admin-machine-tokens-design.md).
 
 ## Purpose
 
