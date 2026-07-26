@@ -29,8 +29,7 @@ def _construct_mapping_no_duplicates(
     loader.flatten_mapping(node)
     mapping: dict[Any, Any] = {}
     for key_node, value_node in node.value:
-        # construct_object is untyped in the PyYAML stubs; the calls are safe.
-        key = loader.construct_object(key_node, deep=deep)  # type: ignore[no-untyped-call]
+        key = loader.construct_object(key_node, deep=deep)
         if not isinstance(key, str):
             raise yaml.constructor.ConstructorError(
                 None,
@@ -42,7 +41,7 @@ def _construct_mapping_no_duplicates(
             raise yaml.constructor.ConstructorError(
                 None, None, f"duplicate frontmatter key: {key!r}", key_node.start_mark
             )
-        mapping[key] = loader.construct_object(value_node, deep=deep)  # type: ignore[no-untyped-call]
+        mapping[key] = loader.construct_object(value_node, deep=deep)
     return mapping
 
 
