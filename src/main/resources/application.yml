@@ -1,6 +1,22 @@
 spring:
   application:
     name: zarlania-api
+  # Composed from parts, not one URL: Render blueprints can inject a database's
+  # host/port/database/user/password into env vars but cannot template them into
+  # a JDBC URL (Render's own connectionString is postgres://, which JDBC rejects).
+  # Any Postgres provider plugs in through these five variables.
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zarlania}
+    username: ${DB_USER:zarlania}
+    password: ${DB_PASSWORD:zarlania}
+  jpa:
+    hibernate:
+      # Flyway owns the schema. Hibernate only checks that entities match it,
+      # so drift fails startup instead of silently diverging.
+      ddl-auto: validate
+    # The default (true) holds the session open into the web layer, letting lazy
+    # loads leak entities across domain boundaries.
+    open-in-view: false
 
 server:
   # Render injects PORT; 8080 is the local default.
