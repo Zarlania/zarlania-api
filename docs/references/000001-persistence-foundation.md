@@ -81,7 +81,13 @@ controller trigger a lazy load outside its originating service call — a
 convenience that hides N+1 queries and lets persistence concerns leak across
 the controller/service boundary this codebase otherwise keeps separate.
 Disabling it means all lazy associations must be resolved inside the service
-layer, where the session is still open.
+layer, where the session is still open — which requires the service method
+itself to carry an explicit `@Transactional` boundary. Without one, each
+repository call opens and closes its own short-lived session, so a lazy
+association touched after that call returns fails the same way it would with
+`open-in-view: false` and a controller in between. A service method that
+returns data touching lazy associations must resolve them itself, inside its
+own `@Transactional` boundary, before returning.
 
 Migration files are named `V<n>__<slug>.sql`, following Flyway's default
 naming convention (for example, `V1__create_users_table.sql`). `<n>` is a
@@ -100,9 +106,14 @@ Tables created by migrations follow a standard column shape:
 ## Free-tier runbook
 
 The hosted database (`render.yaml`, service `zarlania-db`) runs on Render's
-free plan, which is time-limited rather than always-on: the instance expires
-30 days after creation, and its data is deleted 14 days after that if it is
-not recreated. When it expires, the runbook is:
+free plan, which is disposable, non-production infrastructure rather than
+always-on: the instance expires 30 days after creation, and Render deletes
+its data 14 days after that unless the database is upgraded to a paid plan
+before the grace period ends — upgrading in that window is the only way to
+keep the existing data. Recreating the database after deletion does not
+recover anything; it only gives Flyway an empty database to rebuild the
+schema into. When the data is gone (or the free tier's disposability is
+accepted rather than escaped by upgrading), the runbook is:
 
 1. Recreate the database in Render.
 2. Redeploy the API against the new instance.

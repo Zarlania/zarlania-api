@@ -44,11 +44,13 @@ services:
     image: postgres:17-alpine
     container_name: zarlania-postgres
     ports:
-      - "${DB_PORT:-5432}:5432"
+      # Bound to loopback: an omitted host IP binds to 0.0.0.0, which would
+      # publish the default credentials below to the whole local network.
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: ${DB_NAME:-zarlania}
       POSTGRES_USER: ${DB_USER:-zarlania}
-      # Harmless dev-only default; the container only ever binds to localhost.
+      # Harmless dev-only default; the port binding above keeps this off the network.
       POSTGRES_PASSWORD: ${DB_PASSWORD:-zarlania}
     volumes:
       - postgres-data:/var/lib/postgresql/data

@@ -69,3 +69,7 @@ databases:
     databaseName: zarlania
     user: zarlania
     postgresMajorVersion: "17"
+    # Only zarlania-api (same region, same account) ever needs to reach this
+    # database, over Render's private network — an empty list blocks the
+    # public/external connection string entirely.
+    ipAllowList: []
