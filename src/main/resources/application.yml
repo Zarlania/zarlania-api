@@ -6,7 +6,13 @@ spring:
   # a JDBC URL (Render's own connectionString is postgres://, which JDBC rejects).
   # Any Postgres provider plugs in through these five variables.
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zarlania}
+    # stringtype=unspecified: without it, pgjdbc binds a String parameter as
+    # varchar, so Postgres resolves `citext_column = ?` via an implicit cast to
+    # plain text on both sides and silently compares case-sensitively — the
+    # unique/case-insensitive columns CLAUDE.md documents (email, username)
+    # would stop matching on case. Leaving the type unspecified lets Postgres
+    # infer it from the citext column instead.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zarlania}?stringtype=unspecified
     username: ${DB_USER:zarlania}
     password: ${DB_PASSWORD:zarlania}
   jpa:
