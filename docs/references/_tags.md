@@ -13,3 +13,4 @@ fits; only add a new row when none of these cover the change.
 | configuration | Application configuration and environment overrides. |
 | controllers | Spring MVC controllers and request mapping. |
 | http | HTTP request/response handling and endpoints. |
+| persistence | Database schema, migrations, and the data-access layer. |

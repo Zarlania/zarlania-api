@@ -17,4 +17,5 @@ OpenAPI reference (that is generated from Spring/springdoc, not written here).
 <!-- reference-index:start -->
 | ID | Title | Description | Tags |
 | -- | ----- | ----------- | ---- |
+| [000001](000001-persistence-foundation.md) | Persistence foundation | How the Postgres datasource, Flyway migrations, and JPA are configured and operated. | persistence |
 <!-- reference-index:end -->
