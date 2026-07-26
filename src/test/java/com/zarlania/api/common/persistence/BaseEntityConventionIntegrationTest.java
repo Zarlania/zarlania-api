@@ -2,6 +2,7 @@ package com.zarlania.api.common.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.users.entities.User;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.temporal.ChronoUnit;
@@ -19,12 +20,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 class BaseEntityConventionIntegrationTest {
 
-  // stringtype=unspecified matches the production JDBC URL (application.yml):
-  // without it, a bound String is typed varchar, and Postgres compares a
-  // citext column against it as plain text — case-sensitively.
   @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES =
-      new PostgreSQLContainer("postgres:17-alpine").withUrlParam("stringtype", "unspecified");
+  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
 
   private final UserRepository users;
 

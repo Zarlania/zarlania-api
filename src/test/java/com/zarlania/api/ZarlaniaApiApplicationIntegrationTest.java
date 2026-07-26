@@ -2,6 +2,7 @@ package com.zarlania.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.zarlania.api.testsupport.PostgresTestContainer;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,9 +18,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 class ZarlaniaApiApplicationIntegrationTest {
 
-  // Same major version render.yaml and docker-compose.yml pin for production and local dev.
   @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
 
   private final JdbcTemplate jdbcTemplate;
 
