@@ -5,9 +5,8 @@
 - **Applies to:** `Zarlania/zarlania-api` only.
 - **Spec chain:** 2 of 7. Predecessor:
   [spec 1 — persistence foundation and domain package convention](2026-07-25-persistence-foundation-design.md)
-  (the full seven-part decomposition is listed there). Successor: spec 3,
-  *general orgs, roles & permissions* (written after this one; it references
-  this spec).
+  (the full seven-part decomposition is listed there). Successor:
+  [spec 3 — general organizations, roles, and permissions](2026-07-25-general-orgs-roles-permissions-design.md).
 
 ## Purpose
 
