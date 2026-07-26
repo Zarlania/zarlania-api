@@ -2,7 +2,10 @@
 # does not read this file.
 #
 #   docker compose up --build      start the API on http://localhost:8080
+#   docker compose up postgres     start only the database (for ./mvnw spring-boot:run)
 #   docker compose down            stop and remove containers
+#
+# Values are overridable via a gitignored .env file; see .env.example.
 
 services:
   api:
@@ -19,6 +22,15 @@ services:
       PORT: 8080
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
       JAVA_OPTS: ${JAVA_OPTS:--XX:MaxRAMPercentage=75}
+      # In-network address; the host-published port below is for spring-boot:run.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME:-zarlania}
+      DB_USER: ${DB_USER:-zarlania}
+      DB_PASSWORD: ${DB_PASSWORD:-zarlania}
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
       interval: 15s
@@ -27,9 +39,25 @@ services:
       start_period: 40s
     restart: unless-stopped
 
-# Placeholder: no datastore is defined yet because the hello-world service does
-# not persist anything. When one is added, declare it as a service here, add its
-# volume below, and give `api` a `depends_on` with `condition: service_healthy`.
-#
-# volumes:
-#   postgres-data:
+  postgres:
+    # Same major version render.yaml pins for production and the smoke test uses.
+    image: postgres:17-alpine
+    container_name: zarlania-postgres
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-zarlania}
+      POSTGRES_USER: ${DB_USER:-zarlania}
+      # Harmless dev-only default; the container only ever binds to localhost.
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-zarlania}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
