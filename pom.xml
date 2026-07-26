@@ -69,9 +69,14 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>
     </dependency>
+    <!--
+      Spring Boot 4 split FlywayAutoConfiguration out of spring-boot-autoconfigure
+      into this dedicated module (bundled by spring-boot-starter-flyway along with
+      flyway-core); flyway-core alone no longer wires Flyway into the context.
+    -->
     <dependency>
-      <groupId>org.flywaydb</groupId>
-      <artifactId>flyway-core</artifactId>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-flyway</artifactId>
     </dependency>
     <dependency>
       <groupId>org.flywaydb</groupId>
