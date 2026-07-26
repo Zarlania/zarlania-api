@@ -23,6 +23,8 @@ public abstract class BaseEntity {
   @Column(name = "updated_at", nullable = false)
   private Instant updatedAt;
 
+  protected BaseEntity() {}
+
   public UUID getId() {
     return id;
   }

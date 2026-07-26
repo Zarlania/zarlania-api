@@ -17,6 +17,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -39,6 +40,11 @@ class UserServiceTest {
     when(users.save(any(User.class))).thenReturn(new User("new@example.com", "newuser"));
 
     UserDto dto = service.createUnverified("new@example.com", "newuser");
+
+    ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+    verify(users).save(saved.capture());
+    assertThat(saved.getValue().getEmail()).isEqualTo("new@example.com");
+    assertThat(saved.getValue().getUsername()).isEqualTo("newuser");
 
     assertThat(dto.email()).isEqualTo("new@example.com");
     assertThat(dto.username()).isEqualTo("newuser");
