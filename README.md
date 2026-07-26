@@ -7,8 +7,9 @@
 
 Open-source API and backend services for building and managing collections with Zarlania.
 
-> **Status: early scaffolding.** The service currently exposes a single hello-world
-> endpoint. The domain model, persistence layer and authentication are not built yet.
+> **Status: persistence foundation.** Postgres, Flyway, and JPA are wired (see
+> Configuration and Project layout below), but there is still no domain model,
+> no domain code, and no authentication yet.
 
 The browser client lives in a separate repository: [Zarlania/zarlania-app](https://github.com/Zarlania/zarlania-app).
 
@@ -17,22 +18,18 @@ The browser client lives in a separate repository: [Zarlania/zarlania-app](https
 | Tool   | Version | Notes                                              |
 | ------ | ------- | -------------------------------------------------- |
 | JDK    | 25      | Temurin recommended. Maven is supplied by `./mvnw`. |
-| Docker | 24+     | Only needed for the Compose workflow.               |
+| Docker | 24+     | Needed for the Compose workflow, for `./mvnw verify` (Testcontainers-based tests), and for `spring-boot:run` (needs the compose Postgres). |
 
 ## Quick start
 
 ```bash
 git clone https://github.com/Zarlania/zarlania-api.git
 cd zarlania-api
+docker compose up postgres
 ./mvnw spring-boot:run
 ```
 
 The API listens on <http://localhost:8080>.
-
-```bash
-curl http://localhost:8080/hello
-# {"message":"Hello from Zarlania!"}
-```
 
 ### With Docker Compose
 
@@ -48,7 +45,6 @@ top of that would only repeat it.
 
 | Method | Path                | Description                     |
 | ------ | ------------------- | ------------------------------- |
-| `GET`  | `/hello`            | Returns a greeting as JSON.     |
 | `GET`  | `/actuator/health`  | Health probe used by Render.    |
 
 ## Common tasks
@@ -68,22 +64,36 @@ top of that would only repeat it.
 Configuration lives in `src/main/resources/application.yml`. Every value can be
 overridden with an environment variable.
 
-| Variable                         | Default                 | Description                                   |
+| Variable                        | Default                 | Description                                |
 | -------------------------------- | ----------------------- | --------------------------------------------- |
 | `PORT`                           | `8080`                  | HTTP port. Render sets this automatically.    |
 | `SPRING_PROFILES_ACTIVE`         | —                       | Active Spring profile.                        |
 | `ZARLANIA_CORS_ALLOWED_ORIGINS`  | `http://localhost:5173` | Origins permitted to call the API.            |
 | `JAVA_OPTS`                      | —                       | Extra JVM flags passed to the container.      |
+| `DB_HOST`                        | `localhost`              | Database host.                               |
+| `DB_PORT`                        | `5432`                   | Database port.                               |
+| `DB_NAME`                        | `zarlania`               | Database name.                               |
+| `DB_USER`                        | `zarlania`               | Connection username.                         |
+| `DB_PASSWORD`                    | `zarlania`               | Connection password.                         |
 
 ## Project layout
 
 ```text
 src/main/java/com/zarlania/api/
-  ZarlaniaApiApplication.java   Spring Boot entry point
-  hello/HelloController.java    Hello-world endpoint
+  ZarlaniaApiApplication.java   Entry point
+  common/                       Domain-agnostic infrastructure only (e.g. persistence
+                                base classes). Nothing with business meaning.
+  <domain>/                     One package per domain, layer sub-packages inside:
+    controllers/                HTTP endpoints
+    services/                   Business rules
+    repositories/               Spring Data interfaces
+    entities/                   JPA entities — never leave the domain
+    dtos/                       Records crossing the domain boundary
 src/main/resources/
-  application.yml               Configuration
-src/test/java/                  Tests, mirroring the main package structure
+  application.yml               Configuration, with env-var overrides
+  db/migration/                 Flyway migrations (V<n>__<slug>.sql) — the only thing
+                                that creates or alters schema
+src/test/java/com/zarlania/api/  Tests, mirroring the main package structure
 ```
 
 ## Documentation

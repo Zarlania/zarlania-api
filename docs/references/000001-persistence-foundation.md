@@ -66,7 +66,9 @@ The parts are composed rather than supplied as a single URL for two reasons:
 
 Flyway is the sole owner of the schema. Migrations live in
 `src/main/resources/db/migration` and run automatically on application
-startup, before the rest of the context initializes.
+startup, before the JPA `EntityManagerFactory` is created — Spring Boot wires
+Flyway to run ahead of it via `@DependsOn`, not before the whole application
+context initializes.
 
 Hibernate's `ddl-auto` is set to `validate`: it never creates or alters
 tables, it only checks that the JPA entity mappings match the schema Flyway
@@ -111,6 +113,14 @@ not recreated. When it expires, the runbook is:
 The data held in the expired database is gone; the schema is not, since it is
 fully described by the checked-in migrations and reconstructed from them
 every time.
+
+Adding the `databases:` block to `render.yaml` does not itself provision
+anything on a Render Blueprint instance that already exists — Render only
+picks up a new database after a manual blueprint sync. Also, because
+`spring-boot-starter-data-jpa` adds a datasource health indicator, the first
+deploy after that change merges will fail `/actuator/health` until the
+database is actually attached, so the sync should happen before (or as part
+of) that deploy, not after.
 
 ## Testing
 

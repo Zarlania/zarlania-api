@@ -31,7 +31,7 @@ written in Java. The browser client lives in a separate repository,
 | Static analysis | Checkstyle (design rules), SpotBugs with FindSecBugs |
 | Boilerplate | Lombok, restricted by `lombok.config`     |
 | Linting    | yamllint and markdownlint, in CI           |
-| Testing    | JUnit 5 and Spring Boot test slices        |
+| Testing    | JUnit 5, Spring Boot test slices, and Testcontainers |
 | Container  | Docker, with Compose for local development |
 | Hosting    | Render, configured in `render.yaml`        |
 
@@ -191,8 +191,8 @@ without reading the rest of the codebase.
   list and reasoning is in `lombok.config`.
 - Configuration is read from `application.yml` with environment-variable
   overrides. Never hardcode a value that differs between environments.
-- Name tests after the behaviour they assert (`helloReturnsGreeting`), not the
-  method under test.
+- Name tests after the behaviour they assert (`applicationBootsAgainstPostgres`),
+  not the method under test.
 - Prefer Spring Boot test slices (`@WebMvcTest`) over `@SpringBootTest` when the
   full context is not needed — they are dramatically faster.
 - **Flyway owns the schema.** Never enable Hibernate DDL generation; write a
