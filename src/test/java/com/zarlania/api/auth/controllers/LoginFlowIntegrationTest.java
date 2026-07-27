@@ -14,6 +14,7 @@ import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.testsupport.RecordingEmailSender;
 import com.zarlania.api.testsupport.RecordingEmailSenderConfig;
 import jakarta.servlet.http.Cookie;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -45,13 +47,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * RecordingEmailSender} bean are shared across the whole class, so each test registers its own
  * unique email/username pair rather than relying on transactional rollback between tests.
  */
-// register-limit is raised because every test method here registers its own account under the
-// same client IP against one shared InMemoryRateLimiter instance for the class's lifetime — more
-// setup calls than the production default (5/min) allows. login-limit is deliberately left at
-// the production default (10/min, from application.yml) because
-// theEleventhRapidLoginWithAWrongPasswordIsThrottled below exercises that exact default; it uses
-// its own remote address (see THROTTLE_TEST_REMOTE_ADDR) so its request count cannot combine
-// with the other tests' login calls in the same window and produce a flaky trigger point.
+// register-limit is raised: every test method registers its own account under one shared
+// InMemoryRateLimiter for the class's lifetime, more setup calls than 5/min allows. login-limit
+// stays at the production default (10/min) because the throttle tests below exercise it directly;
+// each uses its own client identity (remote address or X-Forwarded-For) so its count can't combine
+// with another test method's login calls and shift the trigger point.
 @SpringBootTest(properties = {"zarlania.throttle.register-limit=1000"})
 @AutoConfigureMockMvc
 @Testcontainers
@@ -66,6 +66,11 @@ class LoginFlowIntegrationTest {
   private static final String ORG_CLAIM = "org";
   private static final String THROTTLE_TEST_REMOTE_ADDR = "203.0.113.7";
   private static final int LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING = 11;
+  private static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
+  // TEST-NET-2 (RFC 5737); distinct per test so no method's bucket state bleeds into another.
+  private static final String FORWARDED_ADDR_SHARED_BUCKET_TEST = "198.51.100.10";
+  private static final String FORWARDED_ADDR_INDEPENDENCE_TEST_PRIMARY = "198.51.100.30";
+  private static final String FORWARDED_ADDR_INDEPENDENCE_TEST_SECONDARY = "198.51.100.40";
 
   @Container @ServiceConnection
   static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
@@ -163,6 +168,35 @@ class LoginFlowIntegrationTest {
     loginRequestFrom(THROTTLE_TEST_REMOTE_ADDR, "mia", "not-the-right-password")
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("auth.throttled"));
+  }
+
+  // application.yml's server.forward-headers-strategy: framework makes ForwardedHeaderFilter
+  // rewrite getRemoteAddr() from X-Forwarded-For — without it every caller would resolve to
+  // Render's proxy address and share one bucket. Unknown identifier: purely about throttling.
+  @Test
+  void requestsSharingAForwardedForAddressShareAThrottleBucket() throws Exception {
+    for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING; attempt++) {
+      loginRequestForwardedFrom(FORWARDED_ADDR_SHARED_BUCKET_TEST, "nobody-registered", PASSWORD)
+          .andExpect(status().isUnauthorized());
+    }
+
+    loginRequestForwardedFrom(FORWARDED_ADDR_SHARED_BUCKET_TEST, "nobody-registered", PASSWORD)
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("auth.throttled"));
+  }
+
+  @Test
+  void requestsWithDifferentForwardedForAddressesGetIndependentThrottleBuckets() throws Exception {
+    for (int attempt = 0; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING - 1; attempt++) {
+      loginRequestForwardedFrom(
+              FORWARDED_ADDR_INDEPENDENCE_TEST_PRIMARY, "nobody-registered", PASSWORD)
+          .andExpect(status().isUnauthorized());
+    }
+
+    // Primary is now exactly at its limit; a different forwarded address must have full capacity.
+    loginRequestForwardedFrom(
+            FORWARDED_ADDR_INDEPENDENCE_TEST_SECONDARY, "nobody-registered", PASSWORD)
+        .andExpect(status().isUnauthorized());
   }
 
   @Test
@@ -278,33 +312,44 @@ class LoginFlowIntegrationTest {
   }
 
   private ResultActions loginRequest(String identifier, String password) throws Exception {
-    return mockMvc.perform(
-        post("/auth/login")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(
-                """
-                {"identifier":"%s","password":"%s"}
-                """
-                    .formatted(identifier, password)));
+    return performLogin(identifier, password, UnaryOperator.identity());
   }
 
-  // Only the throttling test needs a fixed, distinguishable remote address; every other login
-  // call in this class can keep using MockMvc's default.
+  // Only the direct-IP throttling test needs a fixed remote address; every other login call in
+  // this class keeps MockMvc's default.
   private ResultActions loginRequestFrom(String remoteAddr, String identifier, String password)
       throws Exception {
-    return mockMvc.perform(
-        post("/auth/login")
-            .with(
+    return performLogin(
+        identifier,
+        password,
+        builder ->
+            builder.with(
                 request -> {
                   request.setRemoteAddr(remoteAddr);
                   return request;
-                })
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(
-                """
-                {"identifier":"%s","password":"%s"}
-                """
-                    .formatted(identifier, password)));
+                }));
+  }
+
+  // Exercises the real ForwardedHeaderFilter rewrite (server.forward-headers-strategy: framework)
+  // via the header it reads, rather than bypassing it like loginRequestFrom's setRemoteAddr does.
+  private ResultActions loginRequestForwardedFrom(
+      String forwardedFor, String identifier, String password) throws Exception {
+    return performLogin(
+        identifier, password, builder -> builder.header(FORWARDED_FOR_HEADER, forwardedFor));
+  }
+
+  private ResultActions performLogin(
+      String identifier, String password, UnaryOperator<MockHttpServletRequestBuilder> customize)
+      throws Exception {
+    return mockMvc.perform(
+        customize.apply(
+            post("/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"identifier":"%s","password":"%s"}
+                    """
+                        .formatted(identifier, password))));
   }
 
   private ResultActions refreshRequest(String cookieValue) throws Exception {

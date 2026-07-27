@@ -99,12 +99,10 @@ public class AuthController {
     return withSession(authTokenService.refresh(cookie));
   }
 
-  // Key is <endpoint>:<client-ip>, IP from getRemoteAddr(). Behind a reverse proxy (Render's
-  // included) that is the proxy's address, not the caller's, unless X-Forwarded-For is trusted
-  // and threaded through — that is not done here, so today every request arriving through
-  // Render's proxy shares one bucket per endpoint rather than being limited per real client.
-  // Tracked as a follow-up; per-IP is still what the brief asks for and is correct for direct
-  // (non-proxied) callers such as the test suite.
+  // Key is <endpoint>:<client-ip>, IP from getRemoteAddr(). That resolves to the real caller, not
+  // Render's proxy address, only because application.yml sets server.forward-headers-strategy to
+  // framework — see the comment there for why honouring X-Forwarded-For is safe here specifically
+  // and not in general.
   private void requireCapacity(String endpoint, int limit, HttpServletRequest request) {
     String key = endpoint + ":" + request.getRemoteAddr();
     if (!rateLimiter.tryConsume(key, limit)) {

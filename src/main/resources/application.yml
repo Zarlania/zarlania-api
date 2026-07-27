@@ -27,6 +27,17 @@ spring:
 server:
   # Render injects PORT; 8080 is the local default.
   port: ${PORT:8080}
+  # Render terminates TLS and proxies every request to this instance, so
+  # HttpServletRequest.getRemoteAddr() would otherwise always resolve to Render's proxy address,
+  # not the caller's — collapsing AuthController's per-IP throttle buckets (common/throttle) into
+  # one shared bucket per endpoint for every user. `framework` makes Spring's
+  # ForwardedHeaderFilter resolve getRemoteAddr() from X-Forwarded-For instead. This is only safe
+  # because the service is reachable exclusively through Render's proxy: a client able to reach
+  # the app directly could forge X-Forwarded-For to evade the limiter or frame another IP. If this
+  # service is ever exposed another way (a second ingress, direct instance access), that path must
+  # either strip/overwrite X-Forwarded-For before requests reach here or this setting must be
+  # revisited.
+  forward-headers-strategy: framework
 
 management:
   endpoints:
