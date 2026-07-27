@@ -220,6 +220,31 @@ class RefreshTokenServiceIntegrationTest {
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
   }
 
+  // Guards against the gap a per-row lock alone cannot close: if revokeFamilyOf's own locked
+  // family read is the one that blocks (waiting on a row an in-flight rotate() holds), Postgres
+  // resolves that wait by refreshing only the row it was already waiting on — it does not
+  // discover the successor row rotate() inserts as part of the same transaction. A family-scoped
+  // advisory lock, taken before either call reads any row, rules this out by fully serializing
+  // the two calls: whichever wins runs to completion (commit or throw) before the other starts
+  // its own row work, so there is no partial interleaving left to expose. Racing revokeFamilyOf
+  // and rotate() on the very same token exercises both possible outcomes: rotate-then-revoke
+  // (both the original and its successor end up revoked) and revoke-then-rotate (the token is
+  // already revoked, so rotate() throws InvalidRefreshTokenException and no successor is ever
+  // minted) — either way, nothing in the family is left live.
+  @Test
+  void concurrentRevocationAndRotationOfTheSameTokenLeavesNoRowUnrevoked() throws Exception {
+    UUID userId = seedUserId("revoke-rotate-race");
+    OrganizationDto org = seedPersonalOrganization(userId, "revoke-rotate-race");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    UUID familyId = findStoredToken(issued.raw()).getFamilyId();
+
+    raceTwo(() -> rotateTolerantOfLosingTheRace(issued.raw()), () -> revoke(issued.raw()));
+
+    List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+    assertThat(family).isNotEmpty();
+    assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
+  }
+
   private Void revoke(String raw) {
     refreshTokenService.revokeFamilyOf(raw);
     return null;
@@ -232,6 +257,20 @@ class RefreshTokenServiceIntegrationTest {
     } catch (ReusedRefreshTokenException e) {
       return false;
     }
+  }
+
+  // Unlike rotateSucceeds, this tolerates InvalidRefreshTokenException too: racing against a
+  // concurrent revokeFamilyOf, rotate() throwing that (because the family lock made the logout
+  // land first, so the token was already revoked) is exactly as valid an outcome as it winning
+  // the race and succeeding — the test asserts on the resulting family state, not on which of
+  // the two calls "won".
+  private Void rotateTolerantOfLosingTheRace(String raw) {
+    try {
+      refreshTokenService.rotate(raw);
+    } catch (ReusedRefreshTokenException | InvalidRefreshTokenException e) {
+      // Expected under either race ordering; see the caller's test comment.
+    }
+    return null;
   }
 
   /**

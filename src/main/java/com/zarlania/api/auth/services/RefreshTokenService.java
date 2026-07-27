@@ -24,6 +24,17 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RefreshTokenService {
 
+  // Arbitrary but fixed first argument to pg_advisory_xact_lock(int, int): Postgres advisory
+  // locks are one flat 64-bit space per database, and the two-argument form exists precisely so
+  // each feature that takes one can reserve a distinct first argument, keeping unrelated features'
+  // locks from ever coinciding. If another feature starts taking advisory locks, give it its own
+  // classifier rather than reusing this one. ("RFTL": ReFreshTokenLock, spelled out in hex.)
+  private static final int FAMILY_LOCK_CLASSIFIER = 0x5246_544C;
+
+  // Half the width of the long halves folded together below, to fold each into its own 32-bit
+  // contribution rather than just discarding its top bits.
+  private static final int LONG_HALF_WIDTH_BITS = 32;
+
   private final RefreshTokenRepository tokens;
   private final AuthProperties authProperties;
   private final Clock clock;
@@ -51,16 +62,12 @@ public class RefreshTokenService {
     String tokenHash = TokenHasher.sha256Hex(raw);
     UUID familyId =
         tokens.findFamilyIdByTokenHash(tokenHash).orElseThrow(InvalidRefreshTokenException::new);
-    // Locks the whole family, in canonical order, before touching any single row — see
-    // findByFamilyIdOrderById for why that closes the deadlock a single-row lock left open.
+    // Serializes every rotate()/revokeFamilyOf() call on this family before touching a single
+    // row — see acquireFamilyLock for why the row lock below is not enough on its own.
+    lockFamily(familyId);
     RefreshToken current = findByHash(tokens.findByFamilyIdOrderById(familyId), tokenHash);
     Instant now = clock.instant();
     if (current.getUsedAt() != null) {
-      // revokeFamily re-reads the family from scratch instead of reusing the list above: if this
-      // call blocked on the row above, Postgres resolves that wait by refreshing only the row(s)
-      // it was already waiting on, not by discovering rows inserted elsewhere in the meantime —
-      // so the concurrent winner's freshly inserted successor row would otherwise be invisible
-      // here and survive un-revoked. A second, independent query sees it too.
       revokeFamily(familyId, now); // reuse = theft signal
       throw new ReusedRefreshTokenException();
     }
@@ -84,7 +91,22 @@ public class RefreshTokenService {
   public void revokeFamilyOf(String raw) {
     tokens
         .findFamilyIdByTokenHash(TokenHasher.sha256Hex(raw))
-        .ifPresent(familyId -> revokeFamily(familyId, clock.instant()));
+        .ifPresent(
+            familyId -> {
+              lockFamily(familyId);
+              revokeFamily(familyId, clock.instant());
+            });
+  }
+
+  // A pure function of familyId: XORing the UUID's two halves together folds all 128 bits of
+  // entropy into the 32-bit key pg_advisory_xact_lock(int, int) takes, so the same family always
+  // produces the same key. A collision between two different families only makes them serialize
+  // against each other unnecessarily — never a correctness problem, just lost concurrency.
+  private void lockFamily(UUID familyId) {
+    long msb = familyId.getMostSignificantBits();
+    long lsb = familyId.getLeastSignificantBits();
+    int key = (int) (msb ^ (msb >>> LONG_HALF_WIDTH_BITS) ^ lsb ^ (lsb >>> LONG_HALF_WIDTH_BITS));
+    tokens.acquireFamilyLock(FAMILY_LOCK_CLASSIFIER, key);
   }
 
   // MessageDigest.isEqual, not String.equals: the hashes being compared are secrets derived from
