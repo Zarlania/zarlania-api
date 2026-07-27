@@ -6,8 +6,11 @@ import com.zarlania.api.auth.dtos.RefreshRotation;
 import com.zarlania.api.auth.entities.RefreshToken;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.common.security.TokenHasher;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -45,13 +48,20 @@ public class RefreshTokenService {
   // to prevent.
   @Transactional(noRollbackFor = ReusedRefreshTokenException.class)
   public RefreshRotation rotate(String raw) {
-    RefreshToken current =
-        tokens
-            .findByTokenHash(TokenHasher.sha256Hex(raw))
-            .orElseThrow(InvalidRefreshTokenException::new);
+    String tokenHash = TokenHasher.sha256Hex(raw);
+    UUID familyId =
+        tokens.findFamilyIdByTokenHash(tokenHash).orElseThrow(InvalidRefreshTokenException::new);
+    // Locks the whole family, in canonical order, before touching any single row — see
+    // findByFamilyIdOrderById for why that closes the deadlock a single-row lock left open.
+    RefreshToken current = findByHash(tokens.findByFamilyIdOrderById(familyId), tokenHash);
     Instant now = clock.instant();
     if (current.getUsedAt() != null) {
-      revokeFamily(current.getFamilyId(), now); // reuse = theft signal
+      // revokeFamily re-reads the family from scratch instead of reusing the list above: if this
+      // call blocked on the row above, Postgres resolves that wait by refreshing only the row(s)
+      // it was already waiting on, not by discovering rows inserted elsewhere in the meantime —
+      // so the concurrent winner's freshly inserted successor row would otherwise be invisible
+      // here and survive un-revoked. A second, independent query sees it too.
+      revokeFamily(familyId, now); // reuse = theft signal
       throw new ReusedRefreshTokenException();
     }
     if (!current.isActive(now)) {
@@ -73,12 +83,26 @@ public class RefreshTokenService {
   @Transactional
   public void revokeFamilyOf(String raw) {
     tokens
-        .findByTokenHash(TokenHasher.sha256Hex(raw))
-        .ifPresent(token -> revokeFamily(token.getFamilyId(), clock.instant()));
+        .findFamilyIdByTokenHash(TokenHasher.sha256Hex(raw))
+        .ifPresent(familyId -> revokeFamily(familyId, clock.instant()));
+  }
+
+  // MessageDigest.isEqual, not String.equals: the hashes being compared are secrets derived from
+  // the caller-supplied raw token, and a short-circuiting equals() leaks how many leading bytes
+  // matched through response timing (FindSecBugs UNSAFE_HASH_EQUALS).
+  private RefreshToken findByHash(List<RefreshToken> family, String tokenHash) {
+    byte[] target = tokenHash.getBytes(StandardCharsets.UTF_8);
+    return family.stream()
+        .filter(
+            token ->
+                MessageDigest.isEqual(
+                    token.getTokenHash().getBytes(StandardCharsets.UTF_8), target))
+        .findFirst()
+        .orElseThrow(InvalidRefreshTokenException::new);
   }
 
   private void revokeFamily(UUID familyId, Instant now) {
-    tokens.findByFamilyId(familyId).stream()
+    tokens.findByFamilyIdOrderById(familyId).stream()
         .filter(token -> token.getRevokedAt() == null)
         .forEach(token -> token.revoke(now));
   }

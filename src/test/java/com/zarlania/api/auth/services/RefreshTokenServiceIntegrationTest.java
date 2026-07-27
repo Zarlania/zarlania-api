@@ -16,7 +16,7 @@ import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -30,8 +30,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -52,7 +50,6 @@ class RefreshTokenServiceIntegrationTest {
   private final UserService userService;
   private final OrganizationService organizationService;
   private final Clock clock;
-  private final PlatformTransactionManager transactionManager;
 
   private UUID seedUserId(String slug) {
     UserDto user = userService.createUnverified(slug + "@example.com", slug);
@@ -63,13 +60,8 @@ class RefreshTokenServiceIntegrationTest {
     return organizationService.createPersonalOrganization(userId, slug + "'s Space");
   }
 
-  // findByTokenHash takes a PESSIMISTIC_WRITE lock (see RefreshTokenRepository), which Hibernate
-  // only allows inside an active transaction. Test methods aren't transactional, so reads made
-  // directly for assertions need their own short-lived transaction to open and close around them.
   private RefreshToken findStoredToken(String raw) {
-    TransactionTemplate template = new TransactionTemplate(transactionManager);
-    return template.execute(
-        status -> refreshTokens.findByTokenHash(TokenHasher.sha256Hex(raw)).orElseThrow());
+    return refreshTokens.findByTokenHash(TokenHasher.sha256Hex(raw)).orElseThrow();
   }
 
   @Test
@@ -187,8 +179,8 @@ class RefreshTokenServiceIntegrationTest {
   }
 
   // Guards against a check-then-act race: two callers redeeming the same not-yet-used token at
-  // the same instant must not both succeed. RefreshTokenRepository.findByTokenHash takes a
-  // PESSIMISTIC_WRITE lock, so the loser blocks until the winner commits, then re-reads usedAt
+  // the same instant must not both succeed. findByFamilyIdOrderById takes a PESSIMISTIC_WRITE
+  // lock on the whole family, so the loser blocks until the winner commits, then re-reads usedAt
   // as already set and correctly takes the reuse path instead of also succeeding.
   @Test
   void concurrentRotationOfTheSameTokenSucceedsExactlyOnce() throws Exception {
@@ -197,7 +189,8 @@ class RefreshTokenServiceIntegrationTest {
     IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
     UUID familyId = findStoredToken(issued.raw()).getFamilyId();
 
-    List<Boolean> outcomes = raceTwoRotationsOf(issued.raw());
+    List<Boolean> outcomes =
+        raceTwo(() -> rotateSucceeds(issued.raw()), () -> rotateSucceeds(issued.raw()));
 
     assertThat(outcomes).filteredOn(succeeded -> succeeded).hasSize(1);
     assertThat(outcomes).filteredOn(succeeded -> !succeeded).hasSize(1);
@@ -205,33 +198,31 @@ class RefreshTokenServiceIntegrationTest {
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
   }
 
-  /** Releases two threads at the same instant to call {@code rotate} on the same raw token. */
-  private List<Boolean> raceTwoRotationsOf(String raw) throws Exception {
-    int racers = 2;
-    ExecutorService executor = Executors.newFixedThreadPool(racers);
-    CountDownLatch ready = new CountDownLatch(racers);
-    CountDownLatch start = new CountDownLatch(1);
-    Callable<Boolean> racer =
-        () -> {
-          ready.countDown();
-          start.await();
-          return rotateSucceeds(raw);
-        };
-    try {
-      List<Future<Boolean>> futures = new ArrayList<>();
-      for (int i = 0; i < racers; i++) {
-        futures.add(executor.submit(racer));
-      }
-      assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
-      start.countDown();
-      List<Boolean> outcomes = new ArrayList<>();
-      for (Future<Boolean> future : futures) {
-        outcomes.add(future.get(10, TimeUnit.SECONDS));
-      }
-      return outcomes;
-    } finally {
-      executor.shutdown();
-    }
+  // Guards against the deadlock that a naive per-row lock would allow: two callers revoking
+  // *different* rows of the *same* family at the same instant must both complete rather than
+  // one aborting with a Postgres "deadlock detected". findByFamilyIdOrderById locks every row of
+  // a family in the same ascending-id order regardless of which row's raw token started the
+  // call, so the two callers always contend for the family's rows in the same sequence and can
+  // never form an AB-BA cycle (one holding row X while waiting on row Y, the other holding Y
+  // while waiting on X).
+  @Test
+  void concurrentRevocationOfDifferentTokensInTheSameFamilyDoesNotDeadlock() throws Exception {
+    UUID userId = seedUserId("revoke-race");
+    OrganizationDto org = seedPersonalOrganization(userId, "revoke-race");
+    IssuedRefreshToken first = refreshTokenService.startFamily(userId, org.id());
+    RefreshRotation second = refreshTokenService.rotate(first.raw());
+    UUID familyId = findStoredToken(second.newRaw()).getFamilyId();
+
+    raceTwo(() -> revoke(first.raw()), () -> revoke(second.newRaw()));
+
+    List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+    assertThat(family).hasSize(2);
+    assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
+  }
+
+  private Void revoke(String raw) {
+    refreshTokenService.revokeFamilyOf(raw);
+    return null;
   }
 
   private boolean rotateSucceeds(String raw) {
@@ -241,5 +232,37 @@ class RefreshTokenServiceIntegrationTest {
     } catch (ReusedRefreshTokenException e) {
       return false;
     }
+  }
+
+  /**
+   * Releases two callables at the same instant on separate threads and returns both results (as a
+   * fixed two-element list; {@code Arrays.asList} rather than {@code List.of} since a callable
+   * result may legitimately be {@code null}). Neither exception nor timeout is swallowed: either
+   * fails the test, which is exactly what a deadlock (surfaced as {@code
+   * CannotAcquireLockException}) or a genuine hang must do.
+   */
+  private <T> List<T> raceTwo(Callable<T> first, Callable<T> second) throws Exception {
+    ExecutorService executor = Executors.newFixedThreadPool(2);
+    CountDownLatch ready = new CountDownLatch(2);
+    CountDownLatch start = new CountDownLatch(1);
+    try {
+      Future<T> futureFirst = executor.submit(gatedBy(ready, start, first));
+      Future<T> futureSecond = executor.submit(gatedBy(ready, start, second));
+      assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+      start.countDown();
+      T resultFirst = futureFirst.get(10, TimeUnit.SECONDS);
+      T resultSecond = futureSecond.get(10, TimeUnit.SECONDS);
+      return Arrays.asList(resultFirst, resultSecond);
+    } finally {
+      executor.shutdown();
+    }
+  }
+
+  private <T> Callable<T> gatedBy(CountDownLatch ready, CountDownLatch start, Callable<T> task) {
+    return () -> {
+      ready.countDown();
+      start.await();
+      return task.call();
+    };
   }
 }
