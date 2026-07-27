@@ -49,3 +49,12 @@ zarlania:
   email:
     from: ${EMAIL_FROM:no-reply@zarlania.com}
     resend-api-key: ${RESEND_API_KEY:}
+  auth:
+    issuer: ${JWT_ISSUER:https://api.zarlania.com}
+    access-token-ttl: PT15M
+    refresh-family-lifetime: P30D
+    verification-token-ttl: PT24H
+    unverified-account-max-age: P7D
+    cookie-secure: ${AUTH_COOKIE_SECURE:true}
+    jwt-private-key-pem: ${JWT_PRIVATE_KEY:}
+    jwt-retired-public-keys-pem: ${JWT_RETIRED_PUBLIC_KEYS:}
