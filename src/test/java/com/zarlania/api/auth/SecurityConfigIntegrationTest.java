@@ -1,15 +1,27 @@
 package com.zarlania.api.auth;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.RSASSASigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import com.zarlania.api.auth.services.JwtKeys;
 import com.zarlania.api.auth.services.JwtService;
 import com.zarlania.api.organizations.dtos.OrganizationDto;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Date;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +29,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.postgresql.PostgreSQLContainer;
@@ -35,6 +49,7 @@ class SecurityConfigIntegrationTest {
 
   private static final String BEARER_PREFIX = "Bearer ";
   private static final String ACCESS_TOKEN_KIND = "access";
+  private static final Duration HAND_MINTED_TOKEN_TTL = Duration.ofMinutes(15);
 
   @Container @ServiceConnection
   static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
@@ -43,6 +58,7 @@ class SecurityConfigIntegrationTest {
   private final UserService userService;
   private final OrganizationService organizationService;
   private final JwtService jwtService;
+  private final JwtKeys jwtKeys;
 
   @Test
   void meWithoutATokenIsUnauthorized() throws Exception {
@@ -84,6 +100,36 @@ class SecurityConfigIntegrationTest {
         .andExpect(status().isUnauthorized());
   }
 
+  // Neither test above reaches SecurityConfig's authentication converter: a tampered
+  // signature and a non-JWT string both fail earlier, inside JwtDecoder.decode(). This test
+  // signs a token that passes decode() cleanly but is missing a claim the converter requires,
+  // so it exercises the converter's catch (IllegalArgumentException) -> InvalidBearerTokenException
+  // branch specifically — the difference between that branch answering 401 and an unhandled
+  // exception surfacing as 500.
+  @Test
+  void meWithATokenMissingTheOrganizationClaimIsUnauthorizedNotServerError() throws Exception {
+    String token = mintTokenMissingClaims(true, false);
+
+    MvcResult result =
+        mockMvc
+            .perform(get("/users/me").header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + token))
+            .andReturn();
+
+    assertThat(result.getResponse().getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
+  }
+
+  @Test
+  void meWithATokenMissingTheSubjectClaimIsUnauthorizedNotServerError() throws Exception {
+    String token = mintTokenMissingClaims(false, true);
+
+    MvcResult result =
+        mockMvc
+            .perform(get("/users/me").header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + token))
+            .andReturn();
+
+    assertThat(result.getResponse().getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED.value());
+  }
+
   @Test
   void jwksEndpointIsPubliclyReachableAndPublishesAKeysArray() throws Exception {
     mockMvc
@@ -104,5 +150,32 @@ class SecurityConfigIntegrationTest {
     String signature = jwt.substring(lastDot + 1);
     char flipped = signature.charAt(0) == 'A' ? 'B' : 'A';
     return jwt.substring(0, lastDot + 1) + flipped + signature.substring(1);
+  }
+
+  // Signs directly with Nimbus and JwtKeys' real signing key, instead of going through
+  // JwtService.mint, so the caller can omit a claim while everything else about the token
+  // (signature, timestamps) stays valid enough to clear JwtDecoder.decode().
+  private String mintTokenMissingClaims(boolean includeSubject, boolean includeOrganization)
+      throws JOSEException {
+    Instant now = Instant.now();
+    JWTClaimsSet.Builder claims =
+        new JWTClaimsSet.Builder()
+            .issueTime(Date.from(now))
+            .expirationTime(Date.from(now.plus(HAND_MINTED_TOKEN_TTL)));
+    if (includeSubject) {
+      claims.subject(UUID.randomUUID().toString());
+    }
+    if (includeOrganization) {
+      claims.claim("org", UUID.randomUUID().toString());
+    }
+
+    SignedJWT jwt =
+        new SignedJWT(
+            new JWSHeader.Builder(JWSAlgorithm.RS256)
+                .keyID(jwtKeys.signingKey().getKeyID())
+                .build(),
+            claims.build());
+    jwt.sign(new RSASSASigner(jwtKeys.signingKey()));
+    return jwt.serialize();
   }
 }
