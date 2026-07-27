@@ -7,10 +7,12 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -65,6 +67,27 @@ class ResendEmailSenderTest {
     assertThatThrownBy(() -> sender.send(message))
         .isInstanceOf(IllegalStateException.class)
         .hasMessageContaining("500");
+
+    server.verify();
+  }
+
+  @Test
+  void sendThrowsIllegalStateExceptionOnARedirectBecauseOnlyA2xxCountsAsSuccess() {
+    // The adapter's contract is "non-2xx throws" (not merely "4xx/5xx throws"),
+    // so a 3xx — which RestClient's own error handling would otherwise let
+    // through — must be rejected here too.
+    RestClient.Builder builder = authorizedBuilder();
+    MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+    ResendEmailSender sender = new ResendEmailSender(builder.build(), FROM_ADDRESS);
+
+    server.expect(requestTo(EMAILS_PATH)).andRespond(withStatus(HttpStatus.FOUND));
+
+    EmailMessage message =
+        new EmailMessage("someone@example.com", "Verify your email", "Click the link to verify.");
+
+    assertThatThrownBy(() -> sender.send(message))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("302");
 
     server.verify();
   }

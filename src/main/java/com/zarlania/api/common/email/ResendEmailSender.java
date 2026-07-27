@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.web.client.RestClient;
 
@@ -14,6 +13,10 @@ public class ResendEmailSender implements EmailSender {
 
   private static final String EMAILS_PATH = "/emails";
 
+  // Aliased deliberately, not defensively copied: RestClient is immutable once
+  // built and is documented as thread-safe, so there is no mutable
+  // representation here for a caller to corrupt (SpotBugs EI_EXPOSE_REP2
+  // considered and rejected).
   private final RestClient restClient;
   private final String from;
 
@@ -24,7 +27,8 @@ public class ResendEmailSender implements EmailSender {
         .uri(EMAILS_PATH)
         .body(requestBody(message))
         .retrieve()
-        .onStatus(HttpStatusCode::isError, (request, response) -> throwOnError(response))
+        .onStatus(
+            status -> !status.is2xxSuccessful(), (request, response) -> throwOnError(response))
         .toBodilessEntity();
   }
 
