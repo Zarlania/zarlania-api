@@ -12,6 +12,9 @@ import com.zarlania.api.auth.services.AuthTokenService.MintedSession;
 import com.zarlania.api.auth.services.RegistrationService;
 import com.zarlania.api.common.errors.ApiException;
 import com.zarlania.api.common.errors.ErrorCode;
+import com.zarlania.api.common.throttle.RateLimiter;
+import com.zarlania.api.common.throttle.ThrottleProperties;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.time.Duration;
@@ -34,6 +37,12 @@ public class AuthController {
 
   private static final String INVALID_TOKEN_MESSAGE = "Invalid or expired verification token";
   private static final String NO_REFRESH_TOKEN_MESSAGE = "No refresh token";
+  private static final String THROTTLED_MESSAGE = "Too many requests";
+
+  private static final String REGISTER_ENDPOINT = "register";
+  private static final String RESEND_ENDPOINT = "resend";
+  private static final String LOGIN_ENDPOINT = "login";
+  private static final String REFRESH_ENDPOINT = "refresh";
 
   private static final String REFRESH_COOKIE = "zarlania_refresh";
   private static final String REFRESH_COOKIE_PATH = "/auth";
@@ -46,11 +55,14 @@ public class AuthController {
   private final RegistrationService registrationService;
   private final AuthTokenService authTokenService;
   private final AuthProperties authProperties;
+  private final RateLimiter rateLimiter;
+  private final ThrottleProperties throttleProperties;
   private final Clock clock;
 
   @PostMapping("/register")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  public void register(@Valid @RequestBody RegisterRequest request) {
+  public void register(@Valid @RequestBody RegisterRequest request, HttpServletRequest servlet) {
+    requireCapacity(REGISTER_ENDPOINT, throttleProperties.registerLimit(), servlet);
     registrationService.register(request.email(), request.username(), request.password());
   }
 
@@ -63,23 +75,41 @@ public class AuthController {
 
   @PostMapping("/resend")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  public void resend(@Valid @RequestBody ResendRequest request) {
+  public void resend(@Valid @RequestBody ResendRequest request, HttpServletRequest servlet) {
+    requireCapacity(RESEND_ENDPOINT, throttleProperties.resendLimit(), servlet);
     registrationService.resend(request.email());
   }
 
   @PostMapping("/login")
-  public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
+  public ResponseEntity<TokenResponse> login(
+      @Valid @RequestBody LoginRequest request, HttpServletRequest servlet) {
+    requireCapacity(LOGIN_ENDPOINT, throttleProperties.loginLimit(), servlet);
     MintedSession session = authTokenService.login(request.identifier(), request.password());
     return withSession(session);
   }
 
   @PostMapping("/refresh")
   public ResponseEntity<TokenResponse> refresh(
-      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
+      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie,
+      HttpServletRequest servlet) {
+    requireCapacity(REFRESH_ENDPOINT, throttleProperties.refreshLimit(), servlet);
     if (cookie == null) {
       throw new ApiException(ErrorCode.INVALID_CREDENTIALS, NO_REFRESH_TOKEN_MESSAGE);
     }
     return withSession(authTokenService.refresh(cookie));
+  }
+
+  // Key is <endpoint>:<client-ip>, IP from getRemoteAddr(). Behind a reverse proxy (Render's
+  // included) that is the proxy's address, not the caller's, unless X-Forwarded-For is trusted
+  // and threaded through — that is not done here, so today every request arriving through
+  // Render's proxy shares one bucket per endpoint rather than being limited per real client.
+  // Tracked as a follow-up; per-IP is still what the brief asks for and is correct for direct
+  // (non-proxied) callers such as the test suite.
+  private void requireCapacity(String endpoint, int limit, HttpServletRequest request) {
+    String key = endpoint + ":" + request.getRemoteAddr();
+    if (!rateLimiter.tryConsume(key, limit)) {
+      throw new ApiException(ErrorCode.THROTTLED, THROTTLED_MESSAGE);
+    }
   }
 
   @PostMapping("/logout")

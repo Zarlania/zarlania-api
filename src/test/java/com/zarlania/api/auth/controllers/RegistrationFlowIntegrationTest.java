@@ -37,7 +37,13 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * {@link RecordingEmailSender} bean are shared across the whole class, so nothing here relies on
  * transactional rollback between tests.
  */
-@SpringBootTest
+// Throttle limits are raised well above what this class's happy-path assertions ever send from
+// a single client IP: register defaults to 5/min and this class alone makes more calls than
+// that across its test methods, sharing one InMemoryRateLimiter instance for the class's
+// lifetime. The point of Task 13 is exercised in LoginFlowIntegrationTest instead, against the
+// real defaults.
+@SpringBootTest(
+    properties = {"zarlania.throttle.register-limit=1000", "zarlania.throttle.resend-limit=1000"})
 @AutoConfigureMockMvc
 @Testcontainers
 @Import(RecordingEmailSenderConfig.class)

@@ -45,7 +45,14 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * RecordingEmailSender} bean are shared across the whole class, so each test registers its own
  * unique email/username pair rather than relying on transactional rollback between tests.
  */
-@SpringBootTest
+// register-limit is raised because every test method here registers its own account under the
+// same client IP against one shared InMemoryRateLimiter instance for the class's lifetime — more
+// setup calls than the production default (5/min) allows. login-limit is deliberately left at
+// the production default (10/min, from application.yml) because
+// theEleventhRapidLoginWithAWrongPasswordIsThrottled below exercises that exact default; it uses
+// its own remote address (see THROTTLE_TEST_REMOTE_ADDR) so its request count cannot combine
+// with the other tests' login calls in the same window and produce a flaky trigger point.
+@SpringBootTest(properties = {"zarlania.throttle.register-limit=1000"})
 @AutoConfigureMockMvc
 @Testcontainers
 @Import(RecordingEmailSenderConfig.class)
@@ -57,6 +64,8 @@ class LoginFlowIntegrationTest {
   private static final String PASSWORD = "correct-horse-battery";
   private static final String REFRESH_COOKIE = "zarlania_refresh";
   private static final String ORG_CLAIM = "org";
+  private static final String THROTTLE_TEST_REMOTE_ADDR = "203.0.113.7";
+  private static final int LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING = 11;
 
   @Container @ServiceConnection
   static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
@@ -136,6 +145,24 @@ class LoginFlowIntegrationTest {
     loginRequest("ivy", PASSWORD)
         .andExpect(status().isForbidden())
         .andExpect(jsonPath("$.code").value("auth.email-unverified"));
+  }
+
+  // Uses its own remote address (see the class-level comment) so its 11 requests form a bucket
+  // no other test method's login calls can land in, regardless of JUnit's execution order —
+  // login-limit is left at the production default (10/min) specifically so this exercises the
+  // real limit, not a raised test-only one.
+  @Test
+  void theEleventhRapidLoginWithAWrongPasswordIsThrottled() throws Exception {
+    registerAndVerify("mia@example.com", "mia");
+
+    for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING; attempt++) {
+      loginRequestFrom(THROTTLE_TEST_REMOTE_ADDR, "mia", "not-the-right-password")
+          .andExpect(status().isUnauthorized());
+    }
+
+    loginRequestFrom(THROTTLE_TEST_REMOTE_ADDR, "mia", "not-the-right-password")
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("auth.throttled"));
   }
 
   @Test
@@ -253,6 +280,25 @@ class LoginFlowIntegrationTest {
   private ResultActions loginRequest(String identifier, String password) throws Exception {
     return mockMvc.perform(
         post("/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {"identifier":"%s","password":"%s"}
+                """
+                    .formatted(identifier, password)));
+  }
+
+  // Only the throttling test needs a fixed, distinguishable remote address; every other login
+  // call in this class can keep using MockMvc's default.
+  private ResultActions loginRequestFrom(String remoteAddr, String identifier, String password)
+      throws Exception {
+    return mockMvc.perform(
+        post("/auth/login")
+            .with(
+                request -> {
+                  request.setRemoteAddr(remoteAddr);
+                  return request;
+                })
             .contentType(MediaType.APPLICATION_JSON)
             .content(
                 """

@@ -57,3 +57,9 @@ zarlania:
     jwt-private-key-pem: ${JWT_PRIVATE_KEY:}
     jwt-retired-public-keys-pem: ${JWT_RETIRED_PUBLIC_KEYS:}
     app-base-url: ${APP_BASE_URL:https://zarlania.com}
+  throttle:
+    window: PT1M
+    login-limit: 10
+    register-limit: 5
+    resend-limit: 3
+    refresh-limit: 30
