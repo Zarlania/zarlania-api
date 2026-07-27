@@ -1,14 +1,26 @@
 package com.zarlania.api.auth.controllers;
 
+import com.zarlania.api.auth.AuthProperties;
+import com.zarlania.api.auth.dtos.IssuedRefreshToken;
+import com.zarlania.api.auth.dtos.LoginRequest;
 import com.zarlania.api.auth.dtos.RegisterRequest;
 import com.zarlania.api.auth.dtos.ResendRequest;
+import com.zarlania.api.auth.dtos.TokenResponse;
 import com.zarlania.api.auth.dtos.VerifyRequest;
+import com.zarlania.api.auth.services.AuthTokenService;
+import com.zarlania.api.auth.services.AuthTokenService.MintedSession;
 import com.zarlania.api.auth.services.RegistrationService;
 import com.zarlania.api.common.errors.ApiException;
 import com.zarlania.api.common.errors.ErrorCode;
 import jakarta.validation.Valid;
+import java.time.Clock;
+import java.time.Duration;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,8 +33,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
   private static final String INVALID_TOKEN_MESSAGE = "Invalid or expired verification token";
+  private static final String NO_REFRESH_TOKEN_MESSAGE = "No refresh token";
+
+  private static final String REFRESH_COOKIE = "zarlania_refresh";
+  private static final String REFRESH_COOKIE_PATH = "/auth";
+  private static final String SAME_SITE_STRICT = "Strict";
+  // logout clears the cookie by re-issuing it with the same attributes and this Max-Age instead
+  // of a real one, which is what tells the browser to drop it immediately.
+  private static final long CLEARED_COOKIE_MAX_AGE_SECONDS = 0;
+  private static final String EMPTY_COOKIE_VALUE = "";
 
   private final RegistrationService registrationService;
+  private final AuthTokenService authTokenService;
+  private final AuthProperties authProperties;
+  private final Clock clock;
 
   @PostMapping("/register")
   @ResponseStatus(HttpStatus.ACCEPTED)
@@ -41,5 +65,59 @@ public class AuthController {
   @ResponseStatus(HttpStatus.ACCEPTED)
   public void resend(@Valid @RequestBody ResendRequest request) {
     registrationService.resend(request.email());
+  }
+
+  @PostMapping("/login")
+  public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
+    MintedSession session = authTokenService.login(request.identifier(), request.password());
+    return withSession(session);
+  }
+
+  @PostMapping("/refresh")
+  public ResponseEntity<TokenResponse> refresh(
+      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
+    if (cookie == null) {
+      throw new ApiException(ErrorCode.INVALID_CREDENTIALS, NO_REFRESH_TOKEN_MESSAGE);
+    }
+    return withSession(authTokenService.refresh(cookie));
+  }
+
+  @PostMapping("/logout")
+  public ResponseEntity<Void> logout(
+      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
+    if (cookie != null) {
+      authTokenService.logout(cookie);
+    }
+    return ResponseEntity.noContent()
+        .header(HttpHeaders.SET_COOKIE, clearedRefreshCookie().toString())
+        .build();
+  }
+
+  private ResponseEntity<TokenResponse> withSession(MintedSession session) {
+    return ResponseEntity.ok()
+        .header(HttpHeaders.SET_COOKIE, refreshCookie(session.refresh()).toString())
+        .body(new TokenResponse(session.accessToken()));
+  }
+
+  private ResponseCookie refreshCookie(IssuedRefreshToken refresh) {
+    long maxAgeSeconds = Duration.between(clock.instant(), refresh.familyExpiresAt()).toSeconds();
+    return buildRefreshCookie(refresh.raw(), maxAgeSeconds);
+  }
+
+  // Built through the same helper as the live cookie above, rather than a separately assembled
+  // ResponseCookie, so set and clear can never drift apart on HttpOnly/Secure/SameSite/Path —
+  // only the value and Max-Age differ, and both differences are the point of clearing.
+  private ResponseCookie clearedRefreshCookie() {
+    return buildRefreshCookie(EMPTY_COOKIE_VALUE, CLEARED_COOKIE_MAX_AGE_SECONDS);
+  }
+
+  private ResponseCookie buildRefreshCookie(String value, long maxAgeSeconds) {
+    return ResponseCookie.from(REFRESH_COOKIE, value)
+        .httpOnly(true)
+        .secure(authProperties.cookieSecure())
+        .sameSite(SAME_SITE_STRICT)
+        .path(REFRESH_COOKIE_PATH)
+        .maxAge(maxAgeSeconds)
+        .build();
   }
 }
