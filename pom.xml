@@ -59,6 +59,8 @@
     <bouncycastle.version>1.81</bouncycastle.version>
     <!-- Minimum line and branch coverage. The build fails below this. -->
     <jacoco.coverage.minimum>0.80</jacoco.coverage.minimum>
+    <!-- The annotations jar matching the spotbugs-maven-plugin's spotbugs core version. -->
+    <spotbugs-annotations.version>4.10.3</spotbugs-annotations.version>
   </properties>
 
   <dependencies>
@@ -111,6 +113,16 @@
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <!--
+      Compile-only, so @SuppressFBWarnings can target a single finding at its site
+      (CLAUDE.md's preferred suppression) instead of a project-wide exclude.xml rule.
+    -->
+    <dependency>
+      <groupId>com.github.spotbugs</groupId>
+      <artifactId>spotbugs-annotations</artifactId>
+      <version>${spotbugs-annotations.version}</version>
       <scope>provided</scope>
     </dependency>
 

@@ -40,9 +40,7 @@ management:
       probes:
         enabled: true
 
-# Placeholder: CORS is not configured yet because zarlania-app does not call this
-# API. When the browser client is wired up, add the allowed origins here and read
-# them in a WebMvcConfigurer.
+# CORS: SecurityConfig's corsConfigurationSource bean reads allowed-origins below.
 zarlania:
   cors:
     allowed-origins: ${ZARLANIA_CORS_ALLOWED_ORIGINS:http://localhost:5173}
