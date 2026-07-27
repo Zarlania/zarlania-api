@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PasswordCredentialRepository extends JpaRepository<PasswordCredential, UUID> {
   Optional<PasswordCredential> findByUserId(UUID userId);
+
+  void deleteByUserId(UUID userId);
 }

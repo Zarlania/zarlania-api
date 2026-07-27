@@ -44,4 +44,9 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
   // derivation and the two-argument classifier/key split.
   @Query(value = "select pg_advisory_xact_lock(:classifier, :key)", nativeQuery = true)
   void acquireFamilyLock(@Param("classifier") int classifier, @Param("key") int key);
+
+  // An unverified user cannot log in, so normally has none of these — but refresh_tokens has a
+  // real FK on both user_id and organization_id, so UnverifiedAccountCleanup must clear this
+  // defensively before it can delete the user's personal organization or the user row itself.
+  void deleteByUserId(UUID userId);
 }

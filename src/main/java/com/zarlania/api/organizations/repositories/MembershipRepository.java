@@ -9,4 +9,6 @@ public interface MembershipRepository extends JpaRepository<Membership, UUID> {
   List<Membership> findByUserId(UUID userId);
 
   boolean existsByUserIdAndOrganizationId(UUID userId, UUID organizationId);
+
+  void deleteByUserId(UUID userId);
 }

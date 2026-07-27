@@ -64,6 +64,7 @@ zarlania:
     refresh-family-lifetime: P30D
     verification-token-ttl: PT24H
     unverified-account-max-age: P7D
+    cleanup-interval: PT1H
     cookie-secure: ${AUTH_COOKIE_SECURE:true}
     jwt-private-key-pem: ${JWT_PRIVATE_KEY:}
     jwt-retired-public-keys-pem: ${JWT_RETIRED_PUBLIC_KEYS:}
