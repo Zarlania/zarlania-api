@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.SignedJWT;
+import com.zarlania.api.auth.AuthProperties;
 import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.testsupport.RecordingEmailSender;
 import com.zarlania.api.testsupport.RecordingEmailSenderConfig;
@@ -16,6 +17,7 @@ import jakarta.servlet.http.Cookie;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.assertj.core.data.Offset;
 import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +63,7 @@ class LoginFlowIntegrationTest {
 
   private final MockMvc mockMvc;
   private final RecordingEmailSender emailSender;
+  private final AuthProperties authProperties;
 
   @BeforeEach
   void clearRecordedEmails() {
@@ -70,21 +73,25 @@ class LoginFlowIntegrationTest {
   @Test
   void loginWithUsernameReturns200WithATokenScopedToThePersonalOrgAndARefreshCookie()
       throws Exception {
+    // No AUTH_COOKIE_SECURE override anywhere in the test configuration, so this resolves to
+    // application.yml's default (true). Asserted explicitly, not assumed, since the Set-Cookie
+    // assertion below only makes sense as a check on the real thing if this really is true here.
+    assertThat(authProperties.cookieSecure()).isTrue();
     registerAndVerify("frank@example.com", "frank");
 
     MvcResult result =
         loginRequest("frank", PASSWORD)
             .andExpect(status().isOk())
-            .andExpect(
-                header()
-                    .string(
-                        HttpHeaders.SET_COOKIE,
-                        Matchers.allOf(
-                            Matchers.containsString(REFRESH_COOKIE + "="),
-                            Matchers.containsString("Path=/auth"),
-                            Matchers.containsString("HttpOnly"),
-                            Matchers.containsString("SameSite=Strict"))))
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, mirroredCookieAttributes()))
             .andReturn();
+
+    // The brief's contract: Max-Age is seconds from now until familyExpiresAt, i.e. approximately
+    // AuthProperties.refreshFamilyLifetime() (P30D). A tolerance of a few seconds absorbs the gap
+    // between RefreshTokenService computing familyExpiresAt and this assertion running.
+    Cookie liveCookie = result.getResponse().getCookie(REFRESH_COOKIE);
+    assertThat(liveCookie).isNotNull();
+    assertThat(liveCookie.getMaxAge())
+        .isCloseTo((int) authProperties.refreshFamilyLifetime().toSeconds(), Offset.offset(5));
 
     String accessToken = accessToken(result);
     String orgClaim = SignedJWT.parse(accessToken).getJWTClaimsSet().getStringClaim(ORG_CLAIM);
@@ -174,8 +181,19 @@ class LoginFlowIntegrationTest {
     MvcResult loginResult = loginRequest("leo", PASSWORD).andExpect(status().isOk()).andReturn();
     String cookie = refreshCookieValue(loginResult);
 
-    MvcResult logoutResult = logoutRequest(cookie).andExpect(status().isNoContent()).andReturn();
+    // The cleared cookie must mirror the live cookie's HttpOnly/Secure/SameSite/Path attributes —
+    // a specific ruling made because the brief's own sample code omitted them on clear. Checked
+    // via the same matcher the live-cookie test uses, so a future asymmetry regression (e.g.
+    // someone hand-rolling a cleared cookie without AuthController's shared buildRefreshCookie
+    // helper) fails here rather than only being caught by manual review.
+    MvcResult logoutResult =
+        logoutRequest(cookie)
+            .andExpect(status().isNoContent())
+            .andExpect(header().string(HttpHeaders.SET_COOKIE, mirroredCookieAttributes()))
+            .andReturn();
 
+    // Max-Age is checked via the parsed Cookie, not by string-matching the header, since
+    // "Max-Age=0" could coincidentally substring-match other header content.
     Cookie cleared = logoutResult.getResponse().getCookie(REFRESH_COOKIE);
     assertThat(cleared).isNotNull();
     assertThat(cleared.getMaxAge()).isZero();
@@ -183,6 +201,19 @@ class LoginFlowIntegrationTest {
     refreshRequest(cookie)
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("auth.invalid-credentials"));
+  }
+
+  // The brief is explicit: "a missing cookie on logout is not an error." AuthController's
+  // `if (cookie != null)` guard exists for exactly this case — a client that already lost its
+  // cookie, or never had one, must still get a clean 204 with a cleared cookie, not a 401.
+  @Test
+  void logoutWithNoCookieReturns204AndStillSetsAClearedCookie() throws Exception {
+    MvcResult result =
+        mockMvc.perform(post("/auth/logout")).andExpect(status().isNoContent()).andReturn();
+
+    Cookie cleared = result.getResponse().getCookie(REFRESH_COOKIE);
+    assertThat(cleared).isNotNull();
+    assertThat(cleared.getMaxAge()).isZero();
   }
 
   private void registerAndVerify(String email, String username) throws Exception {
@@ -251,6 +282,18 @@ class LoginFlowIntegrationTest {
     Cookie cookie = result.getResponse().getCookie(REFRESH_COOKIE);
     assertThat(cookie).isNotNull();
     return cookie.getValue();
+  }
+
+  // Shared by the live-cookie and cleared-cookie assertions so both check the exact same
+  // attribute set — Secure is asserted unconditionally because cookieSecure() is asserted true
+  // above, not because it is hardcoded as an assumption.
+  private static org.hamcrest.Matcher<String> mirroredCookieAttributes() {
+    return Matchers.allOf(
+        Matchers.containsString(REFRESH_COOKIE + "="),
+        Matchers.containsString("Path=/auth"),
+        Matchers.containsString("HttpOnly"),
+        Matchers.containsString("Secure"),
+        Matchers.containsString("SameSite=Strict"));
   }
 
   private static String extractToken(String body) {
