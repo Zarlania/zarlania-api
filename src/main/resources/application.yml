@@ -56,3 +56,4 @@ zarlania:
     cookie-secure: ${AUTH_COOKIE_SECURE:true}
     jwt-private-key-pem: ${JWT_PRIVATE_KEY:}
     jwt-retired-public-keys-pem: ${JWT_RETIRED_PUBLIC_KEYS:}
+    app-base-url: ${APP_BASE_URL:https://zarlania.com}

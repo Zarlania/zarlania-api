@@ -13,4 +13,5 @@ public record AuthProperties(
     Duration unverifiedAccountMaxAge,
     boolean cookieSecure,
     String jwtPrivateKeyPem,
-    String jwtRetiredPublicKeysPem) {}
+    String jwtRetiredPublicKeysPem,
+    String appBaseUrl) {}

@@ -162,7 +162,8 @@ class JwtServiceTest {
         Duration.ofDays(7),
         true,
         privateKeyPem,
-        retiredPublicKeysPem);
+        retiredPublicKeysPem,
+        "https://zarlania.com");
   }
 
   private static String generateTestPrivateKeyPem() throws NoSuchAlgorithmException {

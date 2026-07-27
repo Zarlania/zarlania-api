@@ -44,7 +44,8 @@ class EmailVerificationServiceTest {
             Duration.ofDays(7),
             true,
             "",
-            "");
+            "",
+            "https://zarlania.com");
     service = new EmailVerificationService(tokens, authProperties, clock);
   }
 
@@ -127,7 +128,8 @@ class EmailVerificationServiceTest {
             Duration.ofDays(7),
             true,
             "",
-            "");
+            "",
+            "https://zarlania.com");
     service = new EmailVerificationService(tokens, authProperties, clock);
 
     Optional<UUID> result = service.consume(raw);
