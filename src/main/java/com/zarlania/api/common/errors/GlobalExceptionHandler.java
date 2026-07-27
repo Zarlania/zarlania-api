@@ -3,25 +3,39 @@ package com.zarlania.api.common.errors;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
  * Translates every exception reaching a controller into an RFC 9457 {@link ProblemDetail}, so
  * clients get one consistent error shape instead of the framework's default HTML or ad hoc JSON. A
  * stable {@code code} property lets clients branch on the failure without parsing prose.
+ *
+ * <p>Extends {@link ResponseEntityExceptionHandler} rather than catching {@code Exception}
+ * outright: that base class already knows the correct status for the large family of framework
+ * exceptions it maps — malformed JSON ({@code HttpMessageNotReadableException}, 400), a disallowed
+ * HTTP verb ({@code HttpRequestMethodNotSupportedException}, 405), and the rest of that family.
+ * Catching {@code Exception} unconditionally would have swallowed all of them into a misleading
+ * 500. The catch-all below is reached only by what neither this class nor its superclass maps
+ * explicitly: a genuine bug, an unreachable dependency, or similar.
  */
 @Slf4j
 @RestControllerAdvice
-public class GlobalExceptionHandler {
+public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
   private static final String CODE_PROPERTY = "code";
   private static final String ERRORS_PROPERTY = "errors";
   private static final String UNEXPECTED_ERROR_DETAIL = "Unexpected error";
+  private static final String VALIDATION_FAILED_DETAIL = "One or more fields failed validation";
 
   @ExceptionHandler(ApiException.class)
   public ProblemDetail handleApiException(ApiException exception) {
@@ -33,17 +47,25 @@ public class GlobalExceptionHandler {
     return problem;
   }
 
-  @ExceptionHandler(MethodArgumentNotValidException.class)
-  public ProblemDetail handleValidationException(MethodArgumentNotValidException exception) {
+  // Overriding this protected hook (rather than adding a second @ExceptionHandler for
+  // MethodArgumentNotValidException) is what lets the superclass keep routing the rest of its
+  // exception family — HttpMessageNotReadableException, HttpRequestMethodNotSupportedException,
+  // etc. — through its own default handling. A second @ExceptionHandler for this exact type
+  // would collide with the superclass's mapping for it and fail to start.
+  @Override
+  protected ResponseEntity<Object> handleMethodArgumentNotValid(
+      MethodArgumentNotValidException exception,
+      HttpHeaders headers,
+      HttpStatusCode status,
+      WebRequest request) {
     ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(
-            HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED.getCode());
+        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, VALIDATION_FAILED_DETAIL);
     problem.setProperty(CODE_PROPERTY, ErrorCode.VALIDATION_FAILED.getCode());
     problem.setProperty(ERRORS_PROPERTY, fieldErrors(exception));
-    return problem;
+    return handleExceptionInternal(exception, problem, headers, HttpStatus.BAD_REQUEST, request);
   }
 
-  // Catches everything ApiException and MethodArgumentNotValidException do not: a bug, an
+  // Catches everything the framework family above and ApiException do not: a bug, an
   // unreachable dependency, a constraint violation that slipped past a pre-check. The client
   // gets a generic message either way — the real detail belongs in the log, not the response.
   @ExceptionHandler(Exception.class)

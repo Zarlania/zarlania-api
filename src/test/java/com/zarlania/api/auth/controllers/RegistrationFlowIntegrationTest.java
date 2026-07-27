@@ -1,6 +1,7 @@
 package com.zarlania.api.auth.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -136,6 +137,26 @@ class RegistrationFlowIntegrationTest {
     resendRequest("nobody@example.com").andExpect(status().isAccepted());
 
     assertThat(emailSender.messages()).isEmpty();
+  }
+
+  // GlobalExceptionHandler extends ResponseEntityExceptionHandler specifically so framework
+  // exceptions like this one keep their own status instead of falling into the generic 500
+  // catch-all — a malformed body is a client mistake, not a server failure.
+  @Test
+  void malformedJsonBodyReturns400NotAGeneric500() throws Exception {
+    mockMvc
+        .perform(
+            post("/auth/register")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("not valid json"))
+        .andExpect(status().isBadRequest());
+  }
+
+  // Same reasoning as the malformed-JSON case above, for HttpRequestMethodNotSupportedException:
+  // the wrong verb on a real path is a client mistake (405), not a server failure (500).
+  @Test
+  void wrongHttpVerbOnRegisterReturns405NotAGeneric500() throws Exception {
+    mockMvc.perform(get("/auth/register")).andExpect(status().isMethodNotAllowed());
   }
 
   private ResultActions registerRequest(String email, String username, String password)

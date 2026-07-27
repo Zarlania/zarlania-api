@@ -1,6 +1,7 @@
 package com.zarlania.api.credentials.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -29,6 +30,7 @@ class CredentialsServiceTest {
   private static final PasswordEncoder ENCODER = new Argon2PasswordEncoder(16, 32, 1, 1024, 1);
 
   @Mock private PasswordCredentialRepository credentials;
+  @Mock private PasswordEncoder mockPasswordEncoder;
 
   private CredentialsService service;
 
@@ -73,5 +75,19 @@ class CredentialsServiceTest {
     when(credentials.findByUserId(userId)).thenReturn(Optional.empty());
 
     assertThat(service.passwordMatches(userId, CORRECT_PASSWORD)).isFalse();
+  }
+
+  // Uses a mock encoder rather than the shared real ENCODER above: the point of this test is
+  // the structural property that hashDecoyPassword() drives the same PasswordEncoder every real
+  // hash goes through (so RegistrationService's timing-parity calls track PasswordEncoderConfig's
+  // real parameters automatically), not the hash output itself.
+  @Test
+  void hashDecoyPasswordInvokesThePasswordEncoder() {
+    CredentialsService serviceWithMockEncoder =
+        new CredentialsService(credentials, mockPasswordEncoder);
+
+    serviceWithMockEncoder.hashDecoyPassword();
+
+    verify(mockPasswordEncoder).encode(anyString());
   }
 }
