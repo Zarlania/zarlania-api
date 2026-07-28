@@ -7,8 +7,9 @@ tags:
 - configuration
 - persistence
 created: '2026-07-26'
-updated: '2026-07-26'
-related: []
+updated: '2026-07-27'
+related:
+- '000002'
 ---
 
 # Persistence foundation
@@ -21,8 +22,8 @@ related: []
 | Description | How the Postgres datasource, Flyway migrations, and JPA are configured and operated. |
 | Tags | configuration, persistence |
 | Created | 2026-07-26 |
-| Updated | 2026-07-26 |
-| Related | — |
+| Updated | 2026-07-27 |
+| Related | [000002](000002-authentication-and-tokens.md) |
 <!-- reference-table:end -->
 
 The service persists to Postgres through Spring Data JPA, with Flyway owning the
@@ -44,9 +45,12 @@ as a single connection string:
 | `DB_PASSWORD` | `zarlania` | Connection password. |
 
 `application.yml` assembles these into
-`jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}`, with `DB_USER` and
-`DB_PASSWORD` supplied separately as `spring.datasource.username` and
-`spring.datasource.password`. The defaults match `docker-compose.yml`'s
+`jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}?stringtype=unspecified`,
+with `DB_USER` and `DB_PASSWORD` supplied separately as
+`spring.datasource.username` and `spring.datasource.password`. The
+`stringtype=unspecified` parameter is not optional decoration — see
+[Why `citext` needs `stringtype=unspecified`](#why-citext-needs-stringtypeunspecified)
+below. The defaults match `docker-compose.yml`'s
 `postgres` service, so `docker compose up postgres` followed by
 `./mvnw spring-boot:run` needs no `.env` file. Note that a `.env` file only
 changes what `docker compose` injects; `spring-boot:run` always falls back to
@@ -115,6 +119,36 @@ statement of this convention):
   rather than `text` with a functional index, so uniqueness and equality are
   case-insensitive at the column level. `citext` is a Postgres extension, so a
   migration has to create it before the first column uses it.
+
+### Why `citext` needs `stringtype=unspecified`
+
+A `citext` column is only case-insensitive if the comparison actually happens
+as `citext`. By default, pgjdbc sends a `String` query parameter as a
+`varchar`-typed bind value. Postgres then resolves
+`citext_column = varchar_param` by implicitly casting **both sides** to plain
+`text` before comparing — which silently restores case-sensitive comparison.
+That defeats the case-insensitive uniqueness a `citext` column exists to
+provide — an `email` or `username` column, for example, would stop matching
+rows that differ only in case. There is no error; the query just quietly stops
+finding them.
+
+Setting the JDBC URL parameter `stringtype=unspecified` fixes this by leaving
+the bind parameter's type unspecified instead of forcing `varchar`, so
+Postgres infers it from the `citext` column it is being compared against and
+the comparison stays `citext`-typed. This has to be set in every place a JDBC
+connection is opened against this schema:
+
+- **Production and local dev:** `spring.datasource.url` in `application.yml`
+  carries `?stringtype=unspecified` (see above).
+- **Tests:** `@ServiceConnection` builds the datasource directly from the
+  Testcontainers container, bypassing `application.yml` entirely, so the same
+  parameter is set again on the container itself in
+  `src/test/java/com/zarlania/api/testsupport/PostgresTestContainer.java`.
+
+Anyone adding a new `citext` column, or a new place that opens a JDBC
+connection against this database, needs both of these in place — dropping
+either one reintroduces case-sensitive matching without any visible failure
+until a caller submits a differently-cased duplicate.
 
 ## Free-tier runbook
 

@@ -18,4 +18,5 @@ OpenAPI reference (that is generated from Spring/springdoc, not written here).
 | ID | Title | Description | Tags |
 | -- | ----- | ----------- | ---- |
 | [000001](000001-persistence-foundation.md) | Persistence foundation | How the Postgres datasource, Flyway migrations, and JPA are configured and operated. | configuration, persistence |
+| [000002](000002-authentication-and-tokens.md) | Authentication and tokens | How registration, login, JWT access tokens, refresh-token families, and email verification work end to end. | architecture, configuration, http |
 <!-- reference-index:end -->
