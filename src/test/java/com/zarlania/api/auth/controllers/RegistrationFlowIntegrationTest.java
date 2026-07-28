@@ -95,6 +95,33 @@ class RegistrationFlowIntegrationTest {
         .isEqualTo("Someone tried to register with your email");
   }
 
+  // The realistic case the duplicate notice used to break: the first verification mail is missed,
+  // so the user registers again. They must get a working link, not "sign in with your existing
+  // account instead" — advice that would strand them on a 403, since the account is unverified.
+  // The original credentials must still be the ones that work afterwards.
+  @Test
+  void reRegisteringAnUnverifiedEmailResendsVerificationRatherThanTheDuplicateNotice()
+      throws Exception {
+    registerRequest("nina@example.com", "nina", PASSWORD).andExpect(status().isAccepted());
+    String firstToken = extractToken(emailSender.messages().get(0).textBody());
+    emailSender.clear();
+
+    registerRequest("nina@example.com", "ninasecondattempt", "a-completely-different-password")
+        .andExpect(status().isAccepted());
+
+    assertThat(emailSender.messages()).hasSize(1);
+    EmailMessage message = emailSender.messages().get(0);
+    assertThat(message.subject()).isEqualTo("Verify your Zarlania account");
+    String secondToken = extractToken(message.textBody());
+    assertThat(secondToken).isNotEqualTo(firstToken);
+
+    // The link works, and the credentials the second attempt tried to set were never stored: the
+    // original password is still the one that logs in.
+    verifyRequest(secondToken).andExpect(status().isOk());
+    loginRequest("nina", "a-completely-different-password").andExpect(status().isUnauthorized());
+    loginRequest("nina", PASSWORD).andExpect(status().isOk());
+  }
+
   @Test
   void registeringWithATakenUsernameReturns409AndSendsNoEmail() throws Exception {
     registerRequest("carol@example.com", "carolusername", PASSWORD)
@@ -186,6 +213,17 @@ class RegistrationFlowIntegrationTest {
                 {"token":"%s"}
                 """
                     .formatted(token)));
+  }
+
+  private ResultActions loginRequest(String identifier, String password) throws Exception {
+    return mockMvc.perform(
+        post("/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {"identifier":"%s","password":"%s"}
+                """
+                    .formatted(identifier, password)));
   }
 
   private ResultActions resendRequest(String email) throws Exception {

@@ -69,9 +69,11 @@ class RegistrationServiceTest {
   }
 
   @Test
-  void registerWithAnAlreadyRegisteredEmailHashesADecoyPasswordInsteadOfCreatingAnAccount() {
+  void registerWithAnAlreadyVerifiedEmailHashesADecoyPasswordInsteadOfCreatingAnAccount() {
     when(userService.usernameExists(USERNAME)).thenReturn(false);
     when(userService.emailExists(EMAIL)).thenReturn(true);
+    when(userService.findByIdentifier(EMAIL))
+        .thenReturn(Optional.of(new UserDto(UUID.randomUUID(), EMAIL, USERNAME, true)));
 
     service.register(EMAIL, USERNAME, PASSWORD);
 
@@ -84,6 +86,30 @@ class RegistrationServiceTest {
     ArgumentCaptor<Object> published = ArgumentCaptor.forClass(Object.class);
     verify(events).publishEvent(published.capture());
     assertThat(published.getValue()).isInstanceOf(DuplicateRegistrationAttempted.class);
+  }
+
+  // The spec: re-registering an *unverified* email re-sends verification and never alters
+  // credentials. Sending the duplicate-attempt notice here instead would be untrue, would carry no
+  // link, and would leave a user whose first mail went to spam permanently unable to sign in.
+  @Test
+  void registerWithAnUnverifiedExistingEmailReissuesVerificationAndLeavesCredentialsAlone() {
+    UUID existingId = UUID.randomUUID();
+    when(userService.usernameExists(USERNAME)).thenReturn(false);
+    when(userService.emailExists(EMAIL)).thenReturn(true);
+    when(userService.findByIdentifier(EMAIL))
+        .thenReturn(Optional.of(new UserDto(existingId, EMAIL, USERNAME, false)));
+    when(emailVerificationService.issue(existingId)).thenReturn("fresh-token");
+
+    service.register(EMAIL, USERNAME, PASSWORD);
+
+    // Same decoy hash the verified branch pays, so the two stay indistinguishable by timing.
+    verify(credentialsService).hashDecoyPassword();
+    verify(credentialsService, never()).createPassword(any(UUID.class), any(String.class));
+    verify(userService, never()).createUnverified(any(String.class), any(String.class));
+    verify(emailVerificationService).issue(existingId);
+    ArgumentCaptor<Object> published = ArgumentCaptor.forClass(Object.class);
+    verify(events).publishEvent(published.capture());
+    assertThat(published.getValue()).isInstanceOf(VerificationEmailRequested.class);
   }
 
   @Test

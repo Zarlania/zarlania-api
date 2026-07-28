@@ -33,7 +33,14 @@ public class RegistrationEmailListener {
   private final EmailSender emailSender;
   private final AuthProperties authProperties;
 
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  // fallbackExecution, unlike the duplicate-notice listener below, because this event has two
+  // publishers with different transaction shapes. RegistrationService.register publishes inside its
+  // own transaction, so the send is deferred to AFTER_COMMIT as normal; resend publishes with no
+  // transaction active — its only write, the new token, has already committed in
+  // EmailVerificationService's own — and without this flag Spring would silently drop the event
+  // there, losing every resent verification email. The duplicate notice has only the transactional
+  // publisher, so it needs no fallback.
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onVerificationEmailRequested(VerificationEmailRequested event) {
     String verificationUrl =
         authProperties.appBaseUrl()

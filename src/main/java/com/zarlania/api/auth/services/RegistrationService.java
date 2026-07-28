@@ -45,13 +45,40 @@ public class RegistrationService {
     }
     if (userService.emailExists(email)) {
       credentialsService.hashDecoyPassword();
-      events.publishEvent(new DuplicateRegistrationAttempted(email));
+      remindExistingOwner(email);
       return;
     }
     UserDto user = userService.createUnverified(email, username);
     credentialsService.createPassword(user.id(), rawPassword);
     organizationService.createPersonalOrganization(user.id(), username);
-    String rawToken = emailVerificationService.issue(user.id());
+    issueVerification(email, user.id());
+  }
+
+  // Which reminder depends on whether the existing account was ever verified. The spec is explicit:
+  // "Re-registering an unverified email before then re-sends verification; it never alters
+  // credentials." Someone whose first verification mail landed in spam registers again and needs
+  // another link — sending them the duplicate-attempt notice instead would be untrue, would carry
+  // no link, and would strand them on a 403 the moment they followed its advice to sign in.
+  //
+  // Credentials are deliberately left alone on both paths: re-registering must never let a caller
+  // who does not control the mailbox overwrite the password on an account someone else created.
+  //
+  // Timing parity across the two paths is unchanged. Both are reached only after the same decoy
+  // Argon2 hash above, which dominates at tens of milliseconds; both publish exactly one event, and
+  // both emails are sent after commit, off the request thread. The extra token write on the
+  // unverified path is one DELETE plus one INSERT — the same order as the SELECT here, and
+  // invisible next to the hash.
+  private void remindExistingOwner(String email) {
+    Optional<UserDto> existing = userService.findByIdentifier(email);
+    if (existing.isPresent() && !existing.get().emailVerified()) {
+      issueVerification(email, existing.get().id());
+      return;
+    }
+    events.publishEvent(new DuplicateRegistrationAttempted(email));
+  }
+
+  private void issueVerification(String email, UUID userId) {
+    String rawToken = emailVerificationService.issue(userId);
     events.publishEvent(new VerificationEmailRequested(email, rawToken));
   }
 
@@ -62,20 +89,22 @@ public class RegistrationService {
     return userId.isPresent();
   }
 
-  @Transactional
+  // Deliberately not @Transactional, unlike register: the decoy hash below costs tens of
+  // milliseconds on every single call, and a transaction opened around it would hold a pooled
+  // connection for all of that time — including on the two branches that then do nothing at all.
+  // Each collaborator manages its own transaction instead, and the only write here (issue) commits
+  // inside EmailVerificationService's before the event is published. See
+  // RegistrationEmailListener's fallbackExecution for what that means for the email.
   public void resend(String email) {
     // Unconditional, not just on the branches that would otherwise skip it: resend has no
     // "real" Argon2 work of its own (unlike register's createPassword) for a decoy to stand in
     // for, so every outcome — unknown email, already verified, resent — needs the same paid-up-
-    // front cost to stay indistinguishable from each other.
+    // front cost to stay indistinguishable from each other. Hoisting it out of a transaction
+    // changes what it holds, not when it runs or what it costs.
     credentialsService.hashDecoyPassword();
     userService
         .findByIdentifier(email)
         .filter(user -> !user.emailVerified())
-        .ifPresent(
-            user -> {
-              String rawToken = emailVerificationService.issue(user.id());
-              events.publishEvent(new VerificationEmailRequested(email, rawToken));
-            });
+        .ifPresent(user -> issueVerification(email, user.id()));
   }
 }
