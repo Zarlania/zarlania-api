@@ -1,6 +1,7 @@
 package com.zarlania.api.credentials.services;
 
 import com.zarlania.api.credentials.entities.PasswordCredential;
+import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -26,6 +27,7 @@ public class CredentialsService {
   private static final AtomicReference<String> DECOY_HASH_SINK = new AtomicReference<>();
 
   private final PasswordCredentialRepository credentials;
+  private final EmailVerificationTokenRepository verificationTokens;
   private final PasswordEncoder passwordEncoder;
 
   @Transactional
@@ -50,5 +52,15 @@ public class CredentialsService {
   // writing to the database.
   public void hashDecoyPassword() {
     DECOY_HASH_SINK.set(passwordEncoder.encode(DECOY_PASSWORD));
+  }
+
+  // Both of this domain's tables in one call, so a caller purging an account never has to know
+  // that proof-of-identity material is split across two of them, nor reach for this domain's
+  // repositories to clear them. Order between the two does not matter — neither table references
+  // the other — but both must go before the users row they share a foreign key with.
+  @Transactional
+  public void deleteAllForUser(UUID userId) {
+    verificationTokens.deleteByUserId(userId);
+    credentials.deleteByUserId(userId);
   }
 }

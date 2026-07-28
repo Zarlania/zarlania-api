@@ -4,6 +4,8 @@ import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.entities.User;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,24 @@ public class UserService {
   @Transactional
   public void markEmailVerified(UUID userId) {
     users.findById(userId).orElseThrow().markEmailVerified(clock.instant());
+  }
+
+  // DTOs, not entities: the caller is UnverifiedAccountCleanup in the auth domain, and CLAUDE.md's
+  // rule is that an entity never leaves the domain that owns it. A List is safe to materialize here
+  // because the cutoff is days old — the result is the backlog of abandoned signups, not the table.
+  @Transactional(readOnly = true)
+  public List<UserDto> findUnverifiedOlderThan(Instant cutoff) {
+    return users.findByEmailVerifiedAtIsNullAndCreatedAtBefore(cutoff).stream()
+        .map(this::toDto)
+        .toList();
+  }
+
+  // Deleting a user is this domain's job, not the caller's: every other domain holds only a plain
+  // user_id FK, so a caller reaching for UserRepository itself would put the order of the dependent
+  // deletes outside the domain that owns the row.
+  @Transactional
+  public void deleteById(UUID userId) {
+    users.deleteById(userId);
   }
 
   private UserDto toDto(User user) {

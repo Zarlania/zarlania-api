@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.zarlania.api.auth.AuthProperties;
 import com.zarlania.api.common.security.TokenHasher;
+import com.zarlania.api.credentials.CredentialsProperties;
 import com.zarlania.api.credentials.entities.EmailVerificationToken;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import java.time.Clock;
@@ -35,18 +35,9 @@ class EmailVerificationServiceTest {
   @BeforeEach
   void setUp() {
     clock = Clock.fixed(NOW, ZoneOffset.UTC);
-    AuthProperties authProperties =
-        new AuthProperties(
-            "https://api.zarlania.com",
-            Duration.ofMinutes(15),
-            Duration.ofDays(30),
-            VERIFICATION_TOKEN_TTL,
-            Duration.ofDays(7),
-            true,
-            "",
-            "",
-            "https://zarlania.com");
-    service = new EmailVerificationService(tokens, authProperties, clock);
+    service =
+        new EmailVerificationService(
+            tokens, new CredentialsProperties(VERIFICATION_TOKEN_TTL), clock);
   }
 
   @Test
@@ -119,18 +110,9 @@ class EmailVerificationServiceTest {
         new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), expiresAt);
     when(tokens.findByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
     clock = Clock.fixed(NOW.plus(Duration.ofHours(25)), ZoneOffset.UTC);
-    AuthProperties authProperties =
-        new AuthProperties(
-            "https://api.zarlania.com",
-            Duration.ofMinutes(15),
-            Duration.ofDays(30),
-            VERIFICATION_TOKEN_TTL,
-            Duration.ofDays(7),
-            true,
-            "",
-            "",
-            "https://zarlania.com");
-    service = new EmailVerificationService(tokens, authProperties, clock);
+    service =
+        new EmailVerificationService(
+            tokens, new CredentialsProperties(VERIFICATION_TOKEN_TTL), clock);
 
     Optional<UUID> result = service.consume(raw);
 

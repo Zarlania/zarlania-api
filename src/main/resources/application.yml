@@ -62,13 +62,16 @@ zarlania:
     issuer: ${JWT_ISSUER:https://api.zarlania.com}
     access-token-ttl: PT15M
     refresh-family-lifetime: P30D
-    verification-token-ttl: PT24H
     unverified-account-max-age: P7D
     cleanup-interval: PT1H
     cookie-secure: ${AUTH_COOKIE_SECURE:true}
     jwt-private-key-pem: ${JWT_PRIVATE_KEY:}
     jwt-retired-public-keys-pem: ${JWT_RETIRED_PUBLIC_KEYS:}
     app-base-url: ${APP_BASE_URL:https://zarlania.com}
+  # Owned by the credentials domain, not by auth: EmailVerificationService binds these, and a
+  # credentials class reading zarlania.auth.* would invert the domains' dependency direction.
+  credentials:
+    verification-token-ttl: PT24H
   throttle:
     window: PT1M
     login-limit: 10

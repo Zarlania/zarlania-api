@@ -1,8 +1,8 @@
 package com.zarlania.api.auth.services;
 
 import com.zarlania.api.auth.AuthProperties;
-import com.zarlania.api.users.entities.User;
-import com.zarlania.api.users.repositories.UserRepository;
+import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.services.UserService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Clock;
 import java.time.Instant;
@@ -24,7 +24,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class UnverifiedAccountCleanup {
 
-  private final UserRepository users;
+  private final UserService userService;
   private final UnverifiedAccountPurger purger;
   private final AuthProperties authProperties;
   private final Clock clock;
@@ -32,8 +32,10 @@ public class UnverifiedAccountCleanup {
   @Scheduled(fixedDelayString = "${zarlania.auth.cleanup-interval:PT1H}")
   public void purgeExpiredUnverifiedAccounts() {
     Instant cutoff = clock.instant().minus(authProperties.unverifiedAccountMaxAge());
-    for (User user : users.findByEmailVerifiedAtIsNullAndCreatedAtBefore(cutoff)) {
-      purgeSafely(user.getId());
+    // DTOs from the users domain's own service, not User entities from its repository: an entity
+    // never leaves the domain that owns it, and only the id is needed here anyway.
+    for (UserDto user : userService.findUnverifiedOlderThan(cutoff)) {
+      purgeSafely(user.id());
     }
   }
 

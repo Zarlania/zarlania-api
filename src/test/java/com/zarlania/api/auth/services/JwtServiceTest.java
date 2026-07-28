@@ -158,7 +158,6 @@ class JwtServiceTest {
         ISSUER,
         ACCESS_TOKEN_TTL,
         Duration.ofDays(30),
-        Duration.ofHours(24),
         Duration.ofDays(7),
         true,
         privateKeyPem,

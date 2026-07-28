@@ -10,8 +10,10 @@ import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.entities.User;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,6 +98,30 @@ class UserServiceTest {
     when(users.existsByEmail("taken@example.com")).thenReturn(true);
 
     assertThat(service.emailExists("taken@example.com")).isTrue();
+  }
+
+  // The point of the method: the auth domain's cleanup sweep gets DTOs it can iterate, never User
+  // entities, so no entity leaves this domain.
+  @Test
+  void findUnverifiedOlderThanReturnsDtosNotEntities() {
+    Instant cutoff = FIXED_INSTANT.minus(Duration.ofDays(7));
+    when(users.findByEmailVerifiedAtIsNullAndCreatedAtBefore(cutoff))
+        .thenReturn(List.of(new User("stale@example.com", "stale")));
+
+    List<UserDto> found = service.findUnverifiedOlderThan(cutoff);
+
+    assertThat(found)
+        .singleElement()
+        .satisfies(dto -> assertThat(dto.username()).isEqualTo("stale"));
+  }
+
+  @Test
+  void deleteByIdDelegatesToTheRepository() {
+    UUID id = UUID.randomUUID();
+
+    service.deleteById(id);
+
+    verify(users).deleteById(id);
   }
 
   @Test

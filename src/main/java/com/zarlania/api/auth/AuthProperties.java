@@ -9,7 +9,6 @@ public record AuthProperties(
     String issuer,
     Duration accessTokenTtl,
     Duration refreshFamilyLifetime,
-    Duration verificationTokenTtl,
     Duration unverifiedAccountMaxAge,
     boolean cookieSecure,
     String jwtPrivateKeyPem,

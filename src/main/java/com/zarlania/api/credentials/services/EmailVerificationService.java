@@ -1,7 +1,7 @@
 package com.zarlania.api.credentials.services;
 
-import com.zarlania.api.auth.AuthProperties;
 import com.zarlania.api.common.security.TokenHasher;
+import com.zarlania.api.credentials.CredentialsProperties;
 import com.zarlania.api.credentials.entities.EmailVerificationToken;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import java.time.Clock;
@@ -17,14 +17,14 @@ import org.springframework.transaction.annotation.Transactional;
 public class EmailVerificationService {
 
   private final EmailVerificationTokenRepository tokens;
-  private final AuthProperties authProperties;
+  private final CredentialsProperties credentialsProperties;
   private final Clock clock;
 
   @Transactional
   public String issue(UUID userId) {
     tokens.deleteByUserIdAndConsumedAtIsNull(userId);
     String raw = TokenHasher.newUrlSafeToken();
-    Instant expiresAt = clock.instant().plus(authProperties.verificationTokenTtl());
+    Instant expiresAt = clock.instant().plus(credentialsProperties.verificationTokenTtl());
     tokens.save(new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), expiresAt));
     return raw;
   }

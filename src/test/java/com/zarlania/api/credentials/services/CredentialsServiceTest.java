@@ -6,6 +6,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zarlania.api.credentials.entities.PasswordCredential;
+import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,13 +31,14 @@ class CredentialsServiceTest {
   private static final PasswordEncoder ENCODER = new Argon2PasswordEncoder(16, 32, 1, 1024, 1);
 
   @Mock private PasswordCredentialRepository credentials;
+  @Mock private EmailVerificationTokenRepository verificationTokens;
   @Mock private PasswordEncoder mockPasswordEncoder;
 
   private CredentialsService service;
 
   @BeforeEach
   void setUp() {
-    service = new CredentialsService(credentials, ENCODER);
+    service = new CredentialsService(credentials, verificationTokens, ENCODER);
   }
 
   @Test
@@ -84,10 +86,22 @@ class CredentialsServiceTest {
   @Test
   void hashDecoyPasswordInvokesThePasswordEncoder() {
     CredentialsService serviceWithMockEncoder =
-        new CredentialsService(credentials, mockPasswordEncoder);
+        new CredentialsService(credentials, verificationTokens, mockPasswordEncoder);
 
     serviceWithMockEncoder.hashDecoyPassword();
 
     verify(mockPasswordEncoder).encode(anyString());
+  }
+
+  // Both of this domain's tables, from one call: the caller purging an account must not have to
+  // know that proof-of-identity material is split across two of them.
+  @Test
+  void deleteAllForUserClearsBothTheCredentialAndTheVerificationTokens() {
+    UUID userId = UUID.randomUUID();
+
+    service.deleteAllForUser(userId);
+
+    verify(credentials).deleteByUserId(userId);
+    verify(verificationTokens).deleteByUserId(userId);
   }
 }
