@@ -12,6 +12,7 @@ import com.zarlania.api.auth.services.AuthTokenService.MintedSession;
 import com.zarlania.api.auth.services.RegistrationService;
 import com.zarlania.api.common.errors.ApiException;
 import com.zarlania.api.common.errors.ErrorCode;
+import com.zarlania.api.common.http.ClientIpResolver;
 import com.zarlania.api.common.throttle.RateLimiter;
 import com.zarlania.api.common.throttle.ThrottleProperties;
 import jakarta.servlet.http.HttpServletRequest;
@@ -99,12 +100,13 @@ public class AuthController {
     return withSession(authTokenService.refresh(cookie));
   }
 
-  // Key is <endpoint>:<client-ip>, IP from getRemoteAddr(). That resolves to the real caller, not
-  // Render's proxy address, only because application.yml sets server.forward-headers-strategy to
-  // framework — see the comment there for why honouring X-Forwarded-For is safe here specifically
-  // and not in general.
+  // Key is <endpoint>:<client-ip>. The address comes from ClientIpResolver, not getRemoteAddr():
+  // behind Render's proxy the latter is the proxy's own address, and the obvious fix — letting
+  // Spring rewrite it from X-Forwarded-For — reads the *leftmost* entry, which the client wrote
+  // and can rotate at will for a fresh bucket per request. The resolver reads the rightmost
+  // entry, the one the proxy appended. See ClientIpResolver for the full derivation.
   private void requireCapacity(String endpoint, int limit, HttpServletRequest request) {
-    String key = endpoint + ":" + request.getRemoteAddr();
+    String key = endpoint + ":" + ClientIpResolver.resolve(request);
     if (!rateLimiter.tryConsume(key, limit)) {
       throw new ApiException(ErrorCode.THROTTLED, THROTTLED_MESSAGE);
     }

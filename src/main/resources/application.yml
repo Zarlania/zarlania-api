@@ -35,17 +35,18 @@ server:
       # buffers; this caps how many requests can be queued behind it before Tomcat starts
       # refusing connections, which is the failure mode we want instead of an OOM.
       max: 50
-  # Render terminates TLS and proxies every request to this instance, so
-  # HttpServletRequest.getRemoteAddr() would otherwise always resolve to Render's proxy address,
-  # not the caller's — collapsing AuthController's per-IP throttle buckets (common/throttle) into
-  # one shared bucket per endpoint for every user. `framework` makes Spring's
-  # ForwardedHeaderFilter resolve getRemoteAddr() from X-Forwarded-For instead. This is only safe
-  # because the service is reachable exclusively through Render's proxy: a client able to reach
-  # the app directly could forge X-Forwarded-For to evade the limiter or frame another IP. If this
-  # service is ever exposed another way (a second ingress, direct instance access), that path must
-  # either strip/overwrite X-Forwarded-For before requests reach here or this setting must be
-  # revisited.
-  forward-headers-strategy: framework
+  # Deliberately `none`, even though this service does sit behind Render's proxy. `framework`
+  # would make Spring's ForwardedHeaderFilter rewrite getRemoteAddr() from the *leftmost*
+  # X-Forwarded-For entry (and from a client-supplied Forwarded: header in preference to it).
+  # Proxies append to X-Forwarded-For rather than replace it, so the leftmost entry is whatever
+  # the client sent: any unauthenticated caller could rotate it and get a fresh throttle bucket
+  # per request. Transiting Render's proxy does not prevent that — only replacement at the proxy
+  # would, and Render appends.
+  #
+  # The rightmost entry is the one Render itself wrote, so that is the trustworthy one, and
+  # ClientIpResolver (common/http) reads it directly — which it can only do while these headers
+  # are left intact, i.e. while this stays `none`.
+  forward-headers-strategy: none
 
 management:
   endpoints:

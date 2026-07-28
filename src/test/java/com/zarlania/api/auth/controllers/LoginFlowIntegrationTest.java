@@ -71,6 +71,7 @@ class LoginFlowIntegrationTest {
   private static final String FORWARDED_ADDR_SHARED_BUCKET_TEST = "198.51.100.10";
   private static final String FORWARDED_ADDR_INDEPENDENCE_TEST_PRIMARY = "198.51.100.30";
   private static final String FORWARDED_ADDR_INDEPENDENCE_TEST_SECONDARY = "198.51.100.40";
+  private static final String FORWARDED_ADDR_SPOOFING_TEST = "198.51.100.50";
 
   @Container @ServiceConnection
   static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
@@ -170,33 +171,67 @@ class LoginFlowIntegrationTest {
         .andExpect(jsonPath("$.code").value("auth.throttled"));
   }
 
-  // application.yml's server.forward-headers-strategy: framework makes ForwardedHeaderFilter
-  // rewrite getRemoteAddr() from X-Forwarded-For — without it every caller would resolve to
-  // Render's proxy address and share one bucket. Unknown identifier: purely about throttling.
+  // ClientIpResolver reads X-Forwarded-For so a caller resolves to itself rather than to Render's
+  // proxy, which would otherwise put every user in one bucket. Unknown identifier: purely about
+  // throttling.
   @Test
   void requestsSharingAForwardedForAddressShareAThrottleBucket() throws Exception {
     for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING; attempt++) {
-      loginRequestForwardedFrom(FORWARDED_ADDR_SHARED_BUCKET_TEST, "nobody-registered", PASSWORD)
+      loginRequestForwardedFrom(FORWARDED_ADDR_SHARED_BUCKET_TEST, "nobody-shared", PASSWORD)
           .andExpect(status().isUnauthorized());
     }
 
-    loginRequestForwardedFrom(FORWARDED_ADDR_SHARED_BUCKET_TEST, "nobody-registered", PASSWORD)
+    loginRequestForwardedFrom(FORWARDED_ADDR_SHARED_BUCKET_TEST, "nobody-shared", PASSWORD)
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("auth.throttled"));
   }
 
+  // Drives the primary address past its limit rather than only up to it: an assertion made while
+  // the primary bucket still had capacity would pass even if the two addresses shared one bucket.
   @Test
   void requestsWithDifferentForwardedForAddressesGetIndependentThrottleBuckets() throws Exception {
-    for (int attempt = 0; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING - 1; attempt++) {
+    for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING; attempt++) {
       loginRequestForwardedFrom(
-              FORWARDED_ADDR_INDEPENDENCE_TEST_PRIMARY, "nobody-registered", PASSWORD)
+              FORWARDED_ADDR_INDEPENDENCE_TEST_PRIMARY, "nobody-independent", PASSWORD)
+          .andExpect(status().isUnauthorized());
+    }
+    loginRequestForwardedFrom(
+            FORWARDED_ADDR_INDEPENDENCE_TEST_PRIMARY, "nobody-independent", PASSWORD)
+        .andExpect(status().isTooManyRequests());
+
+    // Primary is exhausted; a different forwarded address must still have its full allowance.
+    loginRequestForwardedFrom(
+            FORWARDED_ADDR_INDEPENDENCE_TEST_SECONDARY, "nobody-independent", PASSWORD)
+        .andExpect(status().isUnauthorized());
+  }
+
+  // The bypass. A proxy appends to X-Forwarded-For rather than replacing it, so everything left of
+  // the last entry is attacker-supplied; every request below presents a *different* forged
+  // leftmost entry and the same proxy-appended rightmost one. Keying on the leftmost entry — which
+  // is what server.forward-headers-strategy: framework does — would give each request a fresh
+  // bucket and never throttle at all.
+  @Test
+  void aRotatingForgedLeftmostForwardedForEntryStillLandsInTheRealCallersBucket() throws Exception {
+    for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING; attempt++) {
+      loginRequestForwardedFrom(
+              forgedLeftmostFrom(attempt) + ", " + FORWARDED_ADDR_SPOOFING_TEST,
+              "nobody-spoofed",
+              PASSWORD)
           .andExpect(status().isUnauthorized());
     }
 
-    // Primary is now exactly at its limit; a different forwarded address must have full capacity.
     loginRequestForwardedFrom(
-            FORWARDED_ADDR_INDEPENDENCE_TEST_SECONDARY, "nobody-registered", PASSWORD)
-        .andExpect(status().isUnauthorized());
+            forgedLeftmostFrom(LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING)
+                + ", "
+                + FORWARDED_ADDR_SPOOFING_TEST,
+            "nobody-spoofed",
+            PASSWORD)
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("auth.throttled"));
+  }
+
+  private static String forgedLeftmostFrom(int attempt) {
+    return "192.0.2." + attempt;
   }
 
   @Test
@@ -330,8 +365,9 @@ class LoginFlowIntegrationTest {
                 }));
   }
 
-  // Exercises the real ForwardedHeaderFilter rewrite (server.forward-headers-strategy: framework)
-  // via the header it reads, rather than bypassing it like loginRequestFrom's setRemoteAddr does.
+  // Sends the header ClientIpResolver actually reads, rather than bypassing it the way
+  // loginRequestFrom's setRemoteAddr does. Takes the whole header value, not one address, so a
+  // test can present the multi-entry form a real proxy produces.
   private ResultActions loginRequestForwardedFrom(
       String forwardedFor, String identifier, String password) throws Exception {
     return performLogin(
