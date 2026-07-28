@@ -2,13 +2,16 @@ package com.zarlania.api.auth.repositories;
 
 import com.zarlania.api.auth.entities.RefreshToken;
 import jakarta.persistence.LockModeType;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
 
@@ -49,4 +52,16 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
   // real FK on both user_id and organization_id, so UnverifiedAccountCleanup must clear this
   // defensively before it can delete the user's personal organization or the user row itself.
   void deleteByUserId(UUID userId);
+
+  // Whole families, and only once past their absolute expiry — deliberately not "used or revoked".
+  // A used token has to stay readable until the family dies, because presenting one a second time
+  // is exactly what proves theft and revokes the family (see RefreshTokenService#rotate); deleting
+  // it sooner would turn a replay into an ordinary unknown-token 401 and lose the detection.
+  //
+  // @Transactional here rather than at the caller: ExpiredTokenCleanup's entry point is
+  // @Scheduled, and a @Modifying query needs a transaction of its own to run in.
+  @Modifying
+  @Transactional
+  @Query("delete from RefreshToken r where r.familyExpiresAt < :cutoff")
+  int deleteFamiliesExpiredBefore(@Param("cutoff") Instant cutoff);
 }

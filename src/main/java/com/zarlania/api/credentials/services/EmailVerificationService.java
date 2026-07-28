@@ -29,6 +29,13 @@ public class EmailVerificationService {
     return raw;
   }
 
+  // Exposed for the auth domain's hourly sweep, which owns the schedule but must not reach into
+  // this domain's repository to run it. Returns how many rows went, so the caller can log it.
+  @Transactional
+  public int pruneDeadTokens() {
+    return tokens.deleteConsumedOrExpiredBefore(clock.instant());
+  }
+
   @Transactional
   public Optional<UUID> consume(String rawToken) {
     return tokens
