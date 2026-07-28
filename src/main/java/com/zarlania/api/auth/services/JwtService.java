@@ -19,9 +19,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class JwtService {
 
-  private static final String ORGANIZATION_CLAIM = "org";
-  private static final String KIND_CLAIM = "kind";
-
   private final AuthProperties authProperties;
   private final JwtKeys jwtKeys;
   private final Clock clock;
@@ -32,8 +29,8 @@ public class JwtService {
         new JWTClaimsSet.Builder()
             .issuer(authProperties.issuer())
             .subject(userId.toString())
-            .claim(ORGANIZATION_CLAIM, organizationId.toString())
-            .claim(KIND_CLAIM, kind)
+            .claim(TokenClaims.ORGANIZATION, organizationId.toString())
+            .claim(TokenClaims.KIND, kind)
             .jwtID(UUID.randomUUID().toString())
             .issueTime(Date.from(now))
             .expirationTime(Date.from(now.plus(authProperties.accessTokenTtl())))

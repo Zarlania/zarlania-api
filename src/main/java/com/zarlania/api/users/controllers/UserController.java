@@ -23,8 +23,12 @@ public class UserController {
 
   @GetMapping(ME_PATH)
   public MeResponse me(@AuthenticationPrincipal AuthPrincipal principal) {
-    // orElseThrow surfaces as a 500 today if a valid token outlives its user or
-    // organization; Task 11 owns the ProblemDetail contract that will replace this.
+    // Unreachable for a live session: a token outliving its user or organization needs the row to
+    // have been deleted inside the access token's 15-minute TTL, and the only deletion path
+    // (UnverifiedAccountCleanup) applies to accounts that were never able to log in. If it ever
+    // happens, orElseThrow's bare NoSuchElementException surfaces as a 500 — the same trade-off
+    // AuthTokenService.login makes for the same impossible case, rather than inventing an ErrorCode
+    // for a state that cannot occur.
     UserDto user = userService.findById(principal.userId()).orElseThrow();
     OrganizationDto organization =
         organizationService.findById(principal.organizationId()).orElseThrow();

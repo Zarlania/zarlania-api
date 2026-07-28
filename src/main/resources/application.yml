@@ -1,6 +1,14 @@
 spring:
   application:
     name: zarlania-api
+  task:
+    scheduling:
+      pool:
+        # Spring schedules on a single thread by default, which serializes every @Scheduled method
+        # in the application. The hourly cleanup sweeps can run for a while against a cold free-tier
+        # database, and while one did, InMemoryRateLimiter's minute-by-minute eviction would simply
+        # not run — the limiter's map would keep growing on the instance with 512 MB to spend.
+        size: 2
   # Composed from parts, not one URL: Render blueprints can inject a database's
   # host/port/database/user/password into env vars but cannot template them into
   # a JDBC URL (Render's own connectionString is postgres://, which JDBC rejects).

@@ -2,6 +2,7 @@ package com.zarlania.api.auth;
 
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.zarlania.api.auth.services.JwtKeys;
+import com.zarlania.api.auth.services.TokenClaims;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
 import java.util.UUID;
@@ -20,6 +21,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.web.SecurityFilterChain;
@@ -59,15 +61,13 @@ public class SecurityConfig {
     "/auth/**", "/.well-known/jwks.json", "/actuator/health"
   };
 
-  private static final String ORGANIZATION_CLAIM = "org";
-  private static final String KIND_CLAIM = "kind";
-
   private static final String CORS_ALL_PATHS_PATTERN = "/**";
   private static final List<String> CORS_ALLOWED_METHODS =
       List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS");
   private static final List<String> CORS_ALLOWED_HEADERS = List.of("Authorization", "Content-Type");
 
   private final JwtKeys jwtKeys;
+  private final AuthProperties authProperties;
 
   @Bean
   // THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION: HttpSecurity#build's `throws Exception` is
@@ -91,9 +91,16 @@ public class SecurityConfig {
     return http.build();
   }
 
+  // createDefaultWithIssuer, not the default validator: the default checks only that the token has
+  // not expired. Pinning `iss` means a token minted by some other issuer that happens to verify
+  // against a key in this set — the case a future shared or mistakenly reused key would create —
+  // is rejected rather than accepted as one of ours.
   @Bean
   public JwtDecoder jwtDecoder() {
-    return NimbusJwtDecoder.withJwkSource(new ImmutableJWKSet<>(jwtKeys.publicJwkSet())).build();
+    NimbusJwtDecoder decoder =
+        NimbusJwtDecoder.withJwkSource(new ImmutableJWKSet<>(jwtKeys.publicJwkSet())).build();
+    decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(authProperties.issuer()));
+    return decoder;
   }
 
   @Bean
@@ -124,8 +131,8 @@ public class SecurityConfig {
         AuthPrincipal principal =
             new AuthPrincipal(
                 UUID.fromString(requireClaim(jwt, JwtClaimNames.SUB)),
-                UUID.fromString(requireClaim(jwt, ORGANIZATION_CLAIM)),
-                jwt.getClaimAsString(KIND_CLAIM));
+                UUID.fromString(requireClaim(jwt, TokenClaims.ORGANIZATION)),
+                jwt.getClaimAsString(TokenClaims.KIND));
         return new UsernamePasswordAuthenticationToken(principal, jwt, List.of());
       } catch (IllegalArgumentException e) {
         // A token that verifies cryptographically but is missing or has a malformed

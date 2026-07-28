@@ -13,6 +13,8 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.zarlania.api.auth.services.JwtKeys;
 import com.zarlania.api.auth.services.JwtService;
+import com.zarlania.api.auth.services.TokenClaims;
+import com.zarlania.api.auth.services.TokenKinds;
 import com.zarlania.api.organizations.dtos.OrganizationDto;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.testsupport.PostgresTestContainer;
@@ -48,7 +50,6 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 class SecurityConfigIntegrationTest {
 
   private static final String BEARER_PREFIX = "Bearer ";
-  private static final String ACCESS_TOKEN_KIND = "access";
   private static final Duration HAND_MINTED_TOKEN_TTL = Duration.ofMinutes(15);
 
   @Container @ServiceConnection
@@ -59,6 +60,7 @@ class SecurityConfigIntegrationTest {
   private final OrganizationService organizationService;
   private final JwtService jwtService;
   private final JwtKeys jwtKeys;
+  private final AuthProperties authProperties;
 
   @Test
   void meWithoutATokenIsUnauthorized() throws Exception {
@@ -70,7 +72,7 @@ class SecurityConfigIntegrationTest {
     UserDto user = userService.createUnverified("me@example.com", "meuser");
     OrganizationDto org =
         organizationService.createPersonalOrganization(user.id(), "meuser's Space");
-    String token = jwtService.mint(user.id(), org.id(), ACCESS_TOKEN_KIND);
+    String token = jwtService.mint(user.id(), org.id(), TokenKinds.USER);
 
     mockMvc
         .perform(get("/users/me").header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + token))
@@ -84,7 +86,7 @@ class SecurityConfigIntegrationTest {
     UserDto user = userService.createUnverified("tampered@example.com", "tampereduser");
     OrganizationDto org =
         organizationService.createPersonalOrganization(user.id(), "tampereduser's Space");
-    String token = jwtService.mint(user.id(), org.id(), ACCESS_TOKEN_KIND);
+    String token = jwtService.mint(user.id(), org.id(), TokenKinds.USER);
 
     mockMvc
         .perform(
@@ -154,19 +156,22 @@ class SecurityConfigIntegrationTest {
 
   // Signs directly with Nimbus and JwtKeys' real signing key, instead of going through
   // JwtService.mint, so the caller can omit a claim while everything else about the token
-  // (signature, timestamps) stays valid enough to clear JwtDecoder.decode().
+  // (signature, timestamps, issuer) stays valid enough to clear JwtDecoder.decode(). The issuer
+  // matters: the decoder pins it, so a token without one would be refused before the converter
+  // these tests exist to exercise ever sees it.
   private String mintTokenMissingClaims(boolean includeSubject, boolean includeOrganization)
       throws JOSEException {
     Instant now = Instant.now();
     JWTClaimsSet.Builder claims =
         new JWTClaimsSet.Builder()
+            .issuer(authProperties.issuer())
             .issueTime(Date.from(now))
             .expirationTime(Date.from(now.plus(HAND_MINTED_TOKEN_TTL)));
     if (includeSubject) {
       claims.subject(UUID.randomUUID().toString());
     }
     if (includeOrganization) {
-      claims.claim("org", UUID.randomUUID().toString());
+      claims.claim(TokenClaims.ORGANIZATION, UUID.randomUUID().toString());
     }
 
     SignedJWT jwt =
