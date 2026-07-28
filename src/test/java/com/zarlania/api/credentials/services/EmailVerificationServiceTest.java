@@ -37,7 +37,7 @@ class EmailVerificationServiceTest {
     clock = Clock.fixed(NOW, ZoneOffset.UTC);
     service =
         new EmailVerificationService(
-            tokens, new CredentialsProperties(VERIFICATION_TOKEN_TTL), clock);
+            tokens, new CredentialsProperties(VERIFICATION_TOKEN_TTL, 4), clock);
   }
 
   @Test
@@ -112,7 +112,7 @@ class EmailVerificationServiceTest {
     clock = Clock.fixed(NOW.plus(Duration.ofHours(25)), ZoneOffset.UTC);
     service =
         new EmailVerificationService(
-            tokens, new CredentialsProperties(VERIFICATION_TOKEN_TTL), clock);
+            tokens, new CredentialsProperties(VERIFICATION_TOKEN_TTL, 4), clock);
 
     Optional<UUID> result = service.consume(raw);
 

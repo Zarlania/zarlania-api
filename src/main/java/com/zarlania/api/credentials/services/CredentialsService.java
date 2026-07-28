@@ -1,17 +1,18 @@
 package com.zarlania.api.credentials.services;
 
+import com.zarlania.api.credentials.CredentialsProperties;
 import com.zarlania.api.credentials.entities.PasswordCredential;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import java.util.UUID;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicReference;
-import lombok.RequiredArgsConstructor;
+import java.util.function.Supplier;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 public class CredentialsService {
 
   // Never compared against or stored — hashDecoyPassword() below only cares that hashing this
@@ -29,17 +30,33 @@ public class CredentialsService {
   private final PasswordCredentialRepository credentials;
   private final EmailVerificationTokenRepository verificationTokens;
   private final PasswordEncoder passwordEncoder;
+  private final Semaphore hashingPermits;
+
+  public CredentialsService(
+      PasswordCredentialRepository credentials,
+      EmailVerificationTokenRepository verificationTokens,
+      PasswordEncoder passwordEncoder,
+      CredentialsProperties properties) {
+    this.credentials = credentials;
+    this.verificationTokens = verificationTokens;
+    this.passwordEncoder = passwordEncoder;
+    this.hashingPermits = new Semaphore(properties.maxConcurrentHashes());
+  }
 
   @Transactional
   public void createPassword(UUID userId, String rawPassword) {
-    credentials.save(new PasswordCredential(userId, passwordEncoder.encode(rawPassword)));
+    String passwordHash = hash(() -> passwordEncoder.encode(rawPassword));
+    credentials.save(new PasswordCredential(userId, passwordHash));
   }
 
-  @Transactional(readOnly = true)
+  // Deliberately not @Transactional: the hash comparison below can wait on the concurrency gate,
+  // and holding a pooled connection for the whole of that wait would trade an out-of-memory risk
+  // for a connection-pool exhaustion one. The repository call opens and closes its own
+  // transaction, and PasswordCredential has no lazy state, so reading its hash afterwards is safe.
   public boolean passwordMatches(UUID userId, String rawPassword) {
     return credentials
         .findByUserId(userId)
-        .map(c -> passwordEncoder.matches(rawPassword, c.getPasswordHash()))
+        .map(c -> hash(() -> passwordEncoder.matches(rawPassword, c.getPasswordHash())))
         .orElse(false);
   }
 
@@ -51,7 +68,7 @@ public class CredentialsService {
   // same dominant cost on a fixed, discarded value closes it without touching a real password or
   // writing to the database.
   public void hashDecoyPassword() {
-    DECOY_HASH_SINK.set(passwordEncoder.encode(DECOY_PASSWORD));
+    DECOY_HASH_SINK.set(hash(() -> passwordEncoder.encode(DECOY_PASSWORD)));
   }
 
   // Both of this domain's tables in one call, so a caller purging an account never has to know
@@ -62,5 +79,30 @@ public class CredentialsService {
   public void deleteAllForUser(UUID userId) {
     verificationTokens.deleteByUserId(userId);
     credentials.deleteByUserId(userId);
+  }
+
+  // Argon2id's 19 MiB working buffer is allocated on the *Java heap* by BouncyCastle, and Tomcat
+  // will happily run its whole thread pool against a ~358 MB heap (render.yaml sets
+  // -XX:MaxRAMPercentage=70 on a 512 MB instance) — roughly 19 concurrent hashes exhaust it and
+  // the container is OOM-killed, which is trivially reachable from unauthenticated /auth/login
+  // traffic. This gate caps what the hash path can hold at any instant to
+  // zarlania.credentials.max-concurrent-hashes buffers; anything beyond that waits instead of
+  // allocating. server.tomcat.threads.max bounds how many can be waiting at once.
+  //
+  // Every hash in this class goes through here, the decoy included, and that is not incidental:
+  // a decoy that skipped the gate would return immediately while a real hash queued behind it,
+  // reopening precisely the timing channel hashDecoyPassword() exists to close.
+  private <T> T hash(Supplier<T> hashing) {
+    try {
+      hashingPermits.acquire();
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Interrupted while waiting to hash a password", e);
+    }
+    try {
+      return hashing.get();
+    } finally {
+      hashingPermits.release();
+    }
   }
 }

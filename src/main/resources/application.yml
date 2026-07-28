@@ -27,6 +27,14 @@ spring:
 server:
   # Render injects PORT; 8080 is the local default.
   port: ${PORT:8080}
+  tomcat:
+    threads:
+      # Tomcat's default is 200. Each request thread that reaches the password hasher can hold a
+      # 19 MiB Argon2 buffer on a ~358 MB heap, so the default is enough concurrency to OOM-kill
+      # the instance on its own. CredentialsService's semaphore is what actually caps live
+      # buffers; this caps how many requests can be queued behind it before Tomcat starts
+      # refusing connections, which is the failure mode we want instead of an OOM.
+      max: 50
   # Render terminates TLS and proxies every request to this instance, so
   # HttpServletRequest.getRemoteAddr() would otherwise always resolve to Render's proxy address,
   # not the caller's — collapsing AuthController's per-IP throttle buckets (common/throttle) into
@@ -72,6 +80,11 @@ zarlania:
   # credentials class reading zarlania.auth.* would invert the domains' dependency direction.
   credentials:
     verification-token-ttl: PT24H
+    # Argon2id holds 19 MiB on the Java heap per hash in flight (see
+    # CredentialsService#hash). Four at once is ~76 MiB of the free tier's ~358 MB heap,
+    # which leaves room for everything else the request is doing; raise it only alongside
+    # a bigger instance.
+    max-concurrent-hashes: 4
   throttle:
     window: PT1M
     login-limit: 10

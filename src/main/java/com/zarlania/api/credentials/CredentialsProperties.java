@@ -11,4 +11,4 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * properties record would invert that dependency and stop this domain being liftable on its own.
  */
 @ConfigurationProperties(prefix = "zarlania.credentials")
-public record CredentialsProperties(Duration verificationTokenTtl) {}
+public record CredentialsProperties(Duration verificationTokenTtl, int maxConcurrentHashes) {}
