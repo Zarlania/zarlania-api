@@ -10,6 +10,10 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.zarlania.api.common.throttle.InMemoryRateLimiter;
+import com.zarlania.api.common.throttle.ThrottleProperties;
+import java.time.Clock;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -97,7 +101,7 @@ class ResendEmailSenderTest {
     EmailConfig config = new EmailConfig();
     MockEnvironment environment = new MockEnvironment();
 
-    EmailSender sender = config.emailSender("", FROM_ADDRESS, environment);
+    EmailSender sender = config.provider("", FROM_ADDRESS, environment);
 
     assertThat(sender).isInstanceOf(LoggingEmailSender.class);
   }
@@ -108,7 +112,7 @@ class ResendEmailSenderTest {
     MockEnvironment environment = new MockEnvironment();
     environment.setActiveProfiles("production");
 
-    assertThatThrownBy(() -> config.emailSender("", FROM_ADDRESS, environment))
+    assertThatThrownBy(() -> config.provider("", FROM_ADDRESS, environment))
         .isInstanceOf(IllegalStateException.class);
   }
 
@@ -117,8 +121,28 @@ class ResendEmailSenderTest {
     EmailConfig config = new EmailConfig();
     MockEnvironment environment = new MockEnvironment();
 
-    EmailSender sender = config.emailSender(API_KEY, FROM_ADDRESS, environment);
+    EmailSender sender = config.provider(API_KEY, FROM_ADDRESS, environment);
 
     assertThat(sender).isInstanceOf(ResendEmailSender.class);
+  }
+
+  // Whichever provider is chosen, the bean the rest of the application injects has to be the
+  // budgeted one — otherwise a caller added later sends outside the service-wide cap.
+  @Test
+  void emailConfigWrapsTheChosenProviderInTheGlobalBudget() {
+    EmailConfig config = new EmailConfig();
+    ThrottleProperties properties =
+        new ThrottleProperties(
+            Duration.ofMinutes(1), 10, 5, 3, 30, 10, 3, 3, 80, Duration.ofDays(1));
+
+    EmailSender sender =
+        config.emailSender(
+            API_KEY,
+            FROM_ADDRESS,
+            new MockEnvironment(),
+            new InMemoryRateLimiter(properties, Clock.systemUTC()),
+            properties);
+
+    assertThat(sender).isInstanceOf(BudgetedEmailSender.class);
   }
 }

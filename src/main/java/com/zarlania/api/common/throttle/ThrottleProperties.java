@@ -19,4 +19,6 @@ public record ThrottleProperties(
     int refreshLimit,
     int loginAccountLimit,
     int registerAccountLimit,
-    int resendAccountLimit) {}
+    int resendAccountLimit,
+    int emailBudgetLimit,
+    Duration emailBudgetWindow) {}

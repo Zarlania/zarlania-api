@@ -1,5 +1,7 @@
 package com.zarlania.api.common.throttle;
 
+import java.time.Duration;
+
 /**
  * Fixed-window request throttle keyed by an arbitrary string — an endpoint name plus client
  * identity, in practice. {@link InMemoryRateLimiter} is the only implementation today; the
@@ -9,5 +11,16 @@ package com.zarlania.api.common.throttle;
  */
 public interface RateLimiter {
 
+  /**
+   * Consumes one unit against {@code key} within the configured {@code zarlania.throttle.window}.
+   */
   boolean tryConsume(String key, int limit);
+
+  /**
+   * Consumes one unit against {@code key} within an explicit window. Exists for budgets whose
+   * period is not the request-throttling window: the global outbound email cap ({@code
+   * common.email.BudgetedEmailSender}) is a daily allowance, and expressing it in one-minute
+   * windows would cap the rate while leaving the day's total unbounded.
+   */
+  boolean tryConsume(String key, int limit, Duration window);
 }

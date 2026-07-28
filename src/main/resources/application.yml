@@ -100,3 +100,9 @@ zarlania:
     login-account-limit: 10
     register-account-limit: 3
     resend-account-limit: 3
+    # Total outbound email for the whole service, across every caller and endpoint. The per-caller
+    # limits above do not bound this: 5 registrations/min from one compliant IP is ~7,200 messages
+    # a day against a Resend free tier of roughly 100. 80/day leaves headroom under that ceiling,
+    # and a rejection is logged at error rather than silently dropped. Raise it with the plan.
+    email-budget-limit: 80
+    email-budget-window: P1D

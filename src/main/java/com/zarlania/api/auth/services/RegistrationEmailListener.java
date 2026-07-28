@@ -1,6 +1,7 @@
 package com.zarlania.api.auth.services;
 
 import com.zarlania.api.auth.AuthProperties;
+import com.zarlania.api.common.email.EmailBudgetExhaustedException;
 import com.zarlania.api.common.email.EmailMessage;
 import com.zarlania.api.common.email.EmailSender;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -29,6 +30,13 @@ public class RegistrationEmailListener {
       "Someone tried to register with your email";
   private static final String VERIFY_EMAIL_PATH = "/verify-email";
   private static final String TOKEN_QUERY_PARAM = "token";
+
+  // Greppable prefixes on the two ways a send can fail, kept distinct because the responses differ:
+  // the budget being exhausted means this service stopped itself and the cap needs re-deriving,
+  // while a provider refusal means something outside it broke. Either way a user is waiting for an
+  // email that will never arrive, so both are errors, not warnings.
+  private static final String BUDGET_EXHAUSTED_MARKER = "EMAIL_BUDGET_EXHAUSTED";
+  private static final String SEND_FAILED_MARKER = "EMAIL_SEND_FAILED";
 
   private final EmailSender emailSender;
   private final AuthProperties authProperties;
@@ -101,13 +109,21 @@ public class RegistrationEmailListener {
   private void sendSafely(String recipient, EmailMessage message) {
     try {
       emailSender.send(message);
+    } catch (EmailBudgetExhaustedException e) {
+      logFailure(BUDGET_EXHAUSTED_MARKER, recipient, message, e);
     } catch (RuntimeException e) {
-      log.error(
-          "Failed to send registration email to {} (subject: {})",
-          stripLineBreaks(recipient),
-          stripLineBreaks(message.subject()),
-          e);
+      logFailure(SEND_FAILED_MARKER, recipient, message, e);
     }
+  }
+
+  private void logFailure(
+      String marker, String recipient, EmailMessage message, RuntimeException cause) {
+    log.error(
+        "{}: registration email to {} was not sent (subject: {})",
+        marker,
+        stripLineBreaks(recipient),
+        stripLineBreaks(message.subject()),
+        cause);
   }
 
   private static String stripLineBreaks(String value) {

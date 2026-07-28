@@ -30,7 +30,9 @@ class InMemoryRateLimiterTest {
               SOME_OTHER_LIMIT,
               SOME_OTHER_LIMIT,
               SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT),
+              SOME_OTHER_LIMIT,
+              SOME_OTHER_LIMIT,
+              WINDOW),
           clock);
 
   @Test

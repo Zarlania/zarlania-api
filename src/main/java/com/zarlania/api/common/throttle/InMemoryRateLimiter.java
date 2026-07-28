@@ -1,6 +1,7 @@
 package com.zarlania.api.common.throttle;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -23,7 +24,16 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class InMemoryRateLimiter implements RateLimiter {
 
-  private record Window(Instant start, AtomicInteger count) {}
+  // Each entry carries its own length rather than reading the configured one: keys with different
+  // periods share this map (the per-request buckets on a one-minute window, the global email budget
+  // on a daily one), and eviction has to know which is which or it would drop a day-long window the
+  // moment a minute had passed.
+  private record Window(Instant start, Duration length, AtomicInteger count) {
+
+    boolean hasPassed(Instant now) {
+      return now.isAfter(start.plus(length));
+    }
+  }
 
   private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
   private final ThrottleProperties properties;
@@ -31,13 +41,18 @@ public class InMemoryRateLimiter implements RateLimiter {
 
   @Override
   public boolean tryConsume(String key, int limit) {
+    return tryConsume(key, limit, properties.window());
+  }
+
+  @Override
+  public boolean tryConsume(String key, int limit, Duration windowLength) {
     Instant now = clock.instant();
     Window window =
         windows.compute(
             key,
             (k, existing) ->
-                existing == null || now.isAfter(existing.start().plus(properties.window()))
-                    ? new Window(now, new AtomicInteger())
+                existing == null || existing.hasPassed(now)
+                    ? new Window(now, windowLength, new AtomicInteger())
                     : existing);
     // incrementAndGet() runs outside compute() deliberately. compute()'s per-key lock only
     // guarantees a single Window instance is published for this key; it says nothing about
@@ -53,8 +68,8 @@ public class InMemoryRateLimiter implements RateLimiter {
 
   @Scheduled(fixedDelayString = "${zarlania.throttle.window}")
   void evictExpiredWindows() {
-    Instant threshold = clock.instant().minus(properties.window());
-    windows.entrySet().removeIf(entry -> entry.getValue().start().isBefore(threshold));
+    Instant now = clock.instant();
+    windows.entrySet().removeIf(entry -> entry.getValue().hasPassed(now));
   }
 
   // Package-private: exists only for InMemoryRateLimiterTest to observe that eviction actually
