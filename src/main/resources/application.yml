@@ -88,7 +88,15 @@ zarlania:
     max-concurrent-hashes: 4
   throttle:
     window: PT1M
+    # Per client IP.
     login-limit: 10
     register-limit: 5
     resend-limit: 3
     refresh-limit: 30
+    # Per account named in the request, across every IP, so credential stuffing spread over many
+    # addresses is bounded too. Login sits at the same 10 as the per-IP limit: a real person never
+    # makes ten login attempts in a minute, and going lower would let an attacker suppress one
+    # account's logins more cheaply.
+    login-account-limit: 10
+    register-account-limit: 3
+    resend-account-limit: 3

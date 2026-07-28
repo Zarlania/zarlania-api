@@ -23,7 +23,14 @@ class InMemoryRateLimiterTest {
   private final InMemoryRateLimiter limiter =
       new InMemoryRateLimiter(
           new ThrottleProperties(
-              WINDOW, SOME_OTHER_LIMIT, SOME_OTHER_LIMIT, SOME_OTHER_LIMIT, SOME_OTHER_LIMIT),
+              WINDOW,
+              SOME_OTHER_LIMIT,
+              SOME_OTHER_LIMIT,
+              SOME_OTHER_LIMIT,
+              SOME_OTHER_LIMIT,
+              SOME_OTHER_LIMIT,
+              SOME_OTHER_LIMIT,
+              SOME_OTHER_LIMIT),
           clock);
 
   @Test

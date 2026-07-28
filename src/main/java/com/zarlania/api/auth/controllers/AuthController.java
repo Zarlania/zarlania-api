@@ -19,6 +19,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -39,6 +40,12 @@ public class AuthController {
   private static final String INVALID_TOKEN_MESSAGE = "Invalid or expired verification token";
   private static final String NO_REFRESH_TOKEN_MESSAGE = "No refresh token";
   private static final String THROTTLED_MESSAGE = "Too many requests";
+
+  // Bucket keys are "<endpoint>:<client-ip>" and "<endpoint>:acct:<identifier>". An IP can never
+  // collide with the account form, since no address starts with "acct:".
+  private static final String KEY_SEPARATOR = ":";
+  private static final String ACCOUNT_KEY_INFIX = ":acct:";
+  private static final int MAX_ACCOUNT_KEY_LENGTH = 100;
 
   private static final String REGISTER_ENDPOINT = "register";
   private static final String RESEND_ENDPOINT = "resend";
@@ -64,6 +71,8 @@ public class AuthController {
   @ResponseStatus(HttpStatus.ACCEPTED)
   public void register(@Valid @RequestBody RegisterRequest request, HttpServletRequest servlet) {
     requireCapacity(REGISTER_ENDPOINT, throttleProperties.registerLimit(), servlet);
+    requireAccountCapacity(
+        REGISTER_ENDPOINT, throttleProperties.registerAccountLimit(), request.email());
     registrationService.register(request.email(), request.username(), request.password());
   }
 
@@ -78,6 +87,8 @@ public class AuthController {
   @ResponseStatus(HttpStatus.ACCEPTED)
   public void resend(@Valid @RequestBody ResendRequest request, HttpServletRequest servlet) {
     requireCapacity(RESEND_ENDPOINT, throttleProperties.resendLimit(), servlet);
+    requireAccountCapacity(
+        RESEND_ENDPOINT, throttleProperties.resendAccountLimit(), request.email());
     registrationService.resend(request.email());
   }
 
@@ -85,6 +96,8 @@ public class AuthController {
   public ResponseEntity<TokenResponse> login(
       @Valid @RequestBody LoginRequest request, HttpServletRequest servlet) {
     requireCapacity(LOGIN_ENDPOINT, throttleProperties.loginLimit(), servlet);
+    requireAccountCapacity(
+        LOGIN_ENDPOINT, throttleProperties.loginAccountLimit(), request.identifier());
     MintedSession session = authTokenService.login(request.identifier(), request.password());
     return withSession(session);
   }
@@ -106,7 +119,39 @@ public class AuthController {
   // and can rotate at will for a fresh bucket per request. The resolver reads the rightmost
   // entry, the one the proxy appended. See ClientIpResolver for the full derivation.
   private void requireCapacity(String endpoint, int limit, HttpServletRequest request) {
-    String key = endpoint + ":" + ClientIpResolver.resolve(request);
+    consumeOrThrow(endpoint + KEY_SEPARATOR + ClientIpResolver.resolve(request), limit);
+  }
+
+  // A second, independent bucket keyed on the account a request names rather than on where it came
+  // from. Per-IP alone leaves credential stuffing distributed across many addresses against one
+  // known username limited only by how many addresses the attacker controls, which is why the spec
+  // asked for per-IP *and* per-account limits.
+  //
+  // The identifier is trimmed and lower-cased because email and username are citext columns:
+  // Postgres treats "Bob" and "bob" as the same account, so keying on the raw string would hand an
+  // attacker a fresh bucket per spelling. Locale.ROOT rather than the default locale, so the
+  // mapping cannot shift with the server's locale.
+  //
+  // The bucket exists for whatever string the caller supplied, whether or not an account matches
+  // it, which is what keeps this out of the enumeration channel: a 429 says the identifier has been
+  // tried a lot, never that it is real. Nor is this an account lockout, which the spec declined —
+  // the window is a minute and refills itself; a sustained attack can suppress one account's logins
+  // while it runs, but nothing stays locked once it stops.
+  private void requireAccountCapacity(String endpoint, int limit, String accountIdentifier) {
+    consumeOrThrow(endpoint + ACCOUNT_KEY_INFIX + accountKey(accountIdentifier), limit);
+  }
+
+  // Truncated because `identifier` is only @NotBlank — a caller could otherwise mint arbitrarily
+  // long keys in the limiter's map. Sharing a bucket between two accounts whose first 100
+  // characters match only ever makes the limit stricter, never weaker.
+  private static String accountKey(String accountIdentifier) {
+    String normalized = accountIdentifier.trim().toLowerCase(Locale.ROOT);
+    return normalized.length() <= MAX_ACCOUNT_KEY_LENGTH
+        ? normalized
+        : normalized.substring(0, MAX_ACCOUNT_KEY_LENGTH);
+  }
+
+  private void consumeOrThrow(String key, int limit) {
     if (!rateLimiter.tryConsume(key, limit)) {
       throw new ApiException(ErrorCode.THROTTLED, THROTTLED_MESSAGE);
     }

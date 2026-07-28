@@ -52,7 +52,15 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 // stays at the production default (10/min) because the throttle tests below exercise it directly;
 // each uses its own client identity (remote address or X-Forwarded-For) so its count can't combine
 // with another test method's login calls and shift the trigger point.
-@SpringBootTest(properties = {"zarlania.throttle.register-limit=1000"})
+// login-account-limit is raised for the same reason from the other direction: the per-account
+// bucket would otherwise trip at the same request count as the per-IP one, leaving every 429 below
+// ambiguous about which limit produced it. AccountThrottleIntegrationTest is its mirror image —
+// per-IP limits raised, per-account limits at their defaults.
+@SpringBootTest(
+    properties = {
+      "zarlania.throttle.register-limit=1000",
+      "zarlania.throttle.login-account-limit=1000"
+    })
 @AutoConfigureMockMvc
 @Testcontainers
 @Import(RecordingEmailSenderConfig.class)
