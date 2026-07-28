@@ -82,9 +82,11 @@ it, so the migrations finish before Hibernate validates its mappings. This is
 bean ordering inside the application context, not a phase that runs before the
 context starts.
 
-The migration directory currently holds only a `.gitkeep`. There is no domain
-model yet, so everything below describes what migrations and entities must do,
-not what they already do.
+The `users`, `organizations`, `credentials`, and `auth` domains (see
+[000002](000002-authentication-and-tokens.md)) are the first to build on
+these conventions: `V1__create_account_tables.sql` creates all six of their
+tables in one migration, and their entities are what the rest of this section
+describes.
 
 Hibernate's `ddl-auto` is set to `validate`: it never creates or alters
 tables, it only checks that the JPA entity mappings match the schema Flyway

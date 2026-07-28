@@ -6,7 +6,7 @@ description: How registration, login, JWT access tokens, refresh-token families,
 tags:
 - architecture
 - configuration
-- http
+- security
 created: '2026-07-27'
 updated: '2026-07-27'
 related:
@@ -21,7 +21,7 @@ related:
 | ID | 000002 |
 | Title | Authentication and tokens |
 | Description | How registration, login, JWT access tokens, refresh-token families, and email verification work end to end. |
-| Tags | architecture, configuration, http |
+| Tags | architecture, configuration, security |
 | Created | 2026-07-27 |
 | Updated | 2026-07-27 |
 | Related | [000001](000001-persistence-foundation.md) |
