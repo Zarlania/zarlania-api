@@ -1,14 +1,14 @@
 ---
 id: '000002'
 title: Authentication and tokens
-description: How registration, login, JWT access tokens, refresh-token families, and
-  email verification work end to end.
+description: How registration, email verification, login, JWT access tokens, refresh-token
+  families, and the abuse defenses around them work end to end.
 tags:
 - architecture
 - configuration
 - security
 created: '2026-07-27'
-updated: '2026-07-27'
+updated: '2026-07-28'
 related:
 - '000001'
 ---
@@ -20,10 +20,10 @@ related:
 | ----- | ----- |
 | ID | 000002 |
 | Title | Authentication and tokens |
-| Description | How registration, login, JWT access tokens, refresh-token families, and email verification work end to end. |
+| Description | How registration, email verification, login, JWT access tokens, refresh-token families, and the abuse defenses around them work end to end. |
 | Tags | architecture, configuration, security |
 | Created | 2026-07-27 |
-| Updated | 2026-07-27 |
+| Updated | 2026-07-28 |
 | Related | [000001](000001-persistence-foundation.md) |
 <!-- reference-table:end -->
 
@@ -34,9 +34,11 @@ datasource are configured; this doc covers what runs on top of that schema.
 
 ## Domains and boundaries
 
-Five domains implement this, each a top-level package under
-`src/main/java/com/zarlania/api`, following `CLAUDE.md`'s convention:
-entities never leave their own domain, and a cross-domain reference is a
+Four domains implement this — `users`, `organizations`, `credentials` and
+`auth`, each a top-level package under `src/main/java/com/zarlania/api` —
+plus `common.email`, which is shared infrastructure rather than a domain.
+The four follow the domain-boundary rules `CLAUDE.md` states canonically:
+entities stay inside their own domain, and a cross-domain reference is a
 plain foreign-key id column plus a DTO lookup through the owning domain's
 service.
 
@@ -65,7 +67,10 @@ flowchart LR
 - **`credentials`** — `PasswordCredential` (`user_id` FK id, Argon2id hash)
   and `EmailVerificationToken` (`user_id` FK id, SHA-256 token hash,
   expiry, consumed-at). Proof-of-identity material, kept out of the `users`
-  domain deliberately so `User` never carries a password hash.
+  domain deliberately so `User` never carries a password hash. It owns its
+  configuration too (`zarlania.credentials`, bound by
+  `CredentialsProperties`): `auth` depends on `credentials`, so a class
+  here reading `zarlania.auth.*` would point that dependency backwards.
 - **`auth`** — the `/auth/*` and `/.well-known/jwks.json` endpoints, JWT
   minting, and `RefreshToken` (family id, `user_id` + `organization_id` FK
   ids, SHA-256 token hash, expiry, used-at, revoked-at). Registration is
@@ -109,9 +114,16 @@ directly.
    `POST /auth/login` fails with the distinct `auth.email-unverified` code.
    `POST /auth/resend` issues a fresh token (invalidating any outstanding
    one) for an unverified account.
-5. **Unverified expiry:** [Unverified-account
-   cleanup](#unverified-account-cleanup) purges accounts still unverified
-   past `zarlania.auth.unverified-account-max-age`, freeing the email,
+5. **Re-registering an unverified email** re-sends verification rather than
+   the duplicate-attempt notice, and **never alters the existing
+   credentials**. The common case here is a first verification mail landing
+   in spam, and the duplicate notice carries no link — it would tell that
+   user to sign in to an account they cannot sign into. Leaving the
+   credentials untouched is what stops a caller who does not control the
+   mailbox from overwriting the password on someone else's account.
+6. **Unverified expiry:** [Scheduled cleanup](#scheduled-cleanup) purges
+   accounts still unverified past
+   `zarlania.auth.unverified-account-max-age`, freeing the email,
    username, and organization name for reuse.
 
 ### Enumeration safety: status, body, and timing all have to match
@@ -128,15 +140,18 @@ wrong: both return the same `401 auth.invalid-credentials`, with an
 identical response body (not just the same status and code).
 
 Matching status and body is not sufficient on its own — an attacker who can
-measure response time can still enumerate valid identifiers, because Argon2id
-(`PasswordEncoderConfig`'s parameters below) costs tens of milliseconds while
-every early-return branch that skips it costs roughly one millisecond for a
-single `SELECT`. To close that gap, **every branch that would otherwise
-return early runs a throwaway Argon2 hash first**:
+measure response time can still enumerate valid identifiers, because
+Argon2id at [these parameters](#password-hashing) costs tens of
+milliseconds while every early-return branch that skips it costs roughly
+one millisecond for a single `SELECT`. To close that gap, **every branch
+that would otherwise return early runs a throwaway Argon2 hash first**:
 
-- `RegistrationService.register`, on the "email already registered" branch,
-  and `RegistrationService.resend`, unconditionally on every branch (it has
-  no real hashing work of its own to fall back on).
+- `RegistrationService.register`, on the "email already registered" branch.
+  The hash runs *before* that branch splits into re-sending verification
+  and sending the duplicate notice, so those two are indistinguishable from
+  each other as well.
+- `RegistrationService.resend`, unconditionally on every branch — it has no
+  real hashing work of its own to fall back on.
 - `AuthTokenService.login`'s `authenticate` helper, on the "unknown
   identifier" branch, so it pays the same cost a "known identifier, wrong
   password" branch pays via `passwordMatches`.
@@ -163,7 +178,7 @@ storage that survives a page reload.
 
 | Claim | Meaning |
 | ----- | ------- |
-| `iss` | Issuer — `zarlania.auth.issuer` (`https://api.zarlania.com` in production). |
+| `iss` | Issuer — `zarlania.auth.issuer` (`https://api.zarlania.com` in production). Checked on the way in: `SecurityConfig`'s decoder uses `JwtValidators.createDefaultWithIssuer`, because the default validator checks expiry only. |
 | `sub` | The user's UUID. |
 | `org` | The organization's UUID the token is scoped to. |
 | `kind` | Discriminator, currently always `"user"` (`TokenKinds.USER`) — reserved for a later `IMPERSONATION`/`SERVICE` kind, not yet minted or checked anywhere. |
@@ -236,10 +251,25 @@ at the OWASP Argon2id baseline:
 | Memory | 19,456 KiB (19 MiB) |
 | Iterations | 2 |
 
-These parameters keep the hash comfortably inside the Render free tier's
-512 MB. They are self-describing inside the stored hash string, so
-strengthening them later only takes effect for a user's *next* successful
+Every stored hash records the parameters it was produced with, so
+strengthening them later takes effect only on a user's *next* successful
 password change or reset — nothing needs a bulk rehash migration.
+
+**One hash fits the free tier; unbounded concurrent hashes do not.**
+BouncyCastle allocates that 19 MiB working buffer on the *Java heap*, and
+`render.yaml`'s `-XX:MaxRAMPercentage=70` leaves roughly 358 MB of heap on
+a 512 MB instance — so about 19 simultaneous hashes exhaust it and the
+container is OOM-killed. Unauthenticated `/auth/login` traffic alone can
+reach that, since the decoy hash makes an unknown identifier cost exactly
+as much as a real one.
+
+`CredentialsService` therefore gates **every** hash it performs behind a
+semaphore of `zarlania.credentials.max-concurrent-hashes` permits (4, so
+about 76 MiB at peak); `server.tomcat.threads.max` bounds how many
+requests can queue behind it. The decoy hash deliberately takes a permit
+like any other: a decoy that skipped the gate would answer immediately
+while a real hash waited under load, reopening the very timing channel it
+exists to close.
 
 ## JWKS and key rotation
 
@@ -279,28 +309,51 @@ before base64-decoding rather than assuming one particular line-break style.
 
 ## Throttling
 
-`InMemoryRateLimiter` is a fixed-window limiter, one counter per
-`<endpoint>:<client-ip>` key, backing the `RateLimiter` interface
-`AuthController` depends on. Defaults, in `zarlania.throttle`
-(`application.yml`), all per `zarlania.throttle.window` (1 minute):
+`InMemoryRateLimiter` is a fixed-window limiter behind the `RateLimiter`
+interface `AuthController` depends on. Every request consumes **two**
+buckets — `<endpoint>:<client-ip>` and `<endpoint>:acct:<identifier>` —
+because either alone leaves a real attack unbounded: per-IP only lets
+credential stuffing spread across many addresses hammer one known username
+freely, and per-account only lets a single address work through a list of
+accounts. Defaults live in `zarlania.throttle` (`application.yml`), all
+measured over `zarlania.throttle.window` (1 minute):
 
-| Endpoint | Limit |
-| -------- | ----- |
-| `register` | 5/min |
-| `login` | 10/min |
-| `resend` | 3/min |
-| `refresh` | 30/min |
+| Endpoint | Per client IP | Per account |
+| -------- | ------------- | ----------- |
+| `register` | 5/min | 3/min |
+| `login` | 10/min | 10/min |
+| `resend` | 3/min | 3/min |
+| `refresh` | 30/min | — (the cookie names no account) |
 
-A caller over the limit gets `429` with code `auth.throttled`. There is
-deliberately **no account lockout** layered on top — locking an account
-after N failed attempts is a trivial denial-of-service against a known
-username; Argon2's cost plus these rate limits are considered the defense.
+A caller over either limit gets `429` with code `auth.throttled`.
 
-Client IP comes from `HttpServletRequest.getRemoteAddr()`, which only
-resolves to the real caller — not Render's reverse proxy — because of
-`server.forward-headers-strategy: framework` in `application.yml`; see
-[Real client IPs need `forward-headers-strategy`](#real-client-ips-need-forward-headers-strategy)
-below.
+The account key is trimmed and lower-cased, because `email` and `username`
+are `citext`: Postgres already treats `Bob` and `bob` as one account, so
+keying on the raw string would hand out a fresh allowance per spelling. The
+key is length-capped as well, since `LoginRequest.identifier` is only
+`@NotBlank` and could otherwise mint unbounded keys in the limiter's map.
+
+Two things the per-account limit is deliberately **not**:
+
+- It is not an **account lockout**, which the spec declined — locking an
+  account after N failures is a trivial denial-of-service against a known
+  username. This window is a minute wide and refills itself, so a
+  sustained attack can suppress one account's logins only while it is
+  actually running.
+- It is not an **enumeration channel**. The bucket exists for whatever
+  string the caller supplied, whether or not an account matches it, so a
+  `429` says an identifier has been tried a lot — never that it is real.
+
+`refresh` stays per-IP only at 30/min. It carries an opaque 256-bit cookie
+rather than an identifier, so there is no account to key on and nothing to
+brute force; the limit is a flood cap. A client needs roughly 4 refreshes
+an hour (the 15-minute access TTL), so 30/min still covers several hundred
+users sharing one NAT or CGNAT address.
+
+The client IP comes from `ClientIpResolver`, which reads the **rightmost**
+`X-Forwarded-For` entry. Reading the wrong entry silently disables every
+limit above — see [Which `X-Forwarded-For` entry to
+trust](#which-x-forwarded-for-entry-to-trust).
 
 The limiter is in-memory rather than Redis-backed because Render's free
 plan runs exactly one instance — distributed state would buy nothing today.
@@ -308,16 +361,61 @@ plan runs exactly one instance — distributed state would buy nothing today.
 Redis-backed implementation can drop in behind it without any caller
 changing, the day the service ever runs on more than one instance.
 
-## Unverified-account cleanup
+### Global email budget
 
-`UnverifiedAccountCleanup` runs on `zarlania.auth.cleanup-interval` (1 hour
-by default) and purges every account still unverified past
-`zarlania.auth.unverified-account-max-age` (7 days by default). Left alone,
-an abandoned signup holds its email, username, and organization name
-hostage forever — all three are `citext NOT NULL UNIQUE` — so nobody else
+The per-caller limits above bound requests, not mail. Five registrations a
+minute from one compliant IP is roughly 7,200 messages a day, against a
+Resend free tier of about 100. When the quota tripped, the provider threw,
+`RegistrationEmailListener` logged it, and the endpoint still answered
+`202` — so every legitimate verification email after that point was
+silently lost.
+
+`BudgetedEmailSender` wraps whichever `EmailSender` `EmailConfig` builds
+and spends from one service-wide budget before delegating: 80 sends
+(`zarlania.throttle.email-budget-limit`) per day (`email-budget-window`).
+It wraps the port rather than the one caller that sends mail today, so
+anything added later inherits the cap. A rejected send throws
+`EmailBudgetExhaustedException`, and the listener logs both failure modes
+at `error` under greppable markers: `EMAIL_BUDGET_EXHAUSTED` (this service
+stopped itself — re-derive the cap) and `EMAIL_SEND_FAILED` (the provider
+refused).
+
+This is what `RateLimiter`'s explicit-window overload exists for: a daily
+allowance expressed in one-minute windows would cap the rate while leaving
+the day's total unbounded.
+
+## Scheduled cleanup
+
+Two independent sweeps, both on `zarlania.auth.cleanup-interval` (1 hour
+by default). They are separate beans so either can fail without stopping
+the other, and `spring.task.scheduling.pool.size` is 2 because Spring's
+default single-threaded scheduler would let a running sweep stall the rate
+limiter's own per-minute eviction.
+
+**`UnverifiedAccountCleanup`** purges every account still unverified past
+`zarlania.auth.unverified-account-max-age` (7 days by default). Left
+alone, an abandoned signup reserves its email, username, and organization
+name forever — all three are `citext NOT NULL UNIQUE`, so nobody else
 could ever register with them. See [Unverified-account cleanup is two
-beans, not one](#unverified-account-cleanup-is-two-beans-not-one) below for
-why the purge itself lives in a second, separate bean.
+beans, not one](#unverified-account-cleanup-is-two-beans-not-one) below
+for why the purge itself lives in a second, separate bean.
+
+**`ExpiredTokenCleanup`** deletes token rows nothing can read again, which
+the account sweep never covers because it only ever looks at unverified
+users:
+
+- `refresh_tokens` past `family_expires_at`. An active session refreshing
+  on the 15-minute access TTL inserts around 96 rows a day — roughly
+  35,000 per user per year, against a 1 GB free-tier database.
+- `email_verification_tokens` that are consumed or expired.
+  `EmailVerificationService.issue` clears only a user's *unconsumed*
+  tokens, so consumed ones would otherwise accumulate forever.
+
+Refresh tokens are pruned at the family's absolute expiry and **not** as
+soon as a token is used or revoked. A used row has to stay readable until
+then, because presenting it a second time is exactly what proves theft and
+revokes the family; deleting it earlier would turn a replay into an
+ordinary unknown-token `401` and lose the detection.
 
 ## Manual setup
 
@@ -382,24 +480,52 @@ underneath it, exactly the behavior
 [`AuthJourneyIntegrationTest`](../../src/test/java/com/zarlania/api/AuthJourneyIntegrationTest.java)
 exists to catch if it ever regresses.
 
-### Real client IPs need `forward-headers-strategy`
+### Which `X-Forwarded-For` entry to trust
 
 Render terminates TLS and proxies every request to this instance, so
-without `server.forward-headers-strategy: framework` in `application.yml`,
-`HttpServletRequest.getRemoteAddr()` would always resolve to Render's proxy
-address, never the caller's. Every user would collapse into one shared
-throttle bucket per endpoint, capping the entire service at, for instance,
-5 registrations per minute *total* rather than per caller. `framework`
-makes Spring's `ForwardedHeaderFilter` resolve the remote address from
-`X-Forwarded-For` instead.
+`HttpServletRequest.getRemoteAddr()` on its own always resolves to
+Render's proxy. Every user would collapse into one shared throttle bucket
+per endpoint, capping the whole service at, say, 5 registrations per
+minute *total* rather than 5 per caller. The caller's own address is in
+`X-Forwarded-For` — but **which entry of it is read decides whether the
+throttle works at all**, and the intuitive choice is the wrong one:
 
-This is safe only because Render is the sole ingress this service is
-reachable through: a client able to reach the app directly (bypassing
-Render's proxy) could forge `X-Forwarded-For` to evade the limiter or frame
-another IP as the source of its requests. If this service is ever exposed
-another way — a second ingress, direct instance access — that path has to
-either strip or overwrite `X-Forwarded-For` before the request reaches here,
-or this setting needs revisiting.
+- A proxy **appends** the address it received the request from; it does
+  not replace the header. On `X-Forwarded-For: a, b, c`, `c` was written
+  by the nearest (trusted) proxy, and everything left of it is whatever
+  the client sent.
+- So the **leftmost** entry is forgeable by any unauthenticated caller.
+  That is also what `server.forward-headers-strategy: framework` uses:
+  Spring's `ForwardedHeaderUtils.parseForwardedFor` takes index `[0]`, and
+  prefers a client-supplied `Forwarded:` header outright — Render sets
+  none, so an attacker's is used verbatim. Rotating either header buys a
+  fresh bucket per request — unlimited login brute force, unlimited
+  registration email-bombing, unlimited resend.
+- The **rightmost** entry is the one Render itself wrote, so it is the one
+  this service can trust. `ClientIpResolver` reads it directly, which also
+  means `forward-headers-strategy` has to stay `none`: `framework` both
+  applies the wrong semantic and strips these headers before a handler
+  could see them.
+
+**Transiting a proxy does not prevent forgery — only replacement at the
+proxy would, and Render appends.** An earlier revision of this document,
+`application.yml` and `AuthController` all claimed the opposite; that
+reasoning was wrong, and
+[`LoginFlowIntegrationTest`](../../src/test/java/com/zarlania/api/auth/controllers/LoginFlowIntegrationTest.java)
+now sends a rotating forged leftmost entry to prove requests still land in
+the real caller's bucket.
+
+Reading the rightmost entry is correct for exactly one trusted proxy hop,
+which is what the deployment has (`render.yaml`: one web service behind
+Render's load balancer). Put a
+second trusted proxy in front and the rightmost entry becomes that inner
+proxy rather than the client, at which point `ClientIpResolver` would have
+to walk right to left discarding known-trusted hops — which is what
+Tomcat's `RemoteIpValve` does, given
+`server.tomcat.remoteip.internal-proxies`. That route was not taken
+because Render publishes no stable egress ranges to enumerate, and an
+internal-proxies pattern that silently stops matching fails back to the
+forgeable leftmost value.
 
 ### CSRF is disabled deliberately
 
@@ -423,14 +549,18 @@ of these three changes, this exception needs re-examining.
 
 ### Timing-safe enumeration defenses via throwaway Argon2 hashes
 
-Covered above under [Enumeration
-safety](#enumeration-safety-status-body-and-timing-all-have-to-match) —
-called out again here because it is easy to mistake
-`CredentialsService.hashDecoyPassword()` for dead code and delete it. Its
-entire value is the CPU time it burns, not any value it produces; removing
-it reopens a timing side-channel that lets a caller enumerate valid emails
-or usernames purely by measuring response latency, even though the status
-code and response body stay identical.
+The mechanism is described under [Enumeration
+safety](#enumeration-safety-status-body-and-timing-all-have-to-match); it
+is listed here because `CredentialsService.hashDecoyPassword()` reads as
+dead code and invites deletion. Its entire value is the CPU time it burns.
+
+Two details that look unrelated are load-bearing for the same reason:
+
+- The decoy takes a [hashing permit](#password-hashing) like a real hash
+  does, so it still waits its turn under load rather than answering early.
+- `RegistrationService.resend` hashes *outside* any transaction. That
+  change was about not holding a pooled connection for the 50 ms the hash
+  takes; it deliberately did not move, skip or condition the hash itself.
 
 ### Unverified-account cleanup is two beans, not one
 
