@@ -1,5 +1,6 @@
 package com.zarlania.api.common.http;
 
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
@@ -52,6 +53,17 @@ public final class ClientIpResolver {
 
   private ClientIpResolver() {}
 
+  // SERVLET_HEADER: the detector's point — that a client can set this header — is the premise this
+  // method is built on, not a defect in it. Everything the client can write is discarded: only the
+  // rightmost entry is read, and that one is written by Render's proxy after the request leaves the
+  // client's control. The value is used solely as a throttle bucket key, never as an authorization
+  // decision, an audit identity, or anything that reaches a query or a response.
+  @SuppressFBWarnings(
+      value = "SERVLET_HEADER",
+      justification =
+          "Client-controllable entries are deliberately discarded; only the rightmost entry,"
+              + " written by the trusted proxy, is read, and it keys a rate-limit bucket rather"
+              + " than any authorization or identity decision.")
   public static String resolve(HttpServletRequest request) {
     String forwardedFor = request.getHeader(FORWARDED_FOR_HEADER);
     if (forwardedFor == null || forwardedFor.isBlank()) {

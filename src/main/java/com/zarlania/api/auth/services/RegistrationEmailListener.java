@@ -84,6 +84,19 @@ public class RegistrationEmailListener {
   // future implementation, which is why this catch is deliberately wider than Checkstyle's
   // IllegalCatch default allows.
   //
+  // The two failure modes are caught separately so each gets its own marker: a budget rejection
+  // is this service stopping itself, a provider refusal is something outside it breaking.
+  @SuppressWarnings("checkstyle:IllegalCatch")
+  private void sendSafely(String recipient, EmailMessage message) {
+    try {
+      emailSender.send(message);
+    } catch (EmailBudgetExhaustedException e) {
+      logFailure(BUDGET_EXHAUSTED_MARKER, recipient, message, e);
+    } catch (RuntimeException e) {
+      logFailure(SEND_FAILED_MARKER, recipient, message, e);
+    }
+  }
+
   // Never logs the message body: it carries the raw verification token for the verification
   // email, and CLAUDE.md forbids logging that. The recipient and subject are enough to find and
   // manually resend the specific email a provider outage dropped. Both are stripped of line
@@ -105,17 +118,6 @@ public class RegistrationEmailListener {
               + " interprocedural hop through the event record accessor, not because the value"
               + " is actually unsanitized (see LoggingEmailSender#send for the unflagged"
               + " single-hop control case using the identical pattern).")
-  @SuppressWarnings("checkstyle:IllegalCatch")
-  private void sendSafely(String recipient, EmailMessage message) {
-    try {
-      emailSender.send(message);
-    } catch (EmailBudgetExhaustedException e) {
-      logFailure(BUDGET_EXHAUSTED_MARKER, recipient, message, e);
-    } catch (RuntimeException e) {
-      logFailure(SEND_FAILED_MARKER, recipient, message, e);
-    }
-  }
-
   private void logFailure(
       String marker, String recipient, EmailMessage message, RuntimeException cause) {
     log.error(
