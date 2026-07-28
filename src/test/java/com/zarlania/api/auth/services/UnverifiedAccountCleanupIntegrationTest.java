@@ -11,6 +11,9 @@ import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
 import com.zarlania.api.organizations.dtos.OrganizationDto;
+import com.zarlania.api.organizations.entities.Membership;
+import com.zarlania.api.organizations.entities.Organization;
+import com.zarlania.api.organizations.entities.OrganizationType;
 import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.repositories.OrganizationRepository;
 import com.zarlania.api.organizations.services.OrganizationService;
@@ -103,6 +106,36 @@ class UnverifiedAccountCleanupIntegrationTest {
 
     assertAccountIsFullyIntact(poisoned);
     assertAccountIsFullyGone(healthy);
+  }
+
+  // Guards OrganizationService.deletePersonalOrganizationOf: a membership row that exists but
+  // isn't the user's own owned PERSONAL org (here, a non-owning row in someone else's GENERAL
+  // org) must still be cleared. organization_memberships.user_id is a NOT NULL FK to users, so if
+  // that row were left behind, the final users.deleteById(userId) below would fail on it forever
+  // — the account would be retried and fail identically on every future sweep, permanently
+  // holding its citext-unique email and username hostage, which is exactly what this feature
+  // exists to prevent. The GENERAL org itself must survive untouched: deleting it would destroy a
+  // space other members still use.
+  @Test
+  void purgesAnExpiredUnverifiedAccountThatBelongsToButDoesNotOwnAGeneralOrganization() {
+    UserDto user =
+        userService.createUnverified("non-owning-member@example.com", "non-owning-member");
+    credentialsService.createPassword(user.id(), RAW_PASSWORD);
+    String rawVerificationToken = emailVerificationService.issue(user.id());
+    Organization sharedOrg =
+        organizations.saveAndFlush(
+            new Organization("Someone Else's Space", OrganizationType.GENERAL));
+    memberships.saveAndFlush(new Membership(sharedOrg, user.id(), false));
+    backdateCreatedAt(user.id(), EXPIRED_AGE);
+
+    cleanup.purgeExpiredUnverifiedAccounts();
+
+    assertThat(users.findById(user.id())).isEmpty();
+    assertThat(passwordCredentials.findByUserId(user.id())).isEmpty();
+    assertThat(verificationTokens.findByTokenHash(TokenHasher.sha256Hex(rawVerificationToken)))
+        .isEmpty();
+    assertThat(memberships.findByUserId(user.id())).isEmpty();
+    assertThat(organizations.findById(sharedOrg.getId())).isPresent();
   }
 
   private SeededAccount seedAccount(String slug, boolean verified) {
