@@ -31,6 +31,13 @@ services:
       # Placeholder: set this once zarlania-app is deployed and calling the API.
       - key: ZARLANIA_CORS_ALLOWED_ORIGINS
         sync: false
+      # Secrets: set in the Render dashboard, never committed.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: JWT_PRIVATE_KEY
+        sync: false
+      - key: JWT_RETIRED_PUBLIC_KEYS
+        sync: false
       # Composed into the JDBC URL by application.yml; blueprints cannot
       # template a URL string, so the parts are injected individually.
       - key: DB_HOST

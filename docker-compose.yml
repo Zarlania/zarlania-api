@@ -28,6 +28,21 @@ services:
       DB_NAME: ${DB_NAME:-zarlania}
       DB_USER: ${DB_USER:-zarlania}
       DB_PASSWORD: ${DB_PASSWORD:-zarlania}
+      # Unlike application.yml's own default (true, for every non-local environment),
+      # this container is served over plain http://localhost, so the default here is
+      # false — a Secure cookie would never come back from a browser talking http.
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      # Empty by default: JwtKeys and EmailConfig fall back to an ephemeral dev
+      # keypair and a logging-only email sender when these are unset outside the
+      # production profile (SPRING_PROFILES_ACTIVE above defaults to local). Set
+      # them in .env only to exercise a real key or Resend send from this container.
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      JWT_RETIRED_PUBLIC_KEYS: ${JWT_RETIRED_PUBLIC_KEYS:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@zarlania.com}
+      JWT_ISSUER: ${JWT_ISSUER:-https://api.zarlania.com}
+      APP_BASE_URL: ${APP_BASE_URL:-https://zarlania.com}
+      ZARLANIA_CORS_ALLOWED_ORIGINS: ${ZARLANIA_CORS_ALLOWED_ORIGINS:-http://localhost:5173}
     depends_on:
       postgres:
         condition: service_healthy
