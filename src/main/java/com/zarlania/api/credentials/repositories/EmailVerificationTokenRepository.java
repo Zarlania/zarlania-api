@@ -23,6 +23,9 @@ public interface EmailVerificationTokenRepository
   // never be consumed, so neither is ever read again. Without this they accumulate for the life of
   // the database: issue() only clears a user's *unconsumed* tokens.
   //
+  // The cutoff governs the expiry clause only — consumed rows go regardless of age, which is what
+  // the method name spells out rather than leaving to the reader of the query.
+  //
   // @Transactional here rather than at the caller: the sweep's entry point is @Scheduled, and a
   // @Modifying query needs a transaction of its own to run in.
   @Modifying
@@ -30,5 +33,5 @@ public interface EmailVerificationTokenRepository
   @Query(
       "delete from EmailVerificationToken t"
           + " where t.consumedAt is not null or t.expiresAt < :cutoff")
-  int deleteConsumedOrExpiredBefore(@Param("cutoff") Instant cutoff);
+  int deleteConsumedTokensAndThoseExpiredBefore(@Param("cutoff") Instant cutoff);
 }

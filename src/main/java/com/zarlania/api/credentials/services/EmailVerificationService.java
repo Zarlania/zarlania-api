@@ -33,7 +33,7 @@ public class EmailVerificationService {
   // this domain's repository to run it. Returns how many rows went, so the caller can log it.
   @Transactional
   public int pruneDeadTokens() {
-    return tokens.deleteConsumedOrExpiredBefore(clock.instant());
+    return tokens.deleteConsumedTokensAndThoseExpiredBefore(clock.instant());
   }
 
   @Transactional

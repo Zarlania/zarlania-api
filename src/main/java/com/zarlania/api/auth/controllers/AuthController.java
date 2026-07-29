@@ -113,11 +113,13 @@ public class AuthController {
     return withSession(authTokenService.refresh(cookie));
   }
 
-  // Key is <endpoint>:<client-ip>. The address comes from ClientIpResolver, not getRemoteAddr():
-  // behind Render's proxy the latter is the proxy's own address, and the obvious fix — letting
-  // Spring rewrite it from X-Forwarded-For — reads the *leftmost* entry, which the client wrote
-  // and can rotate at will for a fresh bucket per request. The resolver reads the rightmost
-  // entry, the one the proxy appended. See ClientIpResolver for the full derivation.
+  // Key is <endpoint>:<client-ip>. The address comes from ClientIpResolver rather than from
+  // getRemoteAddr() or X-Forwarded-For, because the deployed chain has two appending hops
+  // (client -> Cloudflare -> Render's load balancer -> here) and none of those three sources gives
+  // the caller: getRemoteAddr() and the header's rightmost entry are both Render's load balancer,
+  // one address shared by the entire service, while the leftmost entry is written by the client and
+  // can be rotated for a fresh bucket per request. The resolver reads CF-Connecting-IP, which
+  // Cloudflare replaces rather than appends. See ClientIpResolver for the full derivation.
   private void requireCapacity(String endpoint, int limit, HttpServletRequest request) {
     consumeOrThrow(endpoint + KEY_SEPARATOR + ClientIpResolver.resolve(request), limit);
   }

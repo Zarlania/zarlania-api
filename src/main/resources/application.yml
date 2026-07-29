@@ -4,11 +4,15 @@ spring:
   task:
     scheduling:
       pool:
-        # Spring schedules on a single thread by default, which serializes every @Scheduled method
-        # in the application. The hourly cleanup sweeps can run for a while against a cold free-tier
-        # database, and while one did, InMemoryRateLimiter's minute-by-minute eviction would simply
-        # not run — the limiter's map would keep growing on the instance with 512 MB to spend.
-        size: 2
+        # One thread per @Scheduled method in the application: UnverifiedAccountCleanup and
+        # ExpiredTokenCleanup (both hourly, both on cleanup-interval, so they start together and
+        # occupy their threads at the same time) plus InMemoryRateLimiter's minute-by-minute
+        # eviction. Spring's default is a single thread, which serializes all three — and against a
+        # cold free-tier database the two sweeps can run long enough that eviction would simply not
+        # happen, leaving the limiter's map to grow on an instance with 512 MB to spend. Sizing this
+        # below the number of scheduled methods reintroduces exactly that. Add a thread whenever a
+        # @Scheduled method is added.
+        size: 3
   # Composed from parts, not one URL: Render blueprints can inject a database's
   # host/port/database/user/password into env vars but cannot template them into
   # a JDBC URL (Render's own connectionString is postgres://, which JDBC rejects).
@@ -43,17 +47,17 @@ server:
       # buffers; this caps how many requests can be queued behind it before Tomcat starts
       # refusing connections, which is the failure mode we want instead of an OOM.
       max: 50
-  # Deliberately `none`, even though this service does sit behind Render's proxy. `framework`
-  # would make Spring's ForwardedHeaderFilter rewrite getRemoteAddr() from the *leftmost*
-  # X-Forwarded-For entry (and from a client-supplied Forwarded: header in preference to it).
-  # Proxies append to X-Forwarded-For rather than replace it, so the leftmost entry is whatever
-  # the client sent: any unauthenticated caller could rotate it and get a fresh throttle bucket
-  # per request. Transiting Render's proxy does not prevent that — only replacement at the proxy
-  # would, and Render appends.
+  # Deliberately `none`, even though this service does sit behind proxies. The deployed chain is
+  # client -> Cloudflare edge -> Render load balancer -> app: two appending hops, so
+  # X-Forwarded-For arrives with three entries and neither end of it is the caller. `framework`
+  # would rewrite getRemoteAddr() from the *leftmost* entry, which is whatever the client sent
+  # (proxies append rather than replace) — rotate it and you get a fresh throttle bucket per
+  # request. The rightmost entry is Render's internal load balancer, the same private address for
+  # every request from every user, so keying on that collapses the whole service into one bucket.
   #
-  # The rightmost entry is the one Render itself wrote, so that is the trustworthy one, and
-  # ClientIpResolver (common/http) reads it directly — which it can only do while these headers
-  # are left intact, i.e. while this stays `none`.
+  # ClientIpResolver (common/http) reads CF-Connecting-IP instead, which Cloudflare *replaces* on
+  # every request it proxies, and falls back to getRemoteAddr() when it is absent. It can only
+  # read those headers while this stays `none`; `framework` strips them.
   forward-headers-strategy: none
 
 management:

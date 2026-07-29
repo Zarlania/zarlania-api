@@ -350,10 +350,12 @@ brute force; the limit is a flood cap. A client needs roughly 4 refreshes
 an hour (the 15-minute access TTL), so 30/min still covers several hundred
 users sharing one NAT or CGNAT address.
 
-The client IP comes from `ClientIpResolver`, which reads the **rightmost**
-`X-Forwarded-For` entry. Reading the wrong entry silently disables every
-limit above — see [Which `X-Forwarded-For` entry to
-trust](#which-x-forwarded-for-entry-to-trust).
+The client IP comes from `ClientIpResolver`, which reads
+`CF-Connecting-IP` — not `X-Forwarded-For`, and not `getRemoteAddr()`.
+Reading the wrong one silently disables every limit above, in one of two
+directions: forgeable, or one bucket for the entire service. See [Which
+header carries the real client
+IP](#which-header-carries-the-real-client-ip).
 
 The limiter is in-memory rather than Redis-backed because Render's free
 plan runs exactly one instance — distributed state would buy nothing today.
@@ -388,9 +390,13 @@ the day's total unbounded.
 
 Two independent sweeps, both on `zarlania.auth.cleanup-interval` (1 hour
 by default). They are separate beans so either can fail without stopping
-the other, and `spring.task.scheduling.pool.size` is 2 because Spring's
-default single-threaded scheduler would let a running sweep stall the rate
-limiter's own per-minute eviction.
+the other, and `spring.task.scheduling.pool.size` is 3 — one thread per
+`@Scheduled` method in the application, since both sweeps share
+`cleanup-interval` and so occupy their threads at the same time. Spring's
+default single-threaded scheduler, or any size below the number of
+scheduled methods, would let a running sweep stall the rate limiter's own
+per-minute eviction. **Add a thread whenever a `@Scheduled` method is
+added.**
 
 **`UnverifiedAccountCleanup`** purges every account still unverified past
 `zarlania.auth.unverified-account-max-age` (7 days by default). Left
@@ -480,52 +486,74 @@ underneath it, exactly the behavior
 [`AuthJourneyIntegrationTest`](../../src/test/java/com/zarlania/api/AuthJourneyIntegrationTest.java)
 exists to catch if it ever regresses.
 
-### Which `X-Forwarded-For` entry to trust
+### Which header carries the real client IP
 
-Render terminates TLS and proxies every request to this instance, so
-`HttpServletRequest.getRemoteAddr()` on its own always resolves to
-Render's proxy. Every user would collapse into one shared throttle bucket
-per endpoint, capping the whole service at, say, 5 registrations per
-minute *total* rather than 5 per caller. The caller's own address is in
-`X-Forwarded-For` — but **which entry of it is read decides whether the
-throttle works at all**, and the intuitive choice is the wrong one:
+**The deployed chain has two appending hops, not one.** Render fronts
+every service with Cloudflare as well as its own load balancer:
 
-- A proxy **appends** the address it received the request from; it does
-  not replace the header. On `X-Forwarded-For: a, b, c`, `c` was written
-  by the nearest (trusted) proxy, and everything left of it is whatever
-  the client sent.
-- So the **leftmost** entry is forgeable by any unauthenticated caller.
-  That is also what `server.forward-headers-strategy: framework` uses:
-  Spring's `ForwardedHeaderUtils.parseForwardedFor` takes index `[0]`, and
-  prefers a client-supplied `Forwarded:` header outright — Render sets
-  none, so an attacker's is used verbatim. Rotating either header buys a
-  fresh bucket per request — unlimited login brute force, unlimited
-  registration email-bombing, unlimited resend.
-- The **rightmost** entry is the one Render itself wrote, so it is the one
-  this service can trust. `ClientIpResolver` reads it directly, which also
-  means `forward-headers-strategy` has to stay `none`: `framework` both
-  applies the wrong semantic and strips these headers before a handler
-  could see them.
+```text
+client ──▶ Cloudflare edge ──▶ Render load balancer ──▶ this app
 
-**Transiting a proxy does not prevent forgery — only replacement at the
-proxy would, and Render appends.** An earlier revision of this document,
-`application.yml` and `AuthController` all claimed the opposite; that
-reasoning was wrong, and
-[`LoginFlowIntegrationTest`](../../src/test/java/com/zarlania/api/auth/controllers/LoginFlowIntegrationTest.java)
-now sends a rotating forged leftmost entry to prove requests still land in
-the real caller's bucket.
+X-Forwarded-For: 208.54.226.138, 172.69.40.233, 10.24.118.242
+                 ^ real client    ^ Cloudflare    ^ Render LB
+CF-Connecting-IP: 208.54.226.138
+```
 
-Reading the rightmost entry is correct for exactly one trusted proxy hop,
-which is what the deployment has (`render.yaml`: one web service behind
-Render's load balancer). Put a
-second trusted proxy in front and the rightmost entry becomes that inner
-proxy rather than the client, at which point `ClientIpResolver` would have
-to walk right to left discarding known-trusted hops — which is what
-Tomcat's `RemoteIpValve` does, given
-`server.tomcat.remoteip.internal-proxies`. That route was not taken
-because Render publishes no stable egress ranges to enumerate, and an
-internal-proxies pattern that silently stops matching fails back to the
-forgeable leftmost value.
+Three plausible sources, two of which are actively wrong:
+
+- `getRemoteAddr()` is the TCP peer — Render's load balancer. Identical
+  for every request from every user, so it collapses each endpoint into
+  one global bucket, capping the whole service at, say, 5 registrations a
+  minute *total* rather than 5 per caller.
+- The **leftmost** `X-Forwarded-For` entry is whatever the client sent: a
+  proxy appends rather than replaces. Rotating it buys a fresh bucket per
+  request — unlimited login brute force, registration email-bombing and
+  resend. This is also what `server.forward-headers-strategy: framework`
+  uses (`ForwardedHeaderUtils.parseForwardedFor` takes index `[0]`, and
+  prefers a client-supplied `Forwarded:` header outright), which is why
+  that setting must stay `none`.
+- The **rightmost** entry is the Render load balancer's private `10.x`
+  address — byte-identical across separate probes of a live service.
+  Unforgeable, and exactly as useless as `getRemoteAddr()`.
+
+The real client sits *third from the right*, but only because there
+happen to be two trusted hops today. A hop count is a number that changes
+silently when the platform changes, and this one has changed once already.
+
+**`CF-Connecting-IP` is read instead, because Cloudflare *replaces* it
+rather than appending to it.** A client-supplied value cannot survive the
+edge, so there is nothing to strip, count hops through, or trust
+conditionally. When the header is absent — local development, tests, any
+path that never crossed the edge — the fallback is `getRemoteAddr()`,
+which no client can set. That is a shared bucket: degraded, never
+forgeable. **Every fallback in `ClientIpResolver` is to that same address
+for that reason.** The header is read via `getHeaders` and the *last*
+value taken, because `getHeader` returns only the first line of a repeated
+header, which would be the client's own if a line ever survived alongside
+the edge's.
+
+The alternative was `server.forward-headers-strategy: native` with
+`server.tomcat.remoteip.internal-proxies` covering Tomcat's private-range
+defaults plus Cloudflare's published ranges. `RemoteIpValve` walks right
+to left and stops at the first entry that does not match, so it is
+correct, and it never lands on a forgeable value either. It was not chosen
+because it means tracking Cloudflare's published ranges as they change,
+and a stale list fails quietly — the walk stops at an infrastructure
+address and the shared bucket returns with nothing raised. A header
+Cloudflare guarantees to overwrite has no list to go stale.
+
+Two earlier revisions of this document, `application.yml` and
+`AuthController` got this wrong in two different ways: first by claiming
+that transiting a proxy prevents forgery (it does not — only replacement
+at the proxy would), then by assuming a single trusted hop and keying on
+the rightmost entry, which is Render's shared load balancer.
+[`ClientIpResolverTest`](../../src/test/java/com/zarlania/api/common/http/ClientIpResolverTest.java)
+and
+[`ClientIpThrottleIntegrationTest`](../../src/test/java/com/zarlania/api/auth/controllers/ClientIpThrottleIntegrationTest.java)
+now build every case from the real three-entry header rather than a
+two-entry approximation, which is what let both mistakes through: a test
+that synthesizes `client, proxy` and then declares the last entry to be
+the proxy has assumed its own conclusion.
 
 ### CSRF is disabled deliberately
 
