@@ -112,8 +112,9 @@ public final class ClientIpResolver {
   // line surviving alongside the edge's can arrive comma-folded into a single line, and
   // "1.2.3.4, 208.54.226.138" would otherwise become the bucket key verbatim and vary with whatever
   // the caller sent. Requiring a bare literal rejects that in the same move as a port suffix, an
-  // `unknown` token, a scope id, and any other junk: every shape this does not recognise becomes
-  // the shared TCP-peer bucket, which is the invariant this class claims throughout.
+  // `unknown` token, and any other junk (a scope id is rejected separately below, and for a
+  // different reason): every shape this does not recognise becomes the shared TCP-peer bucket,
+  // which is the invariant this class claims throughout.
   //
   // InetAddress.ofLiteral, not getByName: ofLiteral parses textual forms only and never performs a
   // DNS lookup, so an unrecognised value cannot turn into a blocking network call from the request
@@ -121,7 +122,17 @@ public final class ClientIpResolver {
   // and "10.0.0.1", are one address and must not become two buckets, for the same reason the
   // per-account keys in AuthController are normalised. It also bounds the key: a parsed literal is
   // at most 45 characters, so no caller can mint unbounded distinct keys in the limiter's map.
+  // Rejected before parsing, not left to InetAddress.ofLiteral: a %-qualified literal such as
+  // "fe80::1%eth0" is a valid IPv6 zone id, so whether it parses depends on which interface names
+  // exist on the host running this code — real on a typical Linux box, absent on macOS. A scope id
+  // names a *local* interface for disambiguating link-local addresses on this machine; it says
+  // nothing about a remote peer, so it can never be part of that peer's identity. Rejecting it
+  // outright keeps the bucket key identical on every platform instead of depending on interface
+  // names that were never about the client in the first place.
   private static Optional<String> canonicalAddress(String value) {
+    if (value.indexOf('%') >= 0) {
+      return Optional.empty();
+    }
     try {
       return Optional.of(InetAddress.ofLiteral(value).getHostAddress());
     } catch (IllegalArgumentException e) {

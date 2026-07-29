@@ -108,6 +108,17 @@ class ClientIpResolverTest {
     assertThat(resolveWithCloudflareHeader("not an address")).isEqualTo(TCP_PEER);
   }
 
+  // The scope id case above only proves the guard rejects an interface name that plausibly does
+  // not exist on the host running the test — "eth0" is real on a typical Linux box and absent on
+  // macOS, which is exactly what let this guard's absence pass unnoticed on one platform and fail
+  // on the other. Repeating it against "lo", the loopback interface that exists on every platform
+  // this test runs on, proves the guard rejects the scope id itself rather than merely failing to
+  // recognise an interface name — it would still reject even if the address happened to resolve.
+  @Test
+  void aScopeIdIsRejectedEvenWhenTheInterfaceNameExistsLocally() {
+    assertThat(resolveWithCloudflareHeader("fe80::1%lo")).isEqualTo(TCP_PEER);
+  }
+
   // Two spellings of one address must not become two buckets — the same reasoning that normalizes
   // the per-account keys in AuthController.
   @Test
