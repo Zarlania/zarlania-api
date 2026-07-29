@@ -81,6 +81,42 @@ class ClientIpResolverTest {
     assertThat(ClientIpResolver.resolve(request)).isEqualTo(REAL_CLIENT).isNotEqualTo(FORGED);
   }
 
+  // The sibling of the case above, and the one that stayed forgeable after it was fixed: RFC 9110
+  // §5.3 makes two header lines and one comma-joined line interchangeable, and any recipient in the
+  // chain may fold one into the other. So the client's value can arrive *inside* the edge's line.
+  // Neither embedded address may be trusted — the whole value is not one address, so it is not an
+  // answer, and the peer is used instead.
+  @Test
+  void aCommaFoldedCloudflareHeaderFallsBackToTheTcpPeerAndTrustsNeitherValue() {
+    MockHttpServletRequest request = requestFromTcpPeer();
+    request.addHeader(CLOUDFLARE_CLIENT_IP, FORGED + ", " + REAL_CLIENT);
+
+    assertThat(ClientIpResolver.resolve(request))
+        .isEqualTo(TCP_PEER)
+        .isNotEqualTo(FORGED)
+        .isNotEqualTo(REAL_CLIENT);
+  }
+
+  // Everything the guard closes in the same move as the folded case. Each of these would otherwise
+  // become a bucket key that varies with whatever the caller sent.
+  @Test
+  void valuesThatAreNotOneBareIpLiteralFallBackToTheTcpPeer() {
+    assertThat(resolveWithCloudflareHeader(REAL_CLIENT + ":8080")).isEqualTo(TCP_PEER);
+    assertThat(resolveWithCloudflareHeader("unknown")).isEqualTo(TCP_PEER);
+    assertThat(resolveWithCloudflareHeader("fe80::1%eth0")).isEqualTo(TCP_PEER);
+    assertThat(resolveWithCloudflareHeader("x".repeat(500))).isEqualTo(TCP_PEER);
+    assertThat(resolveWithCloudflareHeader("not an address")).isEqualTo(TCP_PEER);
+  }
+
+  // Two spellings of one address must not become two buckets — the same reasoning that normalizes
+  // the per-account keys in AuthController.
+  @Test
+  void alternateSpellingsOfOneAddressResolveToOneBucketKey() {
+    assertThat(resolveWithCloudflareHeader("[::1]")).isEqualTo(resolveWithCloudflareHeader("::1"));
+    assertThat(resolveWithCloudflareHeader("::ffff:10.0.0.1"))
+        .isEqualTo(resolveWithCloudflareHeader("10.0.0.1"));
+  }
+
   @Test
   void aBlankCloudflareHeaderFallsBackToTheTcpPeer() {
     MockHttpServletRequest request = requestFromTcpPeer();
@@ -95,11 +131,10 @@ class ClientIpResolverTest {
         .isEqualTo(REAL_CLIENT);
   }
 
-  // Only reachable off the Cloudflare path, where the header is not the edge's; bounded so one
-  // caller cannot mint unbounded distinct keys in the limiter's map.
-  @Test
-  void anAbsurdlyLongValueIsTruncatedToTheLongestPossibleAddress() {
-    assertThat(ClientIpResolver.resolve(deployedRequest("x".repeat(500)))).hasSize(45);
+  private static String resolveWithCloudflareHeader(String value) {
+    MockHttpServletRequest request = requestFromTcpPeer();
+    request.addHeader(CLOUDFLARE_CLIENT_IP, value);
+    return ClientIpResolver.resolve(request);
   }
 
   private static MockHttpServletRequest requestFromTcpPeer() {

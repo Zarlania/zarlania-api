@@ -511,7 +511,7 @@ Three plausible sources, two of which are actively wrong:
   resend. This is also what `server.forward-headers-strategy: framework`
   uses (`ForwardedHeaderUtils.parseForwardedFor` takes index `[0]`, and
   prefers a client-supplied `Forwarded:` header outright), which is why
-  that setting must stay `none`.
+  that setting must stay `none` — see below.
 - The **rightmost** entry is the Render load balancer's private `10.x`
   address — byte-identical across separate probes of a live service.
   Unforgeable, and exactly as useless as `getRemoteAddr()`.
@@ -520,6 +520,15 @@ The real client sits *third from the right*, but only because there
 happen to be two trusted hops today. A hop count is a number that changes
 silently when the platform changes, and this one has changed once already.
 
+**`CF-Connecting-IP` being unforgeable is a platform assumption, not a
+protocol guarantee.** It holds only while every request reaches this app
+through Cloudflare — nothing in HTTP prevents a client from sending that
+header, and Render gives this project no way to enforce that its instances
+are unreachable except through the edge. It belongs in the same list as
+the hop count: things that are true of the current platform and would
+change without any code here changing. If a path that bypasses Cloudflare
+ever exists, this resolver trusts whatever that path sends.
+
 **`CF-Connecting-IP` is read instead, because Cloudflare *replaces* it
 rather than appending to it.** A client-supplied value cannot survive the
 edge, so there is nothing to strip, count hops through, or trust
@@ -527,10 +536,32 @@ conditionally. When the header is absent — local development, tests, any
 path that never crossed the edge — the fallback is `getRemoteAddr()`,
 which no client can set. That is a shared bucket: degraded, never
 forgeable. **Every fallback in `ClientIpResolver` is to that same address
-for that reason.** The header is read via `getHeaders` and the *last*
-value taken, because `getHeader` returns only the first line of a repeated
-header, which would be the client's own if a line ever survived alongside
-the edge's.
+for that reason.**
+
+Two details keep that promise, and each closes half of the same hole — a
+client's value surviving alongside the edge's:
+
+- The header is read via `getHeaders` taking the **last** value, not
+  `getHeader`, which returns only the first line of a repeated header.
+- The value must parse as **one bare IP literal** or it is not used at
+  all. RFC 9110 §5.3 makes two header lines and one comma-joined line
+  interchangeable, and any recipient may fold one into the other, so the
+  client's value can arrive *inside* the edge's line —
+  `CF-Connecting-IP: 1.2.3.4, 208.54.226.138` would otherwise become the
+  bucket key verbatim. The same guard rejects a port suffix, a scope id,
+  an `unknown` token and any other junk, so every shape the resolver does
+  not recognise becomes the shared bucket rather than a caller-controlled
+  one. Parsing uses `InetAddress.ofLiteral`, which never performs a DNS
+  lookup, and its canonical output means `[::1]` and `::1` cannot become
+  two buckets.
+
+This is also why `server.forward-headers-strategy` must stay `none`, and
+the reason is not the obvious one: `ForwardedHeaderFilter` removes only
+`Forwarded` and the `X-Forwarded-*` family, so `CF-Connecting-IP` would
+still be readable under `framework`. What `framework` changes is
+`getRemoteAddr()` itself — it rewrites it from the leftmost
+`X-Forwarded-For` entry, which would make the *fallback* forgeable and
+reinstate the original bypass through the safe path.
 
 The alternative was `server.forward-headers-strategy: native` with
 `server.tomcat.remoteip.internal-proxies` covering Tomcat's private-range
