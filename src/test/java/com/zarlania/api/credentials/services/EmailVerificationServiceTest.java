@@ -1,6 +1,9 @@
 package com.zarlania.api.credentials.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -47,6 +51,22 @@ class EmailVerificationServiceTest {
     service.issue(userId);
 
     verify(tokens).deleteByUserIdAndConsumedAtIsNull(userId);
+  }
+
+  // Order is the whole point. Taken after the delete instead, two concurrent issues for the same
+  // user could both clear the outstanding tokens before either insert became visible, and each
+  // would then add its own — leaving two live tokens where issuing a fresh one is supposed to
+  // invalidate every outstanding one.
+  @Test
+  void issueTakesThePerUserLockBeforeClearingOutstandingTokens() {
+    UUID userId = UUID.randomUUID();
+
+    service.issue(userId);
+
+    InOrder inOrder = inOrder(tokens);
+    inOrder.verify(tokens).acquireUserTokenLock(anyInt(), anyInt());
+    inOrder.verify(tokens).deleteByUserIdAndConsumedAtIsNull(userId);
+    inOrder.verify(tokens).save(any(EmailVerificationToken.class));
   }
 
   @Test
@@ -80,7 +100,7 @@ class EmailVerificationServiceTest {
     String raw = "raw-token";
     EmailVerificationToken token =
         new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), NOW.plusSeconds(60));
-    when(tokens.findByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
+    when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
 
     Optional<UUID> result = service.consume(raw);
 
@@ -94,7 +114,7 @@ class EmailVerificationServiceTest {
     String raw = "raw-token";
     EmailVerificationToken token =
         new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), NOW.minusSeconds(1));
-    when(tokens.findByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
+    when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
 
     Optional<UUID> result = service.consume(raw);
 
@@ -108,7 +128,7 @@ class EmailVerificationServiceTest {
     Instant expiresAt = NOW.plus(VERIFICATION_TOKEN_TTL);
     EmailVerificationToken token =
         new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), expiresAt);
-    when(tokens.findByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
+    when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
     clock = Clock.fixed(NOW.plus(Duration.ofHours(25)), ZoneOffset.UTC);
     service =
         new EmailVerificationService(
@@ -126,7 +146,7 @@ class EmailVerificationServiceTest {
     EmailVerificationToken token =
         new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), NOW.plusSeconds(60));
     token.consume(NOW.minusSeconds(30));
-    when(tokens.findByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
+    when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
 
     Optional<UUID> result = service.consume(raw);
 
@@ -136,7 +156,7 @@ class EmailVerificationServiceTest {
   @Test
   void consumeOnAnUnknownHashReturnsEmpty() {
     String raw = "does-not-exist";
-    when(tokens.findByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.empty());
+    when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.empty());
 
     Optional<UUID> result = service.consume(raw);
 
