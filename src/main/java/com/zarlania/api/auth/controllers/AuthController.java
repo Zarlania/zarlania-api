@@ -1,6 +1,7 @@
 package com.zarlania.api.auth.controllers;
 
 import com.zarlania.api.auth.AuthProperties;
+import com.zarlania.api.auth.dtos.CsrfTokenResponse;
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.LoginRequest;
 import com.zarlania.api.auth.dtos.RegisterRequest;
@@ -25,7 +26,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -51,6 +54,7 @@ public class AuthController {
   private static final String RESEND_ENDPOINT = "resend";
   private static final String LOGIN_ENDPOINT = "login";
   private static final String REFRESH_ENDPOINT = "refresh";
+  private static final String CSRF_ENDPOINT = "csrf";
 
   private static final String REFRESH_COOKIE = "zarlania_refresh";
   private static final String REFRESH_COOKIE_PATH = "/auth";
@@ -74,6 +78,25 @@ public class AuthController {
     requireAccountCapacity(
         REGISTER_ENDPOINT, throttleProperties.registerAccountLimit(), request.email());
     registrationService.register(request.email(), request.username(), request.password());
+  }
+
+  // The client's way in to the CSRF pair guarding /auth/refresh and /auth/logout. Reading the
+  // CsrfToken argument is what makes the token exist: Spring Security defers generation until
+  // something asks for it, and that first read is also what writes the matching Set-Cookie onto
+  // this response. The client keeps the returned value in memory and sends it back in headerName.
+  //
+  // There is an endpoint at all — rather than the usual "read the cookie from JavaScript" — because
+  // the browser client is served from a different host than this API, and document.cookie is scoped
+  // by host. It also has to be reachable on a cold start: the refresh cookie is HttpOnly and
+  // outlives a page reload, but the token the client held in memory does not, so without this a
+  // reloaded tab could never refresh its session again.
+  //
+  // Throttled per IP like every other public /auth route, though it is the cheapest of them —
+  // no database work, no hashing, just a random token.
+  @GetMapping("/csrf")
+  public CsrfTokenResponse csrf(CsrfToken token, HttpServletRequest servlet) {
+    requireCapacity(CSRF_ENDPOINT, throttleProperties.csrfLimit(), servlet);
+    return new CsrfTokenResponse(token.getHeaderName(), token.getToken());
   }
 
   @PostMapping("/verify")

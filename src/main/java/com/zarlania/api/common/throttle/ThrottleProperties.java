@@ -17,6 +17,7 @@ public record ThrottleProperties(
     int registerLimit,
     int resendLimit,
     int refreshLimit,
+    int csrfLimit,
     int loginAccountLimit,
     int registerAccountLimit,
     int resendAccountLimit,

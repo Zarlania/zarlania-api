@@ -75,7 +75,7 @@ class BudgetedEmailSenderTest {
   private BudgetedEmailSender sender(Clock clock) {
     ThrottleProperties properties =
         new ThrottleProperties(
-            Duration.ofMinutes(1), 10, 5, 3, 30, 10, 3, 3, BUDGET_LIMIT, BUDGET_WINDOW);
+            Duration.ofMinutes(1), 10, 5, 3, 30, 60, 10, 3, 3, BUDGET_LIMIT, BUDGET_WINDOW);
     return new BudgetedEmailSender(
         delivered::add, new InMemoryRateLimiter(properties, clock), BUDGET_LIMIT, BUDGET_WINDOW);
   }

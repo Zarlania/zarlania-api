@@ -11,12 +11,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimNames;
@@ -25,6 +27,9 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -34,21 +39,6 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
  * below, and a valid JWT is turned into an {@link AuthPrincipal} rather than the default
  * scope-based {@code Jwt} authentication.
  */
-// SPRING_CSRF_PROTECTION_DISABLED: FindSecBugs reports this against the class, not the
-// csrf().disable() call site, because the detector cannot see the authentication model. CSRF
-// tokens defend credentials the browser attaches *ambiently* (cookies); this chain is
-// STATELESS and reads credentials from the Authorization header, which is never ambient. The
-// one cookie-borne credential on this service is the zarlania_refresh cookie that
-// POST /auth/refresh reads (Task 12); it is defended instead by SameSite=Strict (keeps it off
-// cross-site requests), Path=/auth (keeps it off every other endpoint), and the CORS origin
-// list being an explicit allow-list rather than a wildcard (also what makes
-// allowCredentials(true) below safe). Re-examine this suppression if any of those three change.
-@SuppressFBWarnings(
-    value = "SPRING_CSRF_PROTECTION_DISABLED",
-    justification =
-        "Stateless bearer-token chain, not cookie/session auth; the one cookie this service"
-            + " has is scoped by SameSite=Strict, Path=/auth, and a non-wildcard CORS"
-            + " allow-list (see class comment).")
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -61,10 +51,29 @@ public class SecurityConfig {
     "/auth/**", "/.well-known/jwks.json", "/actuator/health"
   };
 
+  // The only two routes on this service that authenticate with a cookie instead of a bearer
+  // token, and therefore the only two with a CSRF surface at all. See configureCsrf.
+  private static final String REFRESH_PATH = "/auth/refresh";
+  private static final String LOGOUT_PATH = "/auth/logout";
+
+  // Must match AuthController's REFRESH_COOKIE_PATH and SAME_SITE_STRICT: the CSRF cookie and the
+  // refresh cookie are two halves of one defence and have to travel together, so a request that
+  // carries one always carries the other. Commented at both ends rather than extracted, since two
+  // occurrences is not yet an abstraction.
+  private static final String CSRF_COOKIE_PATH = "/auth";
+  private static final String SAME_SITE_STRICT = "Strict";
+
   private static final String CORS_ALL_PATHS_PATTERN = "/**";
   private static final List<String> CORS_ALLOWED_METHODS =
       List.of("GET", "POST", "PATCH", "DELETE", "OPTIONS");
-  private static final List<String> CORS_ALLOWED_HEADERS = List.of("Authorization", "Content-Type");
+  // CookieCsrfTokenRepository's default header name. It has to be allow-listed for CORS or the
+  // browser's preflight refuses the very header the CSRF check requires, and POST /auth/refresh
+  // would fail for the legitimate client while looking like a security decision. Clients read the
+  // name off GET /auth/csrf rather than hardcoding it, so this literal is the single source.
+  private static final String CSRF_HEADER = "X-XSRF-TOKEN";
+
+  private static final List<String> CORS_ALLOWED_HEADERS =
+      List.of("Authorization", "Content-Type", CSRF_HEADER);
 
   private final JwtKeys jwtKeys;
   private final AuthProperties authProperties;
@@ -82,13 +91,52 @@ public class SecurityConfig {
               + " and cannot be narrowed; catching Exception to remove it would violate"
               + " Checkstyle's IllegalCatch rule.")
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-    http.csrf(csrf -> csrf.disable())
+    http.csrf(this::configureCsrf)
         .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .cors(Customizer.withDefaults())
         .authorizeHttpRequests(
             auth -> auth.requestMatchers(PUBLIC_PATHS).permitAll().anyRequest().authenticated())
         .oauth2ResourceServer(o -> o.jwt(jwt -> jwt.jwtAuthenticationConverter(authConverter())));
     return http.build();
+  }
+
+  // Scoped, not disabled. Every route on this service except two authenticates with a bearer token
+  // in the Authorization header, and a browser never attaches that by itself — a forged cross-site
+  // request arrives with no credential at all, so there is nothing there to protect and demanding a
+  // CSRF token would only burden clients that face no risk. The exceptions are POST /auth/refresh
+  // and POST /auth/logout, which authenticate with the zarlania_refresh *cookie*; that the browser
+  // does attach automatically, which makes those two the service's entire CSRF surface and the only
+  // two the token check guards.
+  //
+  // The token is defence in depth rather than the first line: the refresh cookie is already
+  // SameSite=Strict, so a browser withholds it on cross-site requests to begin with, and the CORS
+  // allow-list is explicit rather than a wildcard. This closes what those leave open — a
+  // same-site-but-untrusted origin (any other host under the registrable domain), and browsers or
+  // extensions where SameSite is not honoured as advertised.
+  private void configureCsrf(CsrfConfigurer<HttpSecurity> csrf) {
+    csrf.csrfTokenRepository(csrfTokenRepository())
+        .requireCsrfProtectionMatcher(
+            new OrRequestMatcher(
+                PathPatternRequestMatcher.pathPattern(HttpMethod.POST, REFRESH_PATH),
+                PathPatternRequestMatcher.pathPattern(HttpMethod.POST, LOGOUT_PATH)));
+  }
+
+  // Double-submit: the server sets the token in a cookie, the client echoes it back in a header,
+  // and only a caller able to obtain both can produce a matching pair — an attacker's page can make
+  // the browser send the cookie but cannot read it to build the header.
+  //
+  // HttpOnly stays on, which is where this departs from the usual SPA recipe. That recipe has
+  // JavaScript read the cookie with document.cookie, which cannot work here: the browser client is
+  // served from zarlania.com while this API sets cookies for api.zarlania.com, and document.cookie
+  // is scoped by host, not by site. GET /auth/csrf hands the client the value over CORS instead, so
+  // the cookie can stay unreadable to script entirely — which is strictly better, because it also
+  // puts the token out of reach of an XSS on any sibling host.
+  private CookieCsrfTokenRepository csrfTokenRepository() {
+    CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
+    repository.setCookiePath(CSRF_COOKIE_PATH);
+    repository.setCookieCustomizer(
+        cookie -> cookie.secure(authProperties.cookieSecure()).sameSite(SAME_SITE_STRICT));
+    return repository;
   }
 
   // createDefaultWithIssuer, not the default validator: the default checks only that the token has

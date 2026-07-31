@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import com.nimbusds.jwt.SignedJWT;
 import com.zarlania.api.auth.AuthProperties;
+import com.zarlania.api.testsupport.CsrfCredentials;
 import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.testsupport.RecordingEmailSender;
 import com.zarlania.api.testsupport.RecordingEmailSenderConfig;
@@ -65,6 +66,7 @@ class LoginFlowIntegrationTest {
       Pattern.compile("https://zarlania\\.com/verify-email\\?token=([A-Za-z0-9_-]+)");
   private static final String PASSWORD = "correct-horse-battery";
   private static final String REFRESH_COOKIE = "zarlania_refresh";
+  private static final String CSRF_COOKIE = "XSRF-TOKEN";
   private static final String ORG_CLAIM = "org";
 
   @Container @ServiceConnection
@@ -179,9 +181,50 @@ class LoginFlowIntegrationTest {
   @Test
   void refreshWithNoCookieReturns401InvalidCredentials() throws Exception {
     mockMvc
-        .perform(post("/auth/refresh"))
+        .perform(CsrfCredentials.fetch(mockMvc).applyTo(post("/auth/refresh")))
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("auth.invalid-credentials"));
+  }
+
+  // The reason SecurityConfig stops short of csrf().disable(): /auth/refresh authenticates with a
+  // cookie the browser attaches on its own, so without the token check a cross-site page could
+  // drive it. The refresh cookie here is valid — only the CSRF pair is missing — and it is still
+  // refused, before the controller ever runs.
+  @Test
+  void refreshWithoutACsrfTokenIsRejectedEvenWithAValidRefreshCookie() throws Exception {
+    registerAndVerify("mia@example.com", "mia");
+    MvcResult loginResult = loginRequest("mia", PASSWORD).andExpect(status().isOk()).andReturn();
+    String cookie = refreshCookieValue(loginResult);
+
+    mockMvc
+        .perform(post("/auth/refresh").cookie(new Cookie(REFRESH_COOKIE, cookie)))
+        .andExpect(status().isForbidden());
+
+    // And the cookie is untouched by the rejected attempt, so the legitimate client can still use
+    // it once it fetches a token.
+    refreshRequest(cookie).andExpect(status().isOk());
+  }
+
+  // The header alone is not enough: the cookie half of the double-submit pair has to match it.
+  // An attacker's page can make the browser send the cookie but cannot read it to forge the header,
+  // so a request carrying one without the other is exactly what a forgery looks like.
+  @Test
+  void refreshWithACsrfHeaderButNoMatchingCookieIsRejected() throws Exception {
+    registerAndVerify("nils@example.com", "nils");
+    MvcResult loginResult = loginRequest("nils", PASSWORD).andExpect(status().isOk()).andReturn();
+    String cookie = refreshCookieValue(loginResult);
+    CsrfCredentials csrf = CsrfCredentials.fetch(mockMvc);
+
+    mockMvc
+        .perform(
+            csrf.applyHeaderTo(post("/auth/refresh").cookie(new Cookie(REFRESH_COOKIE, cookie)))
+                .cookie(new Cookie(CSRF_COOKIE, "not-the-token-that-was-issued")))
+        .andExpect(status().isForbidden());
+  }
+
+  @Test
+  void logoutWithoutACsrfTokenIsRejected() throws Exception {
+    mockMvc.perform(post("/auth/logout")).andExpect(status().isForbidden());
   }
 
   @Test
@@ -218,7 +261,10 @@ class LoginFlowIntegrationTest {
   @Test
   void logoutWithNoCookieReturns204AndStillSetsAClearedCookie() throws Exception {
     MvcResult result =
-        mockMvc.perform(post("/auth/logout")).andExpect(status().isNoContent()).andReturn();
+        mockMvc
+            .perform(CsrfCredentials.fetch(mockMvc).applyTo(post("/auth/logout")))
+            .andExpect(status().isNoContent())
+            .andReturn();
 
     Cookie cleared = result.getResponse().getCookie(REFRESH_COOKIE);
     assertThat(cleared).isNotNull();
@@ -270,12 +316,19 @@ class LoginFlowIntegrationTest {
                     .formatted(identifier, password)));
   }
 
+  // Both of these carry a CSRF token, because both authenticate with the refresh cookie rather than
+  // a bearer token and so are the two routes SecurityConfig guards. Fetched fresh per request, the
+  // way a client that keeps no token across a reload would.
   private ResultActions refreshRequest(String cookieValue) throws Exception {
-    return mockMvc.perform(post("/auth/refresh").cookie(new Cookie(REFRESH_COOKIE, cookieValue)));
+    return mockMvc.perform(
+        CsrfCredentials.fetch(mockMvc)
+            .applyTo(post("/auth/refresh").cookie(new Cookie(REFRESH_COOKIE, cookieValue))));
   }
 
   private ResultActions logoutRequest(String cookieValue) throws Exception {
-    return mockMvc.perform(post("/auth/logout").cookie(new Cookie(REFRESH_COOKIE, cookieValue)));
+    return mockMvc.perform(
+        CsrfCredentials.fetch(mockMvc)
+            .applyTo(post("/auth/logout").cookie(new Cookie(REFRESH_COOKIE, cookieValue))));
   }
 
   private ResultActions meRequest(String accessToken) throws Exception {

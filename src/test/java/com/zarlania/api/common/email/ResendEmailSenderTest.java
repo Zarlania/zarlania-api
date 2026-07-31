@@ -133,7 +133,7 @@ class ResendEmailSenderTest {
     EmailConfig config = new EmailConfig();
     ThrottleProperties properties =
         new ThrottleProperties(
-            Duration.ofMinutes(1), 10, 5, 3, 30, 10, 3, 3, 80, Duration.ofDays(1));
+            Duration.ofMinutes(1), 10, 5, 3, 30, 60, 10, 3, 3, 80, Duration.ofDays(1));
 
     EmailSender sender =
         config.emailSender(

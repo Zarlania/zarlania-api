@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import com.zarlania.api.testsupport.CsrfCredentials;
 import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.testsupport.RecordingEmailSender;
 import com.zarlania.api.testsupport.RecordingEmailSenderConfig;
@@ -145,12 +146,18 @@ class AuthJourneyIntegrationTest {
                     .formatted(identifier, password)));
   }
 
+  // The journey includes fetching a CSRF token, because a real client's journey does: these are the
+  // two routes that authenticate with the refresh cookie, and SecurityConfig guards both.
   private ResultActions refresh(String cookieValue) throws Exception {
-    return mockMvc.perform(post("/auth/refresh").cookie(new Cookie(REFRESH_COOKIE, cookieValue)));
+    return mockMvc.perform(
+        CsrfCredentials.fetch(mockMvc)
+            .applyTo(post("/auth/refresh").cookie(new Cookie(REFRESH_COOKIE, cookieValue))));
   }
 
   private ResultActions logout(String cookieValue) throws Exception {
-    return mockMvc.perform(post("/auth/logout").cookie(new Cookie(REFRESH_COOKIE, cookieValue)));
+    return mockMvc.perform(
+        CsrfCredentials.fetch(mockMvc)
+            .applyTo(post("/auth/logout").cookie(new Cookie(REFRESH_COOKIE, cookieValue))));
   }
 
   private ResultActions me(String accessToken) throws Exception {
