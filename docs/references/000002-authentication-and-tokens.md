@@ -8,7 +8,7 @@ tags:
 - configuration
 - security
 created: '2026-07-27'
-updated: '2026-07-28'
+updated: '2026-07-30'
 related:
 - '000001'
 ---
@@ -23,7 +23,7 @@ related:
 | Description | How registration, email verification, login, JWT access tokens, refresh-token families, and the abuse defenses around them work end to end. |
 | Tags | architecture, configuration, security |
 | Created | 2026-07-27 |
-| Updated | 2026-07-28 |
+| Updated | 2026-07-30 |
 | Related | [000001](000001-persistence-foundation.md) |
 <!-- reference-table:end -->
 
@@ -74,9 +74,10 @@ flowchart LR
 - **`auth`** — the `/auth/*` and `/.well-known/jwks.json` endpoints, JWT
   minting, and `RefreshToken` (family id, `user_id` + `organization_id` FK
   ids, SHA-256 token hash, expiry, used-at, revoked-at). Registration is
-  orchestrated here too: `RegistrationService` runs as one service, one
-  transaction, composing the other three domains through their services and
-  DTOs rather than reaching into their entities.
+  orchestrated here too: `RegistrationService` decides the outcome and
+  `AccountCreator` owns the transaction that writes it, both composing the
+  other three domains through their services and DTOs rather than reaching
+  into their entities.
 - **`common.email`** — the `EmailSender` port and its two adapters
   (`ResendEmailSender` for a real provider, `LoggingEmailSender` for local
   dev). No entities — domain-agnostic infrastructure, the same category as
@@ -96,32 +97,61 @@ directly.
    becomes the personal organization's name, so it has to stay
    URL/display-safe); password 12–128 chars with no composition rules —
    length beats forced symbol/case requirements per current NIST guidance.
-2. **One transaction:** `RegistrationService.register` creates the
+2. **One transaction:** `AccountCreator.createAccount` creates the
    unverified `User`, its `PasswordCredential`, the personal `Organization`,
-   and the owning `Membership` together. The verification email is
-   requested via a Spring application event
+   the owning `Membership` and the verification token together. The
+   verification email is requested via a Spring application event
    (`VerificationEmailRequested`) that `RegistrationEmailListener` only acts
    on `AFTER_COMMIT` — a failing email provider must never roll back a
    registration that otherwise succeeded, and a rolled-back registration
    must never send mail for an account that no longer exists.
-3. **Verification token:** a 256-bit random URL-safe value
+3. **Uniqueness is the database's ruling, not the pre-check's.**
+   `RegistrationService.register` checks whether the username and email are
+   taken, but nothing stops a competing registration from committing between
+   a check and the insert that follows it. `users` has `citext` unique
+   constraints on both columns, and the loser of that race sees a
+   `DataIntegrityViolationException`. `register` is therefore deliberately
+   **not** `@Transactional` — the transaction lives one level down in
+   `AccountCreator`, so the handler can run after it has rolled back — and
+   `resolveRegistrationConflict` re-asks the same two questions, now
+   unambiguous because the winner has committed, and answers exactly as the
+   sequential case would: `409 auth.username-taken`, or the same `202` and
+   reminder email that an already-registered email gets. Anything that is
+   not one of those two races is rethrown. Without this, paired requests
+   would get a `500` for a free email and two identical `202`s for a taken
+   one — an enumeration channel, on top of an ugly failure.
+4. **Verification token:** a 256-bit random URL-safe value
    (`TokenHasher.newUrlSafeToken`); only its SHA-256 hash is stored
    (`TokenHasher.sha256Hex`), with a 24-hour TTL and single use. The emailed
    link points at `{APP_BASE_URL}/verify-email?token=…`, which the frontend
    turns into a `POST /auth/verify` call; success stamps
    `email_verified_at` and consumes the token.
-4. **Blocking verification:** an unverified account cannot log in —
+5. **Both halves of "single use" are enforced by locks, not by hope.**
+   Issuing deletes the user's outstanding tokens and inserts a new one;
+   consuming reads `consumed_at` and then writes it. Neither pair is atomic
+   on its own, and the entity has no version column. So `issue` takes a
+   transaction-scoped advisory lock on the user before the delete — two
+   concurrent issues could otherwise both delete before either insert became
+   visible, leaving two live tokens — and `consume` reads through `SELECT …
+   FOR UPDATE`, so two requests carrying the same token cannot both see it
+   unconsumed and both report success. Postgres re-evaluates the row against
+   its new version when the lock lifts, so the loser sees what the winner
+   wrote. The advisory lock uses its own classifier (`EVTL`), distinct from
+   the refresh families' `RFTL`, per the rule in [Refresh-family mutations
+   are serialized by an advisory
+   lock](#refresh-family-mutations-are-serialized-by-an-advisory-lock).
+6. **Blocking verification:** an unverified account cannot log in —
    `POST /auth/login` fails with the distinct `auth.email-unverified` code.
    `POST /auth/resend` issues a fresh token (invalidating any outstanding
    one) for an unverified account.
-5. **Re-registering an unverified email** re-sends verification rather than
+7. **Re-registering an unverified email** re-sends verification rather than
    the duplicate-attempt notice, and **never alters the existing
    credentials**. The common case here is a first verification mail landing
    in spam, and the duplicate notice carries no link — it would tell that
    user to sign in to an account they cannot sign into. Leaving the
    credentials untouched is what stops a caller who does not control the
    mailbox from overwriting the password on someone else's account.
-6. **Unverified expiry:** [Scheduled cleanup](#scheduled-cleanup) purges
+8. **Unverified expiry:** [Scheduled cleanup](#scheduled-cleanup) purges
    accounts still unverified past
    `zarlania.auth.unverified-account-max-age`, freeing the email,
    username, and organization name for reuse.
@@ -164,6 +194,18 @@ as dead work and optimize away. The `AtomicReference` write gives the hash
 call an externally observable effect the JIT cannot prove is safe to skip,
 so the cost is actually paid. **This looks like pointless work; removing it
 reopens the timing side-channel it exists to close.**
+
+The hash is not the only cost that has to match. Sending an email costs far
+more than hashing one password, and on `resend` only one of the three
+outcomes sends anything at all — so if the send ran on the request thread,
+response time alone would say which branch was taken and the decoy hash
+would have bought nothing. `RegistrationEmailListener` therefore hands every
+message to a dispatch executor instead of sending inline. "After commit" is
+not "after the response": a `@TransactionalEventListener` still runs on the
+publishing thread, which is the request thread, so the round trip would land
+squarely in the caller's measured time. A rejected submission (full queue)
+is caught and logged for the same reason — only the sending branch could
+ever observe it. See [Email dispatch](#email-dispatch).
 
 ## Login, access tokens, and refresh-token families
 
@@ -222,6 +264,12 @@ SHA-256 hash is stored.
   window of continued access after logout is an accepted trade-off, not an
   oversight.
 
+`POST /auth/refresh` and `POST /auth/logout` are the only two routes on this
+service that authenticate with a cookie, which makes them the only two that
+require a CSRF token. Both expect one, fetched from `GET /auth/csrf` — see
+[CSRF protection is scoped, not
+disabled](#csrf-protection-is-scoped-not-disabled) for the client contract.
+
 ### Refresh cookie
 
 `AuthController` sets the cookie named `zarlania_refresh` with:
@@ -230,7 +278,7 @@ SHA-256 hash is stored.
 | --------- | ----- | --- |
 | `HttpOnly` | always | Keeps it unreadable from JavaScript — the one defense against a token-stealing XSS bug. |
 | `Secure` | `zarlania.auth.cookie-secure` (`true` in production, `false` for local `http://` dev) | The cookie must never traverse a plaintext connection in production, but requiring it locally would break a plain `http://localhost` frontend. |
-| `SameSite` | `Strict` | Keeps the cookie off cross-site requests entirely — see [CSRF is disabled deliberately](#csrf-is-disabled-deliberately). |
+| `SameSite` | `Strict` | Keeps the cookie off cross-site requests entirely — the outer layer of the defense the CSRF token completes, see [CSRF protection is scoped, not disabled](#csrf-protection-is-scoped-not-disabled). |
 | `Path` | `/auth` | Scopes the cookie to the auth endpoints only; it is never sent to `/users/me` or any other route. |
 | `Max-Age` | seconds until `familyExpiresAt` on login/refresh; `0` on logout | Ties the browser-side cookie lifetime to the same 30-day family ceiling the server enforces, and `0` is what makes the browser drop it immediately on logout. |
 
@@ -303,9 +351,15 @@ set via `NimbusJwtDecoder`.
 5. Once 15 minutes have passed since the deploy, no token signed with the
    old key can still be unexpired — drop it from `JWT_RETIRED_PUBLIC_KEYS`.
 
-Env vars carry PEM blocks with either literal or escaped newlines depending
-on how the hosting platform injects them; `JwtKeys` strips all whitespace
-before base64-decoding rather than assuming one particular line-break style.
+Env vars carry PEM blocks with either real or escaped newlines depending on
+how the hosting platform injects them. Render's dashboard stores a pasted
+multi-line value verbatim, but a value supplied through its API, a `.env`
+file or `docker run --env` arrives on one line with every break written as
+the two characters `\n`. `JwtKeys` strips both spellings — the escape
+sequences first, then real whitespace — before base64-decoding. The order
+matters: strip only real whitespace and the backslashes stay in the Base64
+body, where the strict decoder rejects them. That throws inside `JwtKeys`'
+constructor, so the service fails to start rather than failing one request.
 
 ## Throttling
 
@@ -324,6 +378,7 @@ measured over `zarlania.throttle.window` (1 minute):
 | `login` | 10/min | 10/min |
 | `resend` | 3/min | 3/min |
 | `refresh` | 30/min | — (the cookie names no account) |
+| `csrf` | 60/min | — (no account is named) |
 
 A caller over either limit gets `429` with code `auth.throttled`.
 
@@ -349,6 +404,12 @@ rather than an identifier, so there is no account to key on and nothing to
 brute force; the limit is a flood cap. A client needs roughly 4 refreshes
 an hour (the 15-minute access TTL), so 30/min still covers several hundred
 users sharing one NAT or CGNAT address.
+
+`csrf` sits above `refresh` on purpose. A client has to fetch a token before
+it can refresh at all, so this limit must never be what refuses a legitimate
+refresh. The endpoint does no database work and no hashing — it returns a
+random token — so the limit is there for uniformity across public `/auth`
+routes rather than to protect anything expensive.
 
 The client IP comes from `ClientIpResolver`, which reads
 `CF-Connecting-IP` — not `X-Forwarded-For`, and not `getRemoteAddr()`.
@@ -385,6 +446,26 @@ refused).
 This is what `RateLimiter`'s explicit-window overload exists for: a daily
 allowance expressed in one-minute windows would cap the rate while leaving
 the day's total unbounded.
+
+### Email dispatch
+
+`EmailConfig` builds a dedicated `emailDispatchExecutor`, and
+`RegistrationEmailListener` submits every send to it rather than calling the
+sender directly. The reason is enumeration safety, not throughput: see
+[Enumeration
+safety](#enumeration-safety-status-body-and-timing-all-have-to-match).
+
+One thread, because the budget above already caps the whole service at 80
+messages a day — there is no volume worth parallelising, and a second thread
+would only add heap pressure on a 512 MB instance. The queue is bounded at
+`zarlania.email.dispatch-queue-capacity` (200) so that a provider outage
+cannot grow it until the instance is OOM-killed; it sits comfortably above
+the daily budget, so the budget is what bounds outbound volume in practice.
+A full queue is logged under a third greppable marker, `EMAIL_QUEUE_FULL`,
+distinct from the two above because it means the message never reached the
+sender at all. On shutdown the executor drains rather than dropping: an
+in-flight send has already been counted against the budget and is somebody's
+verification link.
 
 ## Scheduled cleanup
 
@@ -586,25 +667,66 @@ two-entry approximation, which is what let both mistakes through: a test
 that synthesizes `client, proxy` and then declares the last entry to be
 the proxy has assumed its own conclusion.
 
-### CSRF is disabled deliberately
+### CSRF protection is scoped, not disabled
 
-`SecurityConfig` disables CSRF protection outright
-(`http.csrf(csrf -> csrf.disable())`), which is safe specifically *because*
-this is a stateless bearer-token API: every endpoint except `/auth/**`,
-`/.well-known/jwks.json`, and `/actuator/health` requires an `Authorization:
-Bearer` header, which is never sent ambiently by a browser the way a cookie
-is — CSRF exists to defend exactly that ambient-credential case, which does
-not apply here.
+`SecurityConfig` leaves CSRF protection on but narrows it, with
+`requireCsrfProtectionMatcher`, to exactly two routes: `POST /auth/refresh`
+and `POST /auth/logout`.
 
-The one exception is the `zarlania_refresh` cookie `POST /auth/refresh`
-reads. It is defended by three things working together instead of a CSRF
-token: `SameSite=Strict` keeps the cookie off cross-site requests entirely;
-`Path=/auth` keeps it from ever being attached to any other endpoint; and
-the CORS allow-list (`zarlania.cors.allowed-origins`) is an explicit list of
-origins, never a wildcard — which is also what makes
-`allowCredentials(true)` on the CORS configuration safe (Spring refuses to
-start with `allowCredentials(true)` paired with a `"*"` origin). If any one
-of these three changes, this exception needs re-examining.
+Everything else is exempt because there is nothing there to forge. Every
+endpoint but `/auth/**`, `/.well-known/jwks.json` and `/actuator/health`
+authenticates with an `Authorization: Bearer` header, which a browser never
+attaches on its own — a forged cross-site request arrives with no credential
+at all. The remaining `/auth` routes (`register`, `verify`, `resend`,
+`login`) authenticate with what is in the request body, so forging one gains
+nothing either. CSRF defends the *ambient*-credential case, and those two
+routes are the only ones this service has: both read the `zarlania_refresh`
+cookie, which the browser does attach automatically.
+
+The check is a double submit. `CookieCsrfTokenRepository` puts the token in
+an `XSRF-TOKEN` cookie and requires the same value back in an `X-XSRF-TOKEN`
+header; an attacker's page can make the browser send the cookie but cannot
+read it to build the header.
+
+Where this departs from the usual single-page-app recipe is that the cookie
+stays `HttpOnly`. That recipe has the client read the cookie with
+`document.cookie`, which cannot work here — the browser client is served
+from `zarlania.com` while this API sets cookies for `api.zarlania.com`, and
+`document.cookie` is scoped by host, not by site. `GET /auth/csrf` hands the
+client the token over CORS instead, which is strictly better: the cookie
+stays unreadable to script, so an XSS on any sibling host cannot lift it.
+
+**Client contract.** Before calling `POST /auth/refresh` or `POST
+/auth/logout`, call `GET /auth/csrf`. It answers with the token and the name
+of the header to put it in:
+
+```json
+{ "headerName": "X-XSRF-TOKEN", "token": "..." }
+```
+
+and sets the matching cookie on the same response. Send that value in that
+header on both routes. The token can be reused for as long as the cookie
+lives, so a client fetches it once per cold start rather than per request —
+but it must fetch it *again* after a page reload, because the refresh cookie
+is `HttpOnly` and survives the reload while a token held in memory does not.
+The header name is reported rather than fixed so clients read it from the
+server instead of hardcoding it; it is also on the CORS allow-list, without
+which the browser's preflight would refuse the very header the check needs.
+
+The token is defence in depth rather than the first line. Three things
+already stand in front of it: `SameSite=Strict` keeps the refresh cookie off
+cross-site requests entirely, `Path=/auth` keeps it from being attached to
+any other endpoint, and the CORS allow-list
+(`zarlania.cors.allowed-origins`) is an explicit list of origins, never a
+wildcard — which is also what makes `allowCredentials(true)` safe (Spring
+refuses to start with `allowCredentials(true)` paired with a `"*"` origin).
+What the token adds is the cases those three do not cover: a same-site but
+untrusted origin — any other host under the registrable domain — and
+browsers or extensions where `SameSite` is not honoured as advertised.
+
+A rejected request fails in the filter chain, before any controller runs, so
+it returns a bare `403` rather than the `ErrorCode` envelope the rest of the
+API uses. That matches how the bearer chain already reports a bad token.
 
 ### Timing-safe enumeration defenses via throwaway Argon2 hashes
 
@@ -637,3 +759,37 @@ annotation actually takes effect. The sweep also catches and logs any
 `RuntimeException` per account (`purgeSafely`) rather than letting one bad
 row abort the whole pass — every other expired account still gets purged on
 the same run, and the failed one is retried on the next scheduled pass.
+
+### The purge re-checks verification before it deletes
+
+The sweep lists its candidates in one transaction and purges each of them in
+another, so by the time a purge runs its listing is already a little stale.
+A real user whose verification mail sat in spam past the deadline can call
+`POST /auth/resend` and click the link inside that gap — and purging on the
+strength of the stale listing would then destroy a live, verified account.
+
+So `purgeOneAccount` finishes with `UserService.deleteIfStillUnverified`,
+which is a single conditional statement (`delete … where id = ? and
+email_verified_at is null`) rather than a read followed by a delete: under
+`READ COMMITTED` that pair can straddle the very commit it is trying to
+detect. If it removes no row, the account was verified mid-sweep, and
+`AccountVerifiedDuringPurgeException` rolls the whole transaction back —
+including the credential, token and organization rows already deleted above,
+which would otherwise leave a live user with no way to sign in. The sweep
+catches that one exception separately and logs it at `debug`, because it is
+the expected outcome of a race the design intends to lose safely, not a
+failure worth paging anyone about.
+
+The delete is also `@Modifying(flushAutomatically = true)`. It executes as
+SQL and does not see the persistence context, so without the flush the
+membership and credential deletes queued earlier in the same transaction
+would reach the database *after* it, and Postgres would reject it on the
+foreign key those deletes were meant to have cleared.
+
+The order the purge takes its locks is load-bearing too.
+`RegistrationService.verify` locks the verification-token row (inside
+`consume`) before the user row (inside `markEmailVerified`), and
+`purgeOneAccount` takes the same two in the same order, because
+`deleteAllForUser` clears the verification tokens first. Two callers
+acquiring the same locks in the same sequence cannot form an AB-BA cycle, so
+whichever arrives second waits and then sees the other's committed result.
