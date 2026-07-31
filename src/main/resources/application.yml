@@ -86,6 +86,11 @@ zarlania:
   email:
     from: ${EMAIL_FROM:no-reply@zarlania.com}
     resend-api-key: ${RESEND_API_KEY:}
+    # How many sends may sit waiting for the single dispatch thread before new ones are rejected
+    # and logged. Comfortably above email-budget-limit below, so the budget — not this queue — is
+    # what bounds outbound volume; this only stops a provider outage from growing the queue without
+    # limit until the 512 MB instance is OOM-killed.
+    dispatch-queue-capacity: 200
   auth:
     issuer: ${JWT_ISSUER:https://api.zarlania.com}
     access-token-ttl: PT15M

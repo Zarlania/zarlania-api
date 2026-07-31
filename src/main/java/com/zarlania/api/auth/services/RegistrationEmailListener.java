@@ -2,11 +2,15 @@ package com.zarlania.api.auth.services;
 
 import com.zarlania.api.auth.AuthProperties;
 import com.zarlania.api.common.email.EmailBudgetExhaustedException;
+import com.zarlania.api.common.email.EmailConfig;
 import com.zarlania.api.common.email.EmailMessage;
 import com.zarlania.api.common.email.EmailSender;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -19,6 +23,11 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * propagate. {@code EmailSender} implementations such as {@code ResendEmailSender} do throw on a
  * non-2xx response, and letting that escape an {@code AFTER_COMMIT} listener would otherwise be the
  * only trace of a lost verification email.
+ *
+ * <p>Both listeners hand the actual send to {@code EmailConfig}'s dispatch pool rather than perform
+ * it themselves. "After commit" is not "after the response": an {@code AFTER_COMMIT} listener still
+ * runs on the publishing thread, which here is the request thread, so an inline provider round trip
+ * would be paid for by the caller in measurable latency. See {@link #dispatch}.
  */
 @Slf4j
 @Component
@@ -37,9 +46,17 @@ public class RegistrationEmailListener {
   // email that will never arrive, so both are errors, not warnings.
   private static final String BUDGET_EXHAUSTED_MARKER = "EMAIL_BUDGET_EXHAUSTED";
   private static final String SEND_FAILED_MARKER = "EMAIL_SEND_FAILED";
+  // The third way, distinct from the two above because it means the dispatch queue is backed up
+  // rather than the provider or the budget having refused: the message never reached the sender.
+  private static final String QUEUE_FULL_MARKER = "EMAIL_QUEUE_FULL";
 
   private final EmailSender emailSender;
   private final AuthProperties authProperties;
+
+  // The dispatch pool from EmailConfig, not Spring Boot's own applicationTaskExecutor — hence the
+  // @Qualifier, which lombok.config copies onto the generated constructor parameter.
+  @Qualifier(EmailConfig.DISPATCH_EXECUTOR_BEAN)
+  private final Executor emailDispatchExecutor;
 
   // fallbackExecution, unlike the duplicate-notice listener below, because this event has two
   // publishers with different transaction shapes. RegistrationService.register publishes inside its
@@ -57,7 +74,7 @@ public class RegistrationEmailListener {
             + TOKEN_QUERY_PARAM
             + "="
             + event.rawToken();
-    sendSafely(
+    dispatch(
         event.email(),
         new EmailMessage(
             event.email(),
@@ -65,9 +82,14 @@ public class RegistrationEmailListener {
             "Click the link below to verify your Zarlania account:\n\n" + verificationUrl));
   }
 
-  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+  // fallbackExecution here too, now that RegistrationService.register is no longer @Transactional
+  // itself: its transaction lives in AccountCreator, and the branch that publishes this event never
+  // enters it — the account already exists, so there is nothing to create. With no transaction
+  // active at publication time, Spring would silently discard the event and the duplicate-attempt
+  // notice would never be sent.
+  @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onDuplicateRegistrationAttempted(DuplicateRegistrationAttempted event) {
-    sendSafely(
+    dispatch(
         event.email(),
         new EmailMessage(
             event.email(),
@@ -94,6 +116,25 @@ public class RegistrationEmailListener {
       logFailure(BUDGET_EXHAUSTED_MARKER, recipient, message, e);
     } catch (RuntimeException e) {
       logFailure(SEND_FAILED_MARKER, recipient, message, e);
+    }
+  }
+
+  // The send is handed to EmailConfig's dispatch pool rather than run here, because "here" is the
+  // request thread. An AFTER_COMMIT listener still runs synchronously on whichever thread published
+  // the event — the commit has happened, but the response has not been written yet — so an inline
+  // provider round trip lands squarely in the caller's measured response time. That matters most on
+  // /auth/resend, where only one of the three outcomes publishes an event at all: leaving the send
+  // inline would make "this email belongs to an unverified account" measurable from the outside,
+  // undoing the decoy hash RegistrationService pays on every branch to prevent exactly that.
+  //
+  // Rejection is caught rather than allowed to escape, for the same reason. A full queue throwing
+  // back into the publisher would both surface a 500 for a registration that already committed and
+  // restore the timing difference, since only the sending branch could ever see it.
+  private void dispatch(String recipient, EmailMessage message) {
+    try {
+      emailDispatchExecutor.execute(() -> sendSafely(recipient, message));
+    } catch (RejectedExecutionException e) {
+      logFailure(QUEUE_FULL_MARKER, recipient, message, e);
     }
   }
 
