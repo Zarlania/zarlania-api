@@ -54,6 +54,12 @@ public class UnverifiedAccountCleanup {
   private void purgeSafely(UUID userId) {
     try {
       purger.purgeOneAccount(userId);
+    } catch (AccountVerifiedDuringPurgeException e) {
+      // Not a failure: the account was verified between this sweep listing it and the purge
+      // reaching it, the purge rolled itself back, and the account is intact. Logged at debug
+      // rather than error so a routine, self-correcting race never pages anyone — but logged, so
+      // that a sudden run of these is still visible if the cutoff is ever misconfigured.
+      log.debug("Skipped purging {}: it was verified mid-sweep", userId);
     } catch (RuntimeException e) {
       log.error("Failed to purge unverified account {}", userId, e);
     }

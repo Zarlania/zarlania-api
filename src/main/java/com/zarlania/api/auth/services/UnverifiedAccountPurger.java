@@ -40,6 +40,20 @@ class UnverifiedAccountPurger {
     // organization and the user row below can be deleted.
     refreshTokens.deleteByUserId(userId);
     organizationService.deletePersonalOrganizationOf(userId);
-    userService.deleteById(userId);
+    // The listing that produced this id was read in an earlier, already-committed transaction, so
+    // it is only ever a hint: an account can complete /auth/verify in the gap before this purge
+    // reaches it, and the deletes above would then have gutted a live account. The guard re-tests
+    // that condition atomically, and throwing on false rolls this whole transaction back —
+    // including those earlier deletes — rather than leaving a verified user with no credentials.
+    //
+    // The ordering above is also what keeps the guard deadlock-free. RegistrationService#verify
+    // locks the verification-token row (inside consume) before the user row (inside
+    // markEmailVerified), and this method takes the two in that same order, because
+    // deleteAllForUser clears the verification tokens first. Two callers acquiring the same locks
+    // in the same sequence cannot form an AB-BA cycle, so whichever arrives second simply waits
+    // and then sees the other's committed result.
+    if (!userService.deleteIfStillUnverified(userId)) {
+      throw new AccountVerifiedDuringPurgeException(userId);
+    }
   }
 }

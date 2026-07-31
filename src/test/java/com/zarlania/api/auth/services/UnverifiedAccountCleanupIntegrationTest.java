@@ -1,6 +1,7 @@
 package com.zarlania.api.auth.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 
 import com.zarlania.api.auth.entities.RefreshToken;
@@ -57,6 +58,7 @@ class UnverifiedAccountCleanupIntegrationTest {
   @MockitoSpyBean private RefreshTokenRepository refreshTokens;
 
   private final UnverifiedAccountCleanup cleanup;
+  private final UnverifiedAccountPurger purger;
   private final UserRepository users;
   private final UserService userService;
   private final CredentialsService credentialsService;
@@ -136,6 +138,27 @@ class UnverifiedAccountCleanupIntegrationTest {
         .isEmpty();
     assertThat(memberships.findByUserId(user.id())).isEmpty();
     assertThat(organizations.findById(sharedOrg.getId())).isPresent();
+  }
+
+  // The sweep lists its candidates in one transaction and purges each in another, so the listing is
+  // always a little stale. A real user whose verification mail sat in spam past the deadline can
+  // click their link in that gap, and the purge would then delete a live, verified account.
+  //
+  // The purger is called directly because that is precisely the state the race produces — a user id
+  // that was unverified when listed and is verified by the time the purge runs — and reproducing it
+  // by interleaving two real transactions would only make the test slower and flakier. Everything
+  // the purge deletes before reaching the guard has to come back, which is what the intact
+  // assertion checks: the rollback is the fix, not the check on its own.
+  @Test
+  void anAccountVerifiedAfterTheSweepListedItSurvivesThePurgeCompletelyIntact() {
+    SeededAccount account = seedAccount("verified-mid-sweep", false);
+    backdateCreatedAt(account.userId(), EXPIRED_AGE);
+    userService.markEmailVerified(account.userId());
+
+    assertThatThrownBy(() -> purger.purgeOneAccount(account.userId()))
+        .isInstanceOf(AccountVerifiedDuringPurgeException.class);
+
+    assertAccountIsFullyIntact(account);
   }
 
   private SeededAccount seedAccount(String slug, boolean verified) {

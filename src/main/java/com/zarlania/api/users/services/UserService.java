@@ -70,6 +70,16 @@ public class UserService {
     users.deleteById(userId);
   }
 
+  // The safe form of deleteById for the cleanup sweep, which lists its candidates in one
+  // transaction and purges each of them in another. In the gap between the two, an account can
+  // complete /auth/verify — a real user whose verification email sat in spam until the deadline —
+  // and purging it then would destroy a live, verified account on the strength of a stale listing.
+  // Returns whether a row actually went, so the caller can abandon a purge that lost that race.
+  @Transactional
+  public boolean deleteIfStillUnverified(UUID userId) {
+    return users.deleteByIdAndEmailVerifiedAtIsNull(userId) > 0;
+  }
+
   private UserDto toDto(User user) {
     return new UserDto(user.getId(), user.getEmail(), user.getUsername(), user.isEmailVerified());
   }
