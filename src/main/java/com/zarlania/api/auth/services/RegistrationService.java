@@ -4,13 +4,13 @@ import com.zarlania.api.common.errors.ApiException;
 import com.zarlania.api.common.errors.ErrorCode;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
-import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,11 +34,15 @@ public class RegistrationService {
 
   private final UserService userService;
   private final CredentialsService credentialsService;
-  private final OrganizationService organizationService;
   private final EmailVerificationService emailVerificationService;
+  private final AccountCreator accountCreator;
   private final ApplicationEventPublisher events;
 
-  @Transactional
+  // Deliberately not @Transactional; the transaction lives one level down, in AccountCreator. The
+  // two existence checks below are advisory only — nothing stops a competing registration from
+  // committing between a check and the insert that follows it — so `users`' own unique constraints
+  // on email and username are the real enforcement, and losing to one of them has to be handled
+  // from outside the rolled-back transaction. See resolveRegistrationConflict.
   public void register(String email, String username, String rawPassword) {
     if (userService.usernameExists(username)) {
       throw new ApiException(ErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
@@ -48,10 +52,35 @@ public class RegistrationService {
       remindExistingOwner(email);
       return;
     }
-    UserDto user = userService.createUnverified(email, username);
-    credentialsService.createPassword(user.id(), rawPassword);
-    organizationService.createPersonalOrganization(user.id(), username);
-    issueVerification(email, user.id());
+    try {
+      accountCreator.createAccount(email, username, rawPassword);
+    } catch (DataIntegrityViolationException e) {
+      resolveRegistrationConflict(email, username, e);
+    }
+  }
+
+  // Reached only by the loser of two concurrent registrations, whose transaction has already rolled
+  // back. Without this the constraint violation would escape as a generic 500 — which is not just
+  // an ugly failure but an enumeration channel, since a caller who fires two requests at once gets
+  // a 500 for an email that is free and two indistinguishable 202s for one that is taken.
+  //
+  // Which constraint lost is re-derived by asking the same questions register() asked, rather than
+  // by parsing the constraint name out of the exception: the answers are now unambiguous, because
+  // the winning transaction has committed. Username is checked first so that the outcome matches
+  // the order of the checks in register() exactly, and the reminder path afterwards is the very
+  // same method the sequential "email already registered" case uses — so the two are identical in
+  // status, body and the email that follows, which is the whole point.
+  private void resolveRegistrationConflict(
+      String email, String username, DataIntegrityViolationException cause) {
+    if (userService.usernameExists(username)) {
+      throw new ApiException(ErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
+    }
+    if (!userService.emailExists(email)) {
+      // Some other integrity rule broke — not the race this handler exists for. Rethrowing keeps a
+      // real bug loud instead of quietly answering 202 to a registration that never happened.
+      throw cause;
+    }
+    remindExistingOwner(email);
   }
 
   // Which reminder depends on whether the existing account was ever verified. The spec is explicit:
