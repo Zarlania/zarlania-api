@@ -165,6 +165,42 @@ class JwtServiceTest {
         "https://zarlania.com");
   }
 
+  // The spelling a PEM takes when it is set through a platform API, a .env file or `docker run
+  // --env` rather than pasted into a dashboard: one line, with each break written as the two
+  // characters backslash-n. Both key vars are documented as accepting it, and until the escapes
+  // were stripped they survived into the Base64 body and made the strict decoder throw — inside
+  // JwtKeys' constructor, so the whole service failed to start rather than one request failing.
+  @Test
+  void privateKeyPemWrittenOnOneLineWithEscapedNewlinesStillParses() throws Exception {
+    String onOneLine = escapeLineBreaks(generateTestPrivateKeyPem());
+    AuthProperties authProperties = authProperties(onOneLine, "");
+
+    JwtKeys jwtKeys = new JwtKeys(authProperties, new MockEnvironment());
+    JwtService jwtService = new JwtService(authProperties, jwtKeys, FIXED_CLOCK);
+
+    SignedJWT signedJwt =
+        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TOKEN_KIND));
+    assertThat(signedJwt.verify(new RSASSAVerifier(jwtKeys.signingKey().toRSAPublicKey())))
+        .isTrue();
+  }
+
+  @Test
+  void retiredPublicKeyPemWrittenOnOneLineWithEscapedNewlinesStillParses() throws Exception {
+    KeyPair retired = generateTestKeyPair();
+    String onOneLine = escapeLineBreaks(publicKeyPem(retired.getPublic()));
+
+    JwtKeys jwtKeys =
+        new JwtKeys(authProperties(generateTestPrivateKeyPem(), onOneLine), new MockEnvironment());
+
+    // Two keys published: the current signing key and the retired one, so tokens minted before the
+    // rotation still verify.
+    assertThat(jwtKeys.publicJwkSet().getKeys()).hasSize(2);
+  }
+
+  private static String escapeLineBreaks(String pem) {
+    return pem.replace("\n", "\\n");
+  }
+
   private static String generateTestPrivateKeyPem() throws NoSuchAlgorithmException {
     KeyPair keyPair = generateTestKeyPair();
     String base64 = Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded());

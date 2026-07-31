@@ -41,6 +41,11 @@ public final class JwtKeys {
   private static final String PRIVATE_KEY_END_MARKER = "-----END PRIVATE KEY-----";
   private static final String PUBLIC_KEY_BEGIN_MARKER = "-----BEGIN PUBLIC KEY-----";
   private static final String PUBLIC_KEY_END_MARKER = "-----END PUBLIC KEY-----";
+  // The two-character escape sequences, not the control characters they stand for: a PEM squeezed
+  // onto one line spells each break as a backslash followed by 'n' (or 'r'), and those characters
+  // survive verbatim into the env var's value.
+  private static final String ESCAPED_LINE_FEED = "\\n";
+  private static final String ESCAPED_CARRIAGE_RETURN = "\\r";
 
   private final RSAKey signingKey;
   private final JWKSet publicJwkSet;
@@ -147,10 +152,18 @@ public final class JwtKeys {
   }
 
   private static byte[] decodeBase64Body(String base64WithMarkersRemoved) {
-    // Env vars carry PEM blocks with either literal or escaped newlines depending
-    // on how the platform injects them, so every whitespace character is
-    // stripped rather than assuming one particular line-break style.
-    String base64 = base64WithMarkersRemoved.replaceAll("\\s", "");
+    // Env vars carry PEM blocks with either real or escaped newlines, depending on how the
+    // platform injects them: Render's dashboard stores a pasted multi-line value verbatim, but a
+    // value supplied through its API, a .env file or `docker run --env` arrives on one line with
+    // every break written as backslash-n. Both spellings have to go, and the escapes have to go
+    // first — stripping only real whitespace leaves the backslashes sitting in the Base64 body,
+    // where the strict decoder below rejects them. That throws inside JwtKeys' constructor, which
+    // means the whole service fails to start rather than failing one request.
+    String base64 =
+        base64WithMarkersRemoved
+            .replace(ESCAPED_LINE_FEED, "")
+            .replace(ESCAPED_CARRIAGE_RETURN, "")
+            .replaceAll("\\s", "");
     return Base64.getDecoder().decode(base64);
   }
 }
