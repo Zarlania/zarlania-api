@@ -8,7 +8,7 @@ tags:
 - configuration
 - security
 created: '2026-07-27'
-updated: '2026-07-30'
+updated: '2026-08-02'
 related:
 - '000001'
 ---
@@ -23,7 +23,7 @@ related:
 | Description | How registration, email verification, login, JWT access tokens, refresh-token families, and the abuse defenses around them work end to end. |
 | Tags | architecture, configuration, security |
 | Created | 2026-07-27 |
-| Updated | 2026-07-30 |
+| Updated | 2026-08-02 |
 | Related | [000001](000001-persistence-foundation.md) |
 <!-- reference-table:end -->
 
@@ -248,14 +248,26 @@ SHA-256 hash is stored.
 - **Rotation:** `RefreshTokenService.rotate(raw)` looks up the token's
   family, re-checks the presented token is the family's current one and
   still active, marks it used, and inserts the next token in the family.
-  `AuthTokenService.refresh` wraps this and mints a fresh access JWT
-  alongside it.
+  `AuthTokenService.refresh` wraps this, re-checks the user behind the
+  rotation still exists and is still verified, and mints a fresh access JWT
+  alongside it. That user re-check is unreachable today — nothing deletes a
+  verified user or un-verifies an email — but it is deliberate defense in
+  depth: the first future feature to break one of those invariants (account
+  deletion, disablement, email change with re-verification) would otherwise
+  leave a dead account refreshing for the rest of its 30-day family. When
+  the re-check fails, the just-rotated family is revoked before the request
+  is rejected, so the failed refresh cannot itself leave a live token
+  behind.
 - **Reuse detection:** presenting a token that has already been marked used
   is treated as evidence of theft — the whole family is revoked
   (`RefreshTokenService.revokeFamily`), not just the replayed token, and
   every other still-live token in that family (including ones an attacker
   never touched) stops working too. The caller has to log in again from
-  scratch. See [Reuse detection](#reuse-detection-needs-norollbackfor) below
+  scratch. The caller sees only the same 401 any bad token gets, so the
+  event is also logged at `WARN` with the greppable `REFRESH_TOKEN_REUSE`
+  marker plus the user and family ids — the only place theft detection is
+  visible to an operator, and the line an alert should match on. See
+  [Reuse detection](#reuse-detection-needs-norollbackfor) below
   for why this needs a non-default transaction setting to actually work.
 - **Logout:** `POST /auth/logout` revokes the whole family
   (`AuthTokenService.logout` → `RefreshTokenService.revokeFamilyOf`) and
@@ -713,7 +725,7 @@ The header name is reported rather than fixed so clients read it from the
 server instead of hardcoding it; it is also on the CORS allow-list, without
 which the browser's preflight would refuse the very header the check needs.
 
-The token is defence in depth rather than the first line. Three things
+The token is defense in depth rather than the first line. Three things
 already stand in front of it: `SameSite=Strict` keeps the refresh cookie off
 cross-site requests entirely, `Path=/auth` keeps it from being attached to
 any other endpoint, and the CORS allow-list

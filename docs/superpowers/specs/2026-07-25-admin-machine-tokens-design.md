@@ -185,3 +185,34 @@ the routes exist.
 | Service issuance | System admins register services | Org-owner self-service (belongs to the future API-key feature, not this) |
 | Admin claims | Separate `system_permissions` claim, merged to authorities | Mixing into org `permissions`; per-request DB checks |
 | Exchange auditing | `last_used_at` only | Audit row per exchange (noise) |
+
+## Amendment — spec 2 as implemented (2026-08-02)
+
+Spec 2's implementation (PR #33) landed details this spec's token work
+depends on:
+
+- **`kind` is minted but not yet enforced.** The JWT converter builds
+  `AuthPrincipal` without validating the `kind` claim — with a single kind
+  in existence there was nothing to enforce. Introducing `impersonation` and
+  `service` makes enforcement real work this spec owns: the converter must
+  require a known `kind` (and decide what a missing one means — today a
+  token without the claim still authenticates, as a null-kind principal),
+  and any human-only surface must check it.
+- **The name `TokenClaims` is taken.** `auth/services/TokenClaims.java` is
+  the claim-name constants class (`TokenClaims.ORGANIZATION`,
+  `TokenClaims.KIND`) read by `JwtService` and `SecurityConfig`. The
+  mint-input record planned for this spec needs a different name or a
+  deliberate replacement of that class.
+- **Refresh re-checks the user; reuse is logged.**
+  `AuthTokenService.refresh` re-checks the user still exists and is
+  verified (revoking the fresh family otherwise), and
+  `RefreshTokenService.rotate` logs replays with the `REFRESH_TOKEN_REUSE`
+  WARN marker — a natural candidate to route into this spec's audit log
+  beside the mint audits.
+- **The service-token exchange inherits spec 2's idioms.** Stored secrets
+  are SHA-256 hashes compared via `MessageDigest.isEqual` (see
+  `RefreshTokenService.findByHash` for the pattern and the reason), and the
+  public exchange endpoint is throttled per client IP via
+  `ClientIpResolver`. No decoy-hash timing parity is needed on the uniform
+  401 — every failure branch costs the same cheap hash, unlike Argon2 on
+  login.

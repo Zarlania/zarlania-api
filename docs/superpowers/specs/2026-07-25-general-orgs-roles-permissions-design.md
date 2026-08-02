@@ -166,3 +166,36 @@ not get to learn that.
 | Non-member access | `404` (hide existence) | `403` (leaks org ids) |
 | Org switch | New access JWT + new refresh family, old family revoked | Multiple live families per browser session |
 | Org rename/delete | Deferred | In scope now |
+
+## Amendment — spec 2 as implemented (2026-08-02)
+
+Spec 2's implementation (PR #33) deviated from spec 2's own text in ways this
+spec's design relies on. The deviations were reviewed and kept; carry them
+into implementation rather than the wording above:
+
+- **CSRF machinery exists after all.** Spec 2 said "no CSRF-token
+  machinery"; the implementation ships scoped double-submit protection on
+  the cookie-authenticated routes (`POST /auth/refresh`,
+  `POST /auth/logout`), with an `HttpOnly` CSRF cookie and the token served
+  by `GET /auth/csrf`. `POST /auth/token` authenticates with the same
+  refresh cookie, so it must be added to `SecurityConfig`'s
+  `requireCsrfProtectionMatcher`, and the client must echo the
+  `X-XSRF-TOKEN` header there too. Test support exists
+  (`testsupport/CsrfCredentials`).
+- **Refresh re-checks the user.** `AuthTokenService.refresh` re-checks the
+  user still exists and is verified after rotating, revoking the
+  just-rotated family before rejecting. `POST /auth/token` mints through the
+  same rotation and must apply the same re-check alongside the membership
+  check this spec adds.
+- **Throttling is an idiom, not an afterthought.** Every public `/auth`
+  route is rate-limited per client IP (`ClientIpResolver`, keyed on
+  `CF-Connecting-IP`); `POST /auth/token` needs its own limit in
+  `ThrottleProperties` like the rest.
+- **`/auth/**` is `permitAll` by path.** A new route under `/auth` is public
+  as far as the resource server is concerned; `POST /auth/token`'s only
+  authentication is the refresh-cookie rotation itself, exactly as with
+  `/auth/refresh`.
+- **Refresh-token reuse is logged** with the `REFRESH_TOKEN_REUSE` WARN
+  marker in `RefreshTokenService.rotate`. The org-switch flow's family
+  revocation is an ordinary revocation, not a theft signal — do not route it
+  through that marker.
