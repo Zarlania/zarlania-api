@@ -6,6 +6,7 @@ import com.zarlania.api.auth.dtos.RefreshRotation;
 import com.zarlania.api.auth.entities.RefreshToken;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.common.security.TokenHasher;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -13,6 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,9 +22,17 @@ import org.springframework.transaction.annotation.Transactional;
  * Issues and rotates refresh-token families. Each redemption is single-use; presenting an
  * already-used token is treated as evidence of theft, so the whole family is revoked.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RefreshTokenService {
+
+  // Greppable marker on the reuse log line, following RegistrationEmailListener's convention.
+  // The caller sees the same 401 as any bad token — deliberately, so a thief learns nothing —
+  // which makes this line the only place theft detection is visible at all. An operator alert
+  // matches on the marker; the user and family ids in the line are what an investigation
+  // pivots on.
+  private static final String REUSE_LOG_MARKER = "REFRESH_TOKEN_REUSE";
 
   // Arbitrary but fixed first argument to pg_advisory_xact_lock(int, int): Postgres advisory
   // locks are one flat 64-bit space per database, and the two-argument form exists precisely so
@@ -57,6 +67,12 @@ public class RefreshTokenService {
   // rollback-only by Spring's default rule for unchecked exceptions, so the revocation below
   // would be silently discarded at commit — exactly the theft-detection bypass this method exists
   // to prevent.
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "The reuse log line's arguments are java.util.UUIDs, whose toString() is always"
+              + " lowercase hex digits and hyphens (RFC 4122) — there is no injectable character"
+              + " to strip; same reasoning as UnverifiedAccountCleanup#purgeSafely.")
   @Transactional(noRollbackFor = ReusedRefreshTokenException.class)
   public RefreshRotation rotate(String raw) {
     String tokenHash = TokenHasher.sha256Hex(raw);
@@ -68,6 +84,13 @@ public class RefreshTokenService {
     RefreshToken current = findByHash(tokens.findByFamilyIdOrderById(familyId), tokenHash);
     Instant now = clock.instant();
     if (current.getUsedAt() != null) {
+      // Both ids are java.util.UUIDs, so the line is CRLF-safe by construction; the raw token and
+      // its hash stay out of it deliberately — the log must never become a place tokens leak.
+      log.warn(
+          "{}: refresh token replayed for user {} — revoking family {}",
+          REUSE_LOG_MARKER,
+          current.getUserId(),
+          familyId);
       revokeFamily(familyId, now); // reuse = theft signal
       throw new ReusedRefreshTokenException();
     }

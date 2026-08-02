@@ -49,14 +49,37 @@ public class AuthTokenService {
   }
 
   public MintedSession refresh(String rawRefreshToken) {
+    RefreshRotation rotation = rotateOrReject(rawRefreshToken);
+    requireLiveVerifiedUser(rotation);
+    return new MintedSession(
+        jwtService.mint(rotation.userId(), rotation.organizationId(), TokenKinds.USER),
+        new IssuedRefreshToken(rotation.newRaw(), rotation.familyExpiresAt()));
+  }
+
+  private RefreshRotation rotateOrReject(String rawRefreshToken) {
     try {
-      RefreshRotation rotation = refreshTokenService.rotate(rawRefreshToken);
-      return new MintedSession(
-          jwtService.mint(rotation.userId(), rotation.organizationId(), TokenKinds.USER),
-          new IssuedRefreshToken(rotation.newRaw(), rotation.familyExpiresAt()));
+      return refreshTokenService.rotate(rawRefreshToken);
     } catch (InvalidRefreshTokenException | ReusedRefreshTokenException e) {
       throw new ApiException(ErrorCode.INVALID_CREDENTIALS, REFRESH_REJECTED_MESSAGE);
     }
+  }
+
+  // Unreachable today, by invariants rather than by a check: the only user-deletion path
+  // (UnverifiedAccountCleanup) clears refresh tokens in the same transaction as the user row, an
+  // unverified user cannot log in to obtain a family, and nothing un-verifies an email. But every
+  // one of those invariants is implicit, and the first future feature to break one — account
+  // deletion, disablement, email change with re-verification — would otherwise leave a dead
+  // account holding a live session for the rest of its 30-day family. The spec asks for this
+  // re-check on refresh explicitly; the rotation that just committed is revoked before rejecting,
+  // so the failed refresh cannot itself leave a fresh live token behind.
+  private void requireLiveVerifiedUser(RefreshRotation rotation) {
+    boolean verified =
+        userService.findById(rotation.userId()).map(UserDto::emailVerified).orElse(false);
+    if (verified) {
+      return;
+    }
+    refreshTokenService.revokeFamilyOf(rotation.newRaw());
+    throw new ApiException(ErrorCode.INVALID_CREDENTIALS, REFRESH_REJECTED_MESSAGE);
   }
 
   public void logout(String rawRefreshToken) {

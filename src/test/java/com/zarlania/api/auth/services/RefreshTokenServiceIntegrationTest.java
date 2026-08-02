@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
 import com.zarlania.api.auth.entities.RefreshToken;
@@ -27,6 +31,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
@@ -120,6 +125,41 @@ class RefreshTokenServiceIntegrationTest {
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
     RefreshToken newestRow = findStoredToken(firstRotation.newRaw());
     assertThat(newestRow.getRevokedAt()).isNotNull();
+  }
+
+  // The reuse log line is the only trace theft detection leaves anywhere an operator can see —
+  // the caller just gets the same 401 as any bad token — so its presence and contents are
+  // contract, not implementation detail: the marker is what an alert would match on, and the two
+  // ids are what an investigation would pivot on.
+  @Test
+  void rotatingAnAlreadyUsedTokenLogsATheftSignalNamingTheUserAndFamily() {
+    UUID userId = seedUserId("rotate-reuse-log");
+    OrganizationDto org = seedPersonalOrganization(userId, "rotate-reuse-log");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    refreshTokenService.rotate(issued.raw());
+    UUID familyId = findStoredToken(issued.raw()).getFamilyId();
+
+    Logger logger = (Logger) LoggerFactory.getLogger(RefreshTokenService.class);
+    ListAppender<ILoggingEvent> captured = new ListAppender<>();
+    captured.start();
+    logger.addAppender(captured);
+    try {
+      assertThatThrownBy(() -> refreshTokenService.rotate(issued.raw()))
+          .isInstanceOf(ReusedRefreshTokenException.class);
+    } finally {
+      logger.detachAppender(captured);
+      captured.stop();
+    }
+
+    assertThat(captured.list)
+        .anySatisfy(
+            event -> {
+              assertThat(event.getLevel()).isEqualTo(Level.WARN);
+              assertThat(event.getFormattedMessage())
+                  .contains("REFRESH_TOKEN_REUSE")
+                  .contains(userId.toString())
+                  .contains(familyId.toString());
+            });
   }
 
   @Test

@@ -159,6 +159,8 @@ class AuthTokenServiceTest {
     Instant familyExpiresAt = Instant.now();
     RefreshRotation rotation = new RefreshRotation(NEW_RAW_REFRESH, userId, orgId, familyExpiresAt);
     when(refreshTokenService.rotate("raw")).thenReturn(rotation);
+    when(userService.findById(userId))
+        .thenReturn(Optional.of(new UserDto(userId, "person@example.com", IDENTIFIER, true)));
     when(jwtService.mint(userId, orgId, TokenKinds.USER)).thenReturn(ACCESS_TOKEN);
 
     AuthTokenService.MintedSession session = service.refresh("raw");
@@ -166,6 +168,45 @@ class AuthTokenServiceTest {
     assertThat(session.accessToken()).isEqualTo(ACCESS_TOKEN);
     assertThat(session.refresh())
         .isEqualTo(new IssuedRefreshToken(NEW_RAW_REFRESH, familyExpiresAt));
+  }
+
+  @Test
+  void refreshRejectsAndRevokesTheRotatedFamilyWhenTheUserNoLongerExists() {
+    UUID userId = UUID.randomUUID();
+    RefreshRotation rotation =
+        new RefreshRotation(NEW_RAW_REFRESH, userId, UUID.randomUUID(), Instant.now());
+    when(refreshTokenService.rotate("raw")).thenReturn(rotation);
+    when(userService.findById(userId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.refresh("raw"))
+        .isInstanceOf(ApiException.class)
+        .satisfies(
+            ex ->
+                assertThat(((ApiException) ex).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+
+    verify(refreshTokenService).revokeFamilyOf(NEW_RAW_REFRESH);
+    verifyNoInteractions(jwtService);
+  }
+
+  @Test
+  void refreshRejectsAndRevokesTheRotatedFamilyWhenTheUserIsNoLongerVerified() {
+    UUID userId = UUID.randomUUID();
+    RefreshRotation rotation =
+        new RefreshRotation(NEW_RAW_REFRESH, userId, UUID.randomUUID(), Instant.now());
+    UserDto unverified = new UserDto(userId, "person@example.com", IDENTIFIER, false);
+    when(refreshTokenService.rotate("raw")).thenReturn(rotation);
+    when(userService.findById(userId)).thenReturn(Optional.of(unverified));
+
+    assertThatThrownBy(() -> service.refresh("raw"))
+        .isInstanceOf(ApiException.class)
+        .satisfies(
+            ex ->
+                assertThat(((ApiException) ex).getErrorCode())
+                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+
+    verify(refreshTokenService).revokeFamilyOf(NEW_RAW_REFRESH);
+    verifyNoInteractions(jwtService);
   }
 
   @Test
