@@ -38,12 +38,13 @@ inherits them without having to remember to.
 ```mermaid
 flowchart LR
   caller["caller\n(registration, today)"]
+  dispatcher["EmailDispatcher\n(catches and logs everything)"]
   executor["emailDispatchExecutor\n(1 thread, bounded queue)"]
   budget["BudgetedEmailSender\n(service-wide cap)"]
   resend["ResendEmailSender\n(provider)"]
   logging["LoggingEmailSender\n(no key configured)"]
 
-  caller --> executor --> budget
+  caller --> dispatcher --> executor --> budget
   budget --> resend
   budget --> logging
 ```
@@ -52,9 +53,9 @@ flowchart LR
 
 `EmailSender` is a one-method port: `send(EmailMessage)`, where `EmailMessage`
 is `to`, `subject` and `textBody`. It is synchronous and blocking by contract,
-and it throws rather than returning a status — a caller that must not fail is
-responsible for catching, and a caller that must not wait is responsible for
-handing the call to an executor.
+and it throws rather than returning a status. Nothing in the application calls
+it directly — `EmailDispatcher` is what absorbs both of those properties, so no
+caller has to.
 
 `EmailConfig` chooses the adapter from whether `zarlania.email.resend-api-key`
 is set:
@@ -107,10 +108,26 @@ through its explicit-window overload. That overload exists for this: a daily
 allowance expressed in the shared one-minute request window would cap the rate
 while leaving the day's total unbounded.
 
-## Dispatch is off the request thread
+## `EmailDispatcher`: the one way out
 
-`EmailConfig` builds a dedicated `emailDispatchExecutor`, and callers submit to
-it rather than calling the sender directly. **The reason is enumeration safety,
+`EmailDispatcher.dispatch(EmailMessage)` is the only way mail leaves this
+service. A caller composes a message and hands it over; everything else — which
+thread the send happens on, which failures are possible, how each is reported —
+belongs to the channel rather than to whatever triggered the send.
+
+That split is deliberate. Those concerns amount to a `try`/`catch` over two
+distinct exception types, a rejected-submission path, three log markers and two
+static-analysis suppressions. Left at the call site, the second caller would
+copy all of it and the copies would drift.
+
+**`dispatch` never throws**, whatever goes wrong. A caller sends after its own
+work has committed, so an exception could not undo anything and would only turn
+a success into a 500.
+
+### Off the request thread
+
+`EmailConfig` builds a dedicated `emailDispatchExecutor`, and the dispatcher
+submits to it rather than sending inline. **The reason is enumeration safety,
 not throughput.** A provider round trip taken on a request thread would be
 measurable in the response time, and on `/auth/resend` only one of the three
 possible outcomes sends anything at all — so the timing would say which one
@@ -125,10 +142,10 @@ pressure on a 512 MB instance.
 
 The queue is bounded at `zarlania.email.dispatch-queue-capacity` (200), so a
 provider outage cannot grow it until the instance is OOM-killed. Submitting to
-a full queue throws `RejectedExecutionException` back at the caller, which is
-the third failure the caller has to handle. The capacity sits comfortably above
-the daily budget, so the budget — not the queue — is what bounds outbound
-volume in practice.
+a full queue throws `RejectedExecutionException`, which the dispatcher catches
+like any other failure — it is the one that happens before the sender is ever
+reached. The capacity sits comfortably above the daily budget, so the budget —
+not the queue — is what bounds outbound volume in practice.
 
 On shutdown the executor drains rather than dropping: it stops accepting work,
 runs what is already queued, and waits up to ten seconds for it. A send that
@@ -137,14 +154,14 @@ message in the queue is somebody's verification link.
 
 ## Failures are logged, never returned
 
-The port throws and the executor rejects; deciding what to do with either is
-the caller's job. Every caller is expected to swallow both and log them,
-because a failed send must not change the HTTP response — the reasoning is
-registration's and is set out under [Enumeration
-safety](000002-authentication-and-tokens.md#enumeration-safety-status-body-and-timing-all-have-to-match).
+A failed send never changes an HTTP response. The reasoning is registration's
+and is set out under [Enumeration
+safety](000002-authentication-and-tokens.md#enumeration-safety-status-body-and-timing-all-have-to-match);
+the consequence is the channel's, so the dispatcher — not any caller — is what
+swallows every failure and logs it at `error` under a greppable marker.
 
-`RegistrationEmailListener`, the only caller today, logs each failure at
-`error` under its own greppable marker. The three are kept distinct because
+The markers live with the dispatcher for the same reason, so a second caller
+inherits them rather than copying the strings. They are kept distinct because
 they call for different actions:
 
 | Marker | Means | What to do |

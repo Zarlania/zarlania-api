@@ -210,7 +210,7 @@ more than hashing one password, and on `resend` only one of the three
 outcomes sends anything at all — so if the send ran on the request thread,
 response time alone would say which branch was taken and the decoy hash
 would have bought nothing. `RegistrationEmailListener` therefore hands every
-message to a dispatch executor instead of sending inline. "After commit" is
+message to `EmailDispatcher` instead of sending inline. "After commit" is
 not "after the response": a `@TransactionalEventListener` still runs on the
 publishing thread, which is the request thread, so the round trip would land
 squarely in the caller's measured time. A rejected submission (full queue)
