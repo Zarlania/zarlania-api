@@ -6,6 +6,7 @@ description: How registration, email verification, login, JWT access tokens, ref
 tags:
 - architecture
 - configuration
+- http
 - security
 created: '2026-07-27'
 updated: '2026-08-02'
@@ -21,7 +22,7 @@ related:
 | ID | 000002 |
 | Title | Authentication and tokens |
 | Description | How registration, email verification, login, JWT access tokens, refresh-token families, and the abuse defenses around them work end to end. |
-| Tags | architecture, configuration, security |
+| Tags | architecture, configuration, http, security |
 | Created | 2026-07-27 |
 | Updated | 2026-08-02 |
 | Related | [000001](000001-persistence-foundation.md) |
@@ -35,12 +36,18 @@ datasource are configured; this doc covers what runs on top of that schema.
 ## Domains and boundaries
 
 Four domains implement this — `users`, `organizations`, `credentials` and
-`auth`, each a top-level package under `src/main/java/com/zarlania/api` —
-plus `common.email`, which is shared infrastructure rather than a domain.
-The four follow the domain-boundary rules `CLAUDE.md` states canonically:
+`auth`, each a top-level package under `src/main/java/com/zarlania/api`.
+They follow the domain-boundary rules `CLAUDE.md` states canonically:
 entities stay inside their own domain, and a cross-domain reference is a
 plain foreign-key id column plus a DTO lookup through the owning domain's
 service.
+
+The supporting classes this doc names live beside those four, in the
+topic packages `CLAUDE.md` describes: `email` (the sender port and its
+adapters), `throttle` (`ThrottleAspect`, `RateLimiter`), `http`
+(`ClientIpResolver`), `errors` (`ErrorCode` and the exception handler) and
+`security` (`TokenHasher`). None of them holds an entity or imports a
+domain — the dependency only ever runs from a domain into them.
 
 ```mermaid
 flowchart LR
@@ -48,7 +55,7 @@ flowchart LR
   credentials["credentials\n(PasswordCredential,\nEmailVerificationToken)"]
   users["users\n(User)"]
   organizations["organizations\n(Organization, Membership)"]
-  email["common.email\n(EmailSender port + adapters)"]
+  email["email\n(EmailSender port + adapters)"]
 
   auth --> credentials
   auth --> users
@@ -78,10 +85,10 @@ flowchart LR
   `AccountCreator` owns the transaction that writes it, both composing the
   other three domains through their services and DTOs rather than reaching
   into their entities.
-- **`common.email`** — the `EmailSender` port and its two adapters
+- **`email`** — the `EmailSender` port and its two adapters
   (`ResendEmailSender` for a real provider, `LoggingEmailSender` for local
-  dev). No entities — domain-agnostic infrastructure, the same category as
-  `common.persistence`.
+  dev). In the diagram above because registration depends on it, though it
+  is topic infrastructure rather than a domain.
 
 `GET /users/me` (in the `users` domain) and the JWKS endpoint (in `auth`) are
 the two read paths that reach across these boundaries the same way every
@@ -112,14 +119,15 @@ directly.
    constraints on both columns, and the loser of that race sees a
    `DataIntegrityViolationException`. `register` is therefore deliberately
    **not** `@Transactional` — the transaction lives one level down in
-   `AccountCreator`, so the handler can run after it has rolled back — and
-   `resolveRegistrationConflict` re-asks the same two questions, now
-   unambiguous because the winner has committed, and answers exactly as the
-   sequential case would: `409 auth.username-taken`, or the same `202` and
-   reminder email that an already-registered email gets. Anything that is
-   not one of those two races is rethrown. Without this, paired requests
-   would get a `500` for a free email and two identical `202`s for a taken
-   one — an enumeration channel, on top of an ugly failure.
+   `AccountCreator`, so the conflict handling can run after that transaction
+   has rolled back — and `resolveRegistrationConflict` re-asks the same two
+   questions, now unambiguous because the winner has committed, and answers
+   exactly as the sequential case would: `409 auth.username-taken`, or the
+   same `202` and reminder email that an already-registered email gets.
+   Anything that is not one of those two races is rethrown. Without this,
+   paired requests would get a `500` for a free email and two identical
+   `202`s for a taken one — an enumeration channel, on top of an ugly
+   failure.
 4. **Verification token:** a 256-bit random URL-safe value
    (`TokenHasher.newUrlSafeToken`); only its SHA-256 hash is stored
    (`TokenHasher.sha256Hex`), with a 24-hour TTL and single use. The emailed
@@ -375,38 +383,73 @@ constructor, so the service fails to start rather than failing one request.
 
 ## Throttling
 
-`InMemoryRateLimiter` is a fixed-window limiter behind the `RateLimiter`
-interface `AuthController` depends on. Every request consumes **two**
-buckets — `<endpoint>:<client-ip>` and `<endpoint>:acct:<identifier>` —
-because either alone leaves a real attack unbounded: per-IP only lets
-credential stuffing spread across many addresses hammer one known username
-freely, and per-account only lets a single address work through a list of
-accounts. Defaults live in `zarlania.throttle` (`application.yml`), all
-measured over `zarlania.throttle.window` (1 minute):
+Throttling is declarative. A handler carries
+`@Throttled(endpoint = "login", accountFrom = "identifier")` and holds no
+throttling code of its own; `ThrottleAspect` enforces it, counting against
+`InMemoryRateLimiter`, a fixed-window limiter behind the `RateLimiter`
+interface.
+
+It is an **aspect** rather than a servlet filter or a `HandlerInterceptor`, the
+two obvious homes for middleware, because the per-account bucket keys on a field
+of the *parsed request body*. A filter and an interceptor both run before
+argument resolution, so neither can reach that field without buffering and
+re-parsing the body; advice on the handler method runs after binding. One
+mechanism therefore carries both bucket kinds instead of splitting them across
+two places.
+
+A throttled request consumes **two** buckets — `<endpoint>:<client-ip>` and
+`<endpoint>:acct:<identifier>` — because either alone leaves a real attack
+unbounded. With only the per-IP bucket, credential stuffing spread across many
+addresses can hammer one known username freely; with only the per-account
+bucket, a single address can work through a list of accounts.
+
+`ThrottleKeys` trims and lower-cases the account half of the key, because
+`email` and `username` are `citext`: Postgres already treats `Bob` and `bob`
+as one account, so keying on the raw string would hand out a fresh allowance
+per spelling. The key is length-capped as well, since `LoginRequest.identifier`
+is only `@NotBlank` and could otherwise mint arbitrarily long keys in the
+limiter's map.
+
+Limits live in `zarlania.throttle.endpoints`, keyed by the name in the
+annotation, and are all counted over `zarlania.throttle.window` (1 minute).
+They are a map rather than one field per endpoint, so throttling a new route is
+an annotation plus a configuration entry and never a change to
+`ThrottleProperties`:
 
 | Endpoint | Per client IP | Per account |
 | -------- | ------------- | ----------- |
 | `register` | 5/min | 3/min |
 | `login` | 10/min | 10/min |
 | `resend` | 3/min | 3/min |
-| `refresh` | 30/min | — (the cookie names no account) |
-| `csrf` | 60/min | — (no account is named) |
+| `refresh` | 30/min | — (names no account) |
+| `csrf` | 60/min | — (names no account) |
 
-A caller over either limit gets `429` with code `auth.throttled`.
+A caller over either limit gets `429` with code `auth.throttled`, carrying a
+`Retry-After` header. The limiter returns the remaining window alongside the
+refusal rather than through a second lookup, so the advertised wait always
+describes the window that actually rejected the request. The value is whole
+seconds per RFC 9110 §10.2.3, rounded up and never below one, so a client that
+obeys it to the letter arrives after the window has genuinely refilled instead
+of retrying into a second rejection.
 
-The account key is trimmed and lower-cased, because `email` and `username`
-are `citext`: Postgres already treats `Bob` and `bob` as one account, so
-keying on the raw string would hand out a fresh allowance per spelling. The
-key is length-capped as well, since `LoginRequest.identifier` is only
-`@NotBlank` and could otherwise mint unbounded keys in the limiter's map.
+Splitting a limit across an annotation and a configuration entry means either
+half can go missing without anything failing until a request arrives, so
+`ThrottledEndpointConventionTest` checks the two against each other at build
+time, reading the real `application.yml` and scanning the real controllers. An
+endpoint annotated as throttled but absent from configuration would run
+**unlimited**. An `accountFrom` naming a component no argument declares, or an
+`accountFrom` and an `account-limit` where only one of the pair is present,
+would leave the per-account bucket **off**. And a configured endpoint that no
+handler claims is a limit nothing applies, which reads to whoever tunes it
+next as a limit that is in force.
 
 Two things the per-account limit is deliberately **not**:
 
-- It is not an **account lockout**, which the spec declined — locking an
+- It is not an **account lockout**, which was rejected outright: locking an
   account after N failures is a trivial denial-of-service against a known
-  username. This window is a minute wide and refills itself, so a
-  sustained attack can suppress one account's logins only while it is
-  actually running.
+  username. This window is a minute wide and refills itself, so a sustained
+  attack can suppress one account's logins only while it is actually
+  running.
 - It is not an **enumeration channel**. The bucket exists for whatever
   string the caller supplied, whether or not an account matches it, so a
   `429` says an identifier has been tried a lot — never that it is real.
@@ -440,10 +483,11 @@ changing, the day the service ever runs on more than one instance.
 
 The per-caller limits above bound requests, not mail. Five registrations a
 minute from one compliant IP is roughly 7,200 messages a day, against a
-Resend free tier of about 100. When the quota tripped, the provider threw,
-`RegistrationEmailListener` logged it, and the endpoint still answered
-`202` — so every legitimate verification email after that point was
-silently lost.
+Resend free tier of about 100. With no cap of its own, this service would
+find out only when the provider's quota tripped: the provider throws,
+`RegistrationEmailListener` logs it, and the endpoint still answers `202`
+— so every legitimate verification email after that point is silently
+lost.
 
 `BudgetedEmailSender` wraps whichever `EmailSender` `EmailConfig` builds
 and spends from one service-wide budget before delegating: 80 sends
@@ -483,13 +527,14 @@ verification link.
 
 Two independent sweeps, both on `zarlania.auth.cleanup-interval` (1 hour
 by default). They are separate beans so either can fail without stopping
-the other, and `spring.task.scheduling.pool.size` is 3 — one thread per
-`@Scheduled` method in the application, since both sweeps share
-`cleanup-interval` and so occupy their threads at the same time. Spring's
-default single-threaded scheduler, or any size below the number of
-scheduled methods, would let a running sweep stall the rate limiter's own
-per-minute eviction. **Add a thread whenever a `@Scheduled` method is
-added.**
+the other. `spring.task.scheduling.pool.size` is 3 — one thread per
+`@Scheduled` method in the application: these two sweeps, which share
+`cleanup-interval` and so occupy their threads at the same time, plus
+`InMemoryRateLimiter`'s per-minute eviction. Spring's default
+single-threaded scheduler, or any size below the number of scheduled
+methods, would let a sweep running long against a cold free-tier database
+stall that eviction and leave the limiter's map growing. **Add a thread
+whenever a `@Scheduled` method is added.**
 
 **`UnverifiedAccountCleanup`** purges every account still unverified past
 `zarlania.auth.unverified-account-max-age` (7 days by default). Left
@@ -576,7 +621,7 @@ time, the moment `ReusedRefreshTokenException` propagates to signal the
 reuse. That would make theft detection a complete no-op: the exception
 would still reach the caller as a `401`, but the family would remain live
 underneath it, exactly the behavior
-[`AuthJourneyIntegrationTest`](../../src/test/java/com/zarlania/api/AuthJourneyIntegrationTest.java)
+[`AuthJourneyFlowTest`](../../src/test/java/com/zarlania/api/auth/controllers/AuthJourneyFlowTest.java)
 exists to catch if it ever regresses.
 
 ### Which header carries the real client IP
@@ -666,14 +711,16 @@ and a stale list fails quietly — the walk stops at an infrastructure
 address and the shared bucket returns with nothing raised. A header
 Cloudflare guarantees to overwrite has no list to go stale.
 
-Two earlier revisions of this document, `application.yml` and
-`AuthController` got this wrong in two different ways: first by claiming
+Two earlier revisions of this document, of `application.yml`, and of the
+throttling code (then still inside `AuthController`, now in
+`ThrottleAspect` and `ClientIpResolver`) got this wrong in two different
+ways: first by claiming
 that transiting a proxy prevents forgery (it does not — only replacement
 at the proxy would), then by assuming a single trusted hop and keying on
 the rightmost entry, which is Render's shared load balancer.
-[`ClientIpResolverTest`](../../src/test/java/com/zarlania/api/common/http/ClientIpResolverTest.java)
+[`ClientIpResolverTest`](../../src/test/java/com/zarlania/api/http/ClientIpResolverTest.java)
 and
-[`ClientIpThrottleIntegrationTest`](../../src/test/java/com/zarlania/api/auth/controllers/ClientIpThrottleIntegrationTest.java)
+[`ClientIpThrottleEndToEndTest`](../../src/test/java/com/zarlania/api/auth/controllers/ClientIpThrottleEndToEndTest.java)
 now build every case from the real three-entry header rather than a
 two-entry approximation, which is what let both mistakes through: a test
 that synthesizes `client, proxy` and then declares the last entry to be

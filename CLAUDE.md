@@ -91,7 +91,7 @@ can be lifted out of the monolith with minimal work):
 - Do not create top-level `controllers/`, `services/` or `models/` packages for
   the whole application.
 - **No general-purpose bucket packages.** Infrastructure that several domains
-  share still gets a package named for the *topic* it is about — `throttle/`,
+  share still gets a package named for the _topic_ it is about — `throttle/`,
   `email/`, `persistence/` — never a catch-all such as `common/`, `shared/` or
   `util/`. A bucket collects whatever has no obvious home, so it accumulates
   unrelated classes and stops telling a reader anything. If a class does not fit
@@ -190,7 +190,33 @@ without reading the rest of the codebase.
   API; prefixing every route would repeat that in the path. A controller for
   collections maps `/collections`, not `/api/collections`. The one exception is
   `/actuator/**`, which Spring owns.
+- **Route paths are literals on the mapping annotation.** `@GetMapping("/users/me")`,
+  not `@GetMapping(ME_PATH)`. This is the one deliberate exception to _no magic
+  values_: the path is the single most important thing about a handler, and
+  putting it on the annotation means it is visible where the method is read.
+  Extracting it moves it away from the only place it matters. A path referenced
+  from somewhere else too — `SecurityConfig`'s public-path list, for instance —
+  is written out in both places with a comment naming the other, since two
+  occurrences is not yet an abstraction.
 - Use records for immutable data carriers such as request and response bodies.
+- **Javadoc every public type and method.** Someone opening one file — person or
+  model — should be able to state the contract without reading the rest of the
+  codebase, and a signature does not carry nullability, units, or which of
+  several failures a caller must handle. Checkstyle enforces presence at public
+  scope; what makes it worth reading is on you. Javadoc that restates the method
+  name is worse than none, so say what cannot be read off the signature: what a
+  getter returns when the value is absent, why an unusual choice was made, which
+  exception means what. `@Override` is exempt — an override inherits its
+  contract, and restating it in a second place is how the two drift apart.
+- **An explanation about a method goes in its Javadoc, not above it.** A `//`
+  block over a declaration is invisible to everything that reads a contract.
+  Private methods get Javadoc too whenever they have something non-obvious to
+  say, and nothing when they do not. `//` is for a comment about a _statement_,
+  and lives immediately above the code it explains.
+- **Members are ordered public, then protected, then package-private, then
+  private**, with fields first and constructors between the fields and the
+  methods. A reader looking for what a class offers finds it at the top and can
+  stop there; the helpers below exist only to serve what is above them.
 - **Lombok is available, but narrowed.** `@Data`, `@Value`, `@Getter` and
   `@Setter` are compile errors, because a record already does that job and two
   competing ways to declare a data carrier is worse than one. So are
@@ -202,16 +228,50 @@ without reading the rest of the codebase.
   overrides. Never hardcode a value that differs between environments.
 - Name tests after the behaviour they assert (`applicationBootsAgainstPostgres`),
   not the method under test.
-- **Integration tests end in `IntegrationTest`; unit tests end in `Test`.** A test
-  is an integration test when it needs something outside the JVM under test — a
-  database, a Testcontainer, an HTTP call to a real server — or boots a Spring
-  context to get it. So `CollectionServiceTest` unit-tests the service in
-  isolation, and `CollectionRepositoryIntegrationTest` exercises it against
-  Postgres. The two can then sit side by side for the same class. A shared base
-  class may appear later to hold common setup; it does not replace the suffix,
-  because the class name is what tells a reader (and a `-Dtest=` filter) which
-  kind of test they are looking at. Surefire's default `**/*Test.java` include
-  matches both, so both run under `./mvnw verify`.
+- **A test's suffix names its tier.** The class name is what tells a reader — and
+  a `-Dtest=` filter — what kind of test they are looking at, so the tiers are
+  named rather than inferred. Surefire's default `**/*Test.java` include matches
+  all of them, so every tier runs under `./mvnw verify`.
+
+  | Suffix | Tier | Covers |
+  | ------ | ---- | ------ |
+  | `…Test` | Unit | Decisions a class makes, with collaborators mocked. No Spring context. |
+  | `…IntegrationTest` | Integration | A component against a real Spring context and real Postgres. |
+  | `…TransactionTest` | Transaction | Transactional behaviour itself — locking, rollback boundaries, what concurrent callers observe. Runs serially. |
+  | `…EndToEndTest` | End-to-end | One endpoint's request and response, and the middleware in front of it, over HTTP. |
+  | `…FlowTest` | Flow | A sequence of endpoints where the subject is what carries between them. |
+
+  Which tiers a class gets follows from what it is:
+
+  - **Controllers** get `…EndToEndTest`, and `…FlowTest` for journeys spanning
+    several endpoints. No unit tests — a controller's whole job is HTTP, and a
+    unit test of it asserts nothing a reader could not read off the method.
+  - **Services** get both a unit test and an integration test. They cover
+    different things and neither replaces the other: the unit test reaches every
+    branch by stating the state, the integration test proves the pieces actually
+    fit together against a database.
+  - **Repositories** get an integration test only, and only for the queries the
+    project declares itself. Spring Data's inherited CRUD is not this project's
+    to test.
+  - **Records and entities** get tests only if they hold logic. Most do not.
+
+- **Shared setup lives in a base class; shared data lives in a helper.** The
+  bases are `IntegrationTestBase`, `EndToEndTestBase`, `FlowTestBase` and
+  `TransactionTestBase` in `testsupport`. The helpers are there too —
+  `AuthEndpoints` for requests, `TestAccounts` for seeding, `AccountAssertions`
+  for checking an account is wholly gone or wholly intact, `MutableClock` for
+  time. A change to how a test account is built, or to a request's shape, must
+  be a change to one file. Anything copied into a second test class belongs in
+  one of these instead.
+- **One Postgres container serves the whole run**, declared once on
+  `IntegrationTestBase`. Tests therefore share a database and must not assume an
+  empty one: seed under a unique slug rather than relying on rollback between
+  classes. (Repository tests are the exception — they are `@Transactional` and do
+  roll back.)
+- **Use data providers for cases that differ only in their inputs.**
+  `@ParameterizedTest` with `@CsvSource` or `@MethodSource` says "these all
+  behave the same way" in a way that four near-identical methods cannot. Give
+  each case its own seed data, since the database is shared.
 - Prefer Spring Boot test slices (`@WebMvcTest`) over `@SpringBootTest` when the
   full context is not needed — they are dramatically faster.
 - **Flyway owns the schema.** Never enable Hibernate DDL generation; write a
@@ -235,7 +295,7 @@ contradictory failures.
 | Gate | Owns | Config |
 | ---- | ---- | ------ |
 | Spotless | Formatting: layout, wrapping, import order | `pom.xml` |
-| Checkstyle | Design: size, nesting, complexity, banned constructs | `config/checkstyle/` |
+| Checkstyle | Design: size, nesting, complexity, banned constructs, Javadoc presence | `config/checkstyle/` |
 | SpotBugs + FindSecBugs | Bytecode defects and security patterns | `config/spotbugs/` |
 | JaCoCo | Line and branch coverage at 80% | `pom.xml` |
 | CodeQL | Deeper security analysis, in CI only | `.github/workflows/` |
@@ -250,11 +310,15 @@ pull request. Dependabot does not track them — bump them by hand.
 Run them locally with `npx markdownlint-cli2` and `yamllint --strict -c
 .yamllint.yml .`; `markdownlint-cli2 --fix` repairs most Markdown findings.
 
-Checkstyle enforces the numbers behind the principles above: methods stay under
-40 lines and files under 400, complexity under 10, nesting under 2, no magic
-numbers, no field injection. Those ceilings sit deliberately above the guidance
-in _Engineering principles_ — the guidance is the review signal, the gate catches
-what has clearly got away from us. **Do not add formatting rules to Checkstyle;
+Checkstyle enforces what is countable behind the principles above: methods stay
+under 40 lines and files under 400, complexity under 10, nesting under 2, no
+magic numbers, no field injection, and Javadoc on every public type and method.
+Those ceilings sit deliberately above the guidance in _Engineering principles_ —
+the guidance is the review signal, the gate catches what has clearly got away
+from us. Javadoc is the one rule checked for presence rather than for a number,
+because absence is the failure mode a reader cannot work around; whether it says
+anything worth reading stays a review question, since no rule can tell an
+explanation from a restatement. **Do not add formatting rules to Checkstyle;
 Spotless owns formatting.**
 
 When a gate fires, fix the code. Suppress only when the tool is wrong about that

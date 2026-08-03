@@ -25,10 +25,15 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Guards the ways {@link Throttled} can be wrong without anything noticing until a request hits it
- * in production: an endpoint name with no configured limits, which would leave the route
- * unthrottled, and an {@code accountFrom} naming a component no argument declares, which would
- * leave the per-account bucket off.
+ * Guards the four ways {@link Throttled} can be wrong without anything noticing until a request
+ * hits it in production.
+ *
+ * <p>An endpoint name with no configured limits would leave the route unthrottled. An {@code
+ * accountFrom} naming a component no argument declares would leave the per-account bucket off. An
+ * {@code accountFrom} without a matching {@code account-limit}, or the reverse, means one half of a
+ * bucket was added and the other forgotten — they are declared in different files, so nothing else
+ * connects them. And a configured endpoint no handler claims is a limit somebody will tune in the
+ * belief that it is in force.
  *
  * <p>Reads the real {@code application.yml} and scans the real controllers, so it fails the build
  * on that drift rather than merely describing the rule.
