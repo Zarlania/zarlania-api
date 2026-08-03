@@ -1,5 +1,7 @@
 package com.zarlania.api.testsupport;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import com.zarlania.api.auth.entities.RefreshToken;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.credentials.entities.EmailVerificationToken;
@@ -10,6 +12,8 @@ import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
@@ -18,6 +22,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Seeds accounts and the rows that hang off them, for tests below the HTTP layer.
@@ -47,6 +52,10 @@ public class TestAccounts {
   private final EmailVerificationTokenRepository verificationTokens;
   private final JdbcTemplate jdbcTemplate;
   private final Clock clock;
+
+  // Field-injected rather than constructor-injected: @PersistenceContext supplies the
+  // transaction-bound proxy, which a plain constructor parameter would not.
+  @PersistenceContext private EntityManager entityManager;
 
   /**
    * One seeded account and the ids or hashes a test needs to assert on what became of it.
@@ -145,10 +154,20 @@ public class TestAccounts {
    * ordinary way. The alternative — waiting seven days — is not one.
    */
   public void backdateCreatedAt(UUID userId, Duration age) {
-    jdbcTemplate.update(
-        "UPDATE users SET created_at = ? WHERE id = ?",
-        Timestamp.from(clock.instant().minus(age)),
-        userId);
+    // Inside a transactional test the account's insert is still queued in the persistence context,
+    // so this UPDATE would match no row and fail silently — the account would simply not be old.
+    // Flushed first, and only when a transaction is actually active, since flushing without one
+    // throws. The affected-row count is asserted rather than ignored, so a future variant of this
+    // problem fails here instead of surfacing as an unrelated empty result.
+    if (TransactionSynchronizationManager.isActualTransactionActive()) {
+      entityManager.flush();
+    }
+    int updated =
+        jdbcTemplate.update(
+            "UPDATE users SET created_at = ? WHERE id = ?",
+            Timestamp.from(clock.instant().minus(age)),
+            userId);
+    assertThat(updated).as("backdated user rows").isEqualTo(1);
   }
 
   private Instant farFuture() {
