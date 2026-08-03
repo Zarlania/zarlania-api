@@ -2,28 +2,18 @@ package com.zarlania.api.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.zarlania.api.testsupport.PostgresTestContainer;
+import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.users.entities.User;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest
-@Testcontainers
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
-class BaseEntityConventionIntegrationTest {
+class BaseEntityConventionIntegrationTest extends IntegrationTestBase {
 
   private static final int NANOS_PER_MICROSECOND = 1_000;
-
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
 
   private final UserRepository users;
 

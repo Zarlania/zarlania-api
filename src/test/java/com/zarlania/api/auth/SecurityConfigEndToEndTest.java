@@ -17,7 +17,7 @@ import com.zarlania.api.auth.services.TokenClaims;
 import com.zarlania.api.auth.services.TokenKinds;
 import com.zarlania.api.organizations.dtos.OrganizationDto;
 import com.zarlania.api.organizations.services.OrganizationService;
-import com.zarlania.api.testsupport.PostgresTestContainer;
+import com.zarlania.api.testsupport.EndToEndTestBase;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;
 import java.time.Duration;
@@ -27,35 +27,21 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Exercises the real filter chain end to end: no security-test shortcuts (no
  * {@code @WithMockUser}), so a request either carries a token that survives {@link JwtDecoder} plus
  * {@link SecurityConfig}'s authentication converter, or it does not.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
-class SecurityConfigIntegrationTest {
+class SecurityConfigEndToEndTest extends EndToEndTestBase {
 
   private static final String BEARER_PREFIX = "Bearer ";
   private static final Duration HAND_MINTED_TOKEN_TTL = Duration.ofMinutes(15);
 
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
-
-  private final MockMvc mockMvc;
   private final UserService userService;
   private final OrganizationService organizationService;
   private final JwtService jwtService;

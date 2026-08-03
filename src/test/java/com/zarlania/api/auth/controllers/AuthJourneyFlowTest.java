@@ -1,4 +1,4 @@
-package com.zarlania.api;
+package com.zarlania.api.auth.controllers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -8,50 +8,33 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.jayway.jsonpath.JsonPath;
 import com.zarlania.api.testsupport.CsrfCredentials;
-import com.zarlania.api.testsupport.PostgresTestContainer;
-import com.zarlania.api.testsupport.RecordingEmailSender;
-import com.zarlania.api.testsupport.RecordingEmailSenderConfig;
+import com.zarlania.api.testsupport.FlowTestBase;
 import jakarta.servlet.http.Cookie;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Walks the whole registration-to-logout story in one ordered sequence, carrying state from each
  * step to the next, the way a real user actually lives through it. {@link
- * com.zarlania.api.auth.controllers.RegistrationFlowIntegrationTest} and {@link
- * com.zarlania.api.auth.controllers.LoginFlowIntegrationTest} already prove each endpoint in
- * isolation; this class exists to catch an integration break that every one of those still passes —
- * in particular, that reuse detection genuinely revokes the whole refresh-token family (not just
- * the replayed token) and that logout genuinely kills the family (not just the browser's cookie).
+ * com.zarlania.api.auth.controllers.RegistrationFlowTest} and {@link
+ * com.zarlania.api.auth.controllers.LoginFlowTest} already prove each endpoint in isolation; this
+ * class exists to catch an integration break that every one of those still passes — in particular,
+ * that reuse detection genuinely revokes the whole refresh-token family (not just the replayed
+ * token) and that logout genuinely kills the family (not just the browser's cookie).
  *
  * <p>One test method, deliberately: splitting it into independent methods that each re-register a
  * user would lose the ordering and the carried state that is the entire point of a journey test.
  *
  * <p>This class makes one registration and three logins across the whole method — far below the
  * production register-limit (5/min) and login-limit (10/min) in {@code application.yml} — so,
- * unlike {@code LoginFlowIntegrationTest}, no throttle property needs raising here.
+ * unlike {@code LoginFlowTest}, no throttle property needs raising here.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-@Import(RecordingEmailSenderConfig.class)
-@RequiredArgsConstructor(onConstructor_ = @Autowired)
-class AuthJourneyIntegrationTest {
+class AuthJourneyFlowTest extends FlowTestBase {
 
   private static final Pattern VERIFICATION_LINK_PATTERN =
       Pattern.compile("https://zarlania\\.com/verify-email\\?token=([A-Za-z0-9_-]+)");
@@ -60,16 +43,10 @@ class AuthJourneyIntegrationTest {
   private static final String USERNAME = "journeyuser";
   private static final String REFRESH_COOKIE = "zarlania_refresh";
 
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
-
-  private final MockMvc mockMvc;
-  private final RecordingEmailSender emailSender;
-
   @Test
   void walksTheFullRegistrationToLogoutJourneyCarryingStateAtEachStep() throws Exception {
     register().andExpect(status().isAccepted());
-    String verificationToken = extractToken(emailSender.messages().get(0).textBody());
+    String verificationToken = extractToken(recordedEmails.messages().get(0).textBody());
 
     login(USERNAME, PASSWORD)
         .andExpect(status().isForbidden())

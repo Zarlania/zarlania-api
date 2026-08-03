@@ -24,17 +24,16 @@ public class RecordingEmailSenderConfig {
     return new RecordingEmailSender();
   }
 
-  // Runs the send on the calling thread, so a test can assert on RecordingEmailSender the moment
-  // the request returns instead of polling for a background thread to catch up. The production
-  // executor is asynchronous precisely so the send is *not* observable in response time; that
-  // property belongs to the deployed service, and reproducing it here would only buy flakiness.
-  //
-  // Carries the same @Qualifier as EmailConfig's bean rather than replacing it by name — bean
-  // definition overriding is off by default in Boot. Both beans then match the injection point's
-  // qualifier, and @Primary picks this one.
   /**
-   * Runs dispatch on the calling thread, so a test can assert on a sent message immediately after
-   * the request that triggered it rather than polling for one.
+   * Runs the send on the calling thread, so a test can assert on {@link RecordingEmailSender} the
+   * moment the request returns instead of polling for a background thread to catch up. The
+   * production executor is asynchronous precisely so the send is <em>not</em> observable in
+   * response time; that property belongs to the deployed service, and reproducing it here would
+   * only buy flakiness.
+   *
+   * <p>Carries the same {@code @Qualifier} as {@link EmailConfig}'s bean rather than replacing it
+   * by name — bean definition overriding is off by default in Boot. Both beans then match the
+   * injection point's qualifier, and {@code @Primary} picks this one.
    */
   @Bean
   @Primary

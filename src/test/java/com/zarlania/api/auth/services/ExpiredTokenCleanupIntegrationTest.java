@@ -9,7 +9,7 @@ import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepositor
 import com.zarlania.api.organizations.dtos.OrganizationDto;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.security.TokenHasher;
-import com.zarlania.api.testsupport.PostgresTestContainer;
+import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;
 import java.time.Clock;
@@ -19,26 +19,16 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Both halves matter, and the second one more: a sweep that deletes every dead row is worthless if
  * it also deletes a live session's refresh token or an outstanding verification link.
  */
-@SpringBootTest
-@Testcontainers
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
-class ExpiredTokenCleanupIntegrationTest {
+class ExpiredTokenCleanupIntegrationTest extends IntegrationTestBase {
 
   private static final Duration PAST = Duration.ofDays(1);
   private static final Duration FUTURE = Duration.ofDays(30);
-
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
 
   private final ExpiredTokenCleanup cleanup;
   private final RefreshTokenRepository refreshTokens;

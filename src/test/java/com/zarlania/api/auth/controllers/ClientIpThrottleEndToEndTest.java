@@ -6,23 +6,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.zarlania.api.testsupport.PostgresTestContainer;
+import com.zarlania.api.testsupport.EndToEndTestBase;
 import java.time.Duration;
 import java.util.function.UnaryOperator;
-import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Covers the per-client-IP half of the throttle, and in particular <em>which</em> address the
@@ -38,14 +30,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * <p>{@code login-limit} stays at the production default so these exercise the real number. {@code
  * login-account-limit} is raised out of the way, since it would otherwise trip at the same request
  * count and leave every 429 ambiguous about which limit produced it; {@link
- * AccountThrottleIntegrationTest} is the mirror image. Every method uses its own client address so
- * no method's bucket state can bleed into another's, whatever order JUnit runs them in.
+ * AccountThrottleEndToEndTest} is the mirror image. Every method uses its own client address so no
+ * method's bucket state can bleed into another's, whatever order JUnit runs them in.
  */
 @SpringBootTest(properties = {"zarlania.throttle.endpoints.login.account-limit=1000"})
-@AutoConfigureMockMvc
-@Testcontainers
-@RequiredArgsConstructor(onConstructor_ = @Autowired)
-class ClientIpThrottleIntegrationTest {
+class ClientIpThrottleEndToEndTest extends EndToEndTestBase {
 
   private static final String PASSWORD = "correct-horse-battery";
   private static final String CLOUDFLARE_CLIENT_IP_HEADER = "CF-Connecting-IP";
@@ -67,11 +56,6 @@ class ClientIpThrottleIntegrationTest {
 
   // Mirrors zarlania.throttle.window, which these tests deliberately leave at its production value.
   private static final Duration THROTTLE_WINDOW = Duration.ofMinutes(1);
-
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
-
-  private final MockMvc mockMvc;
 
   @Test
   void requestsFromOneClientAddressShareAThrottleBucket() throws Exception {
@@ -190,7 +174,7 @@ class ClientIpThrottleIntegrationTest {
 
   // Every identifier here is unregistered: these tests are about which bucket a request lands in,
   // and a 401 versus a 429 is all that has to be distinguishable. That the limit fires ahead of the
-  // real credential path is asserted in AccountThrottleIntegrationTest against a live account.
+  // real credential path is asserted in AccountThrottleEndToEndTest against a live account.
   private ResultActions performLogin(
       String identifier, UnaryOperator<MockHttpServletRequestBuilder> customize) throws Exception {
     return mockMvc.perform(

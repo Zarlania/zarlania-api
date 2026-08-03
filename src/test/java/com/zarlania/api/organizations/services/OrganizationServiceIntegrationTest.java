@@ -8,7 +8,7 @@ import com.zarlania.api.organizations.entities.Organization;
 import com.zarlania.api.organizations.entities.OrganizationType;
 import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.repositories.OrganizationRepository;
-import com.zarlania.api.testsupport.PostgresTestContainer;
+import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.users.entities.User;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.util.Optional;
@@ -16,19 +16,9 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest
-@Testcontainers
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
-class OrganizationServiceIntegrationTest {
-
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
+class OrganizationServiceIntegrationTest extends IntegrationTestBase {
 
   private final OrganizationService organizationService;
   private final UserRepository users;

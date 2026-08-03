@@ -5,23 +5,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.zarlania.api.testsupport.PostgresTestContainer;
-import com.zarlania.api.testsupport.RecordingEmailSender;
-import com.zarlania.api.testsupport.RecordingEmailSenderConfig;
+import com.zarlania.api.testsupport.EndToEndTestBase;
 import java.util.Locale;
-import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Covers the per-account half of the throttle: the spec asked for per-IP <em>and</em> per-account
@@ -30,9 +19,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  *
  * <p>Every per-IP limit is raised out of the way here, and every request below arrives from a
  * different client address (in {@code CF-Connecting-IP}, the header {@code ClientIpResolver}
- * reads), so a 429 can only have come from the account bucket. {@link
- * ClientIpThrottleIntegrationTest} is the mirror image, holding the per-IP limits at their
- * defaults.
+ * reads), so a 429 can only have come from the account bucket. {@link ClientIpThrottleEndToEndTest}
+ * is the mirror image, holding the per-IP limits at their defaults.
  */
 @SpringBootTest(
     properties = {
@@ -40,11 +28,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
       "zarlania.throttle.endpoints.register.limit=1000",
       "zarlania.throttle.endpoints.resend.limit=1000"
     })
-@AutoConfigureMockMvc
-@Testcontainers
-@Import(RecordingEmailSenderConfig.class)
-@RequiredArgsConstructor(onConstructor_ = @Autowired)
-class AccountThrottleIntegrationTest {
+class AccountThrottleEndToEndTest extends EndToEndTestBase {
 
   private static final String PASSWORD = "correct-horse-battery";
   private static final String CLOUDFLARE_CLIENT_IP_HEADER = "CF-Connecting-IP";
@@ -52,12 +36,6 @@ class AccountThrottleIntegrationTest {
   // what has to be refused.
   private static final int LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = 11;
   private static final int RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = 4;
-
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
-
-  private final MockMvc mockMvc;
-  private final RecordingEmailSender emailSender;
 
   // Each attempt arrives from its own address and spells the identifier differently — leading and
   // trailing space, alternating case. Both are normalized into one bucket key on purpose: email
@@ -114,20 +92,22 @@ class AccountThrottleIntegrationTest {
   void aThrottledResendNeverReachesTheServiceThatWouldHaveSentTheEmail() throws Exception {
     registerRequest("throttled-resend@example.com", "throttledresend")
         .andExpect(status().isAccepted());
-    emailSender.clear();
+    recordedEmails.clear();
 
     for (int attempt = 1; attempt <= RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1; attempt++) {
       resendRequest(addressFor(attempt), "throttled-resend@example.com")
           .andExpect(status().isAccepted());
     }
-    assertThat(emailSender.messages()).hasSize(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1);
+    assertThat(recordedEmails.messages())
+        .hasSize(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1);
 
     resendRequest(
             addressFor(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING),
             "throttled-resend@example.com")
         .andExpect(status().isTooManyRequests());
 
-    assertThat(emailSender.messages()).hasSize(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1);
+    assertThat(recordedEmails.messages())
+        .hasSize(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1);
   }
 
   private ResultActions registerRequest(String email, String username) throws Exception {
