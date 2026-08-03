@@ -23,6 +23,12 @@ public class JwtService {
   private final JwtKeys jwtKeys;
   private final Clock clock;
 
+  /**
+   * Mints a signed access token for one account in one organization.
+   *
+   * @param kind distinguishes token purposes; see {@code TokenKinds}
+   * @return a compact-serialized RS256 JWT, verifiable against the published JWK set
+   */
   public String mint(UUID userId, UUID organizationId, String kind) {
     Instant now = clock.instant();
     JWTClaimsSet claims =

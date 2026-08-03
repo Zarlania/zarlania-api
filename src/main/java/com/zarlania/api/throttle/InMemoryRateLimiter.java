@@ -24,10 +24,12 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class InMemoryRateLimiter implements RateLimiter {
 
-  // Each entry carries its own length rather than reading the configured one: keys with different
-  // periods share this map (the per-request buckets on a one-minute window, the global email budget
-  // on a daily one), and eviction has to know which is which or it would drop a day-long window the
-  // moment a minute had passed.
+  /**
+   * Each entry carries its own length rather than reading the configured one: keys with different
+   * periods share this map (the per-request buckets on a one-minute window, the global email budget
+   * on a daily one), and eviction has to know which is which or it would drop a day-long window the
+   * moment a minute had passed.
+   */
   private record Window(Instant start, Duration length, AtomicInteger count) {
 
     boolean hasPassed(Instant now) {
@@ -79,9 +81,11 @@ public class InMemoryRateLimiter implements RateLimiter {
     windows.entrySet().removeIf(entry -> entry.getValue().hasPassed(now));
   }
 
-  // Package-private: exists only for InMemoryRateLimiterTest to observe that eviction actually
-  // shrinks the map. Not part of the RateLimiter contract, so it cannot leak into AuthController
-  // or into a future Redis adapter's surface.
+  /**
+   * How many keys are currently tracked. Package-private: it exists only so a test can observe that
+   * eviction actually shrinks the map, and keeping it off {@link RateLimiter} means it can leak
+   * neither into a caller nor into a future Redis adapter's surface.
+   */
   int trackedKeyCount() {
     return windows.size();
   }

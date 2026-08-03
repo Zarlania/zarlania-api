@@ -17,6 +17,9 @@ public final class MutableClock extends Clock {
 
   private Instant instant;
 
+  /**
+   * @param instant what this clock reads until a test advances it
+   */
   public MutableClock(Instant instant) {
     this.instant = instant;
   }

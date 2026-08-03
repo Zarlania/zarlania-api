@@ -25,14 +25,17 @@ public abstract class BaseEntity {
 
   protected BaseEntity() {}
 
+  /** The primary key, assigned on persist and stable for the row's lifetime. */
   public UUID getId() {
     return id;
   }
 
+  /** When the row was first written. Never moves again — the column is not updatable. */
   public Instant getCreatedAt() {
     return createdAt;
   }
 
+  /** When the row was last written. Equal to {@link #getCreatedAt()} until the first update. */
   public Instant getUpdatedAt() {
     return updatedAt;
   }

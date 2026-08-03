@@ -5,6 +5,14 @@ import java.time.Duration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+/**
+ * Supplies the one {@link Clock} every component reads time from.
+ *
+ * <p>A bean rather than {@code Instant.now()} at each call site for two reasons: a test can
+ * substitute a clock it controls, so expiry and window behaviour can be asserted without sleeping;
+ * and the truncation below then happens once, at the single place every {@link java.time.Instant}
+ * in the application is created.
+ */
 @Configuration
 public class ClockConfig {
 
@@ -17,6 +25,7 @@ public class ClockConfig {
   // one place every Instant in the app is created, means no call site has to remember to do it.
   private static final Duration MICROSECOND_RESOLUTION = Duration.ofNanos(1_000);
 
+  /** The application-wide clock: UTC, ticking at the microsecond precision the schema stores. */
   @Bean
   public Clock clock() {
     return Clock.tick(Clock.systemUTC(), MICROSECOND_RESOLUTION);

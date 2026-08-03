@@ -18,10 +18,12 @@ public class RecordingEmailSender implements EmailSender {
     messages.add(message);
   }
 
+  /** Everything sent so far, oldest first, as an immutable snapshot. */
   public List<EmailMessage> messages() {
     return List.copyOf(messages);
   }
 
+  /** Forgets everything recorded. Tests that assert on counts run this between cases. */
   public void clear() {
     messages.clear();
   }

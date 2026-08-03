@@ -12,6 +12,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * The users domain's whole surface to the rest of the application.
+ *
+ * <p>Everything here returns {@link UserDto}, never {@link User}: an entity never leaves the domain
+ * that owns it, so a caller in another domain cannot reach a lazy relation or mutate a row behind
+ * this service's back.
+ */
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -19,11 +26,24 @@ public class UserService {
   private final UserRepository users;
   private final Clock clock;
 
+  /**
+   * Creates an account that cannot log in yet. Verification is a separate step, so nothing here
+   * checks whether the address is real.
+   *
+   * @throws org.springframework.dao.DataIntegrityViolationException if the address or username is
+   *     already taken — the uniqueness constraints are the authority, not a prior existence check
+   */
   @Transactional
   public UserDto createUnverified(String email, String username) {
     return toDto(users.save(new User(email, username)));
   }
 
+  /**
+   * Finds an account by either of the things a person can log in with, address first.
+   *
+   * <p>Both columns are unique and {@code citext}, so the order only decides which lookup runs
+   * first, never which account is found.
+   */
   @Transactional(readOnly = true)
   public Optional<UserDto> findByIdentifier(String emailOrUsername) {
     return users
@@ -32,29 +52,42 @@ public class UserService {
         .map(this::toDto);
   }
 
+  /** Finds an account by id, or empty if no such row exists. */
   @Transactional(readOnly = true)
   public Optional<UserDto> findById(UUID id) {
     return users.findById(id).map(this::toDto);
   }
 
+  /** Whether a username is taken, case-insensitively. */
   @Transactional(readOnly = true)
   public boolean usernameExists(String username) {
     return users.existsByUsername(username);
   }
 
+  /** Whether an address is taken, case-insensitively. */
   @Transactional(readOnly = true)
   public boolean emailExists(String email) {
     return users.existsByEmail(email);
   }
 
+  /**
+   * Records that an account has proved its address, stamping the shared clock. This is what
+   * unblocks login.
+   *
+   * @throws java.util.NoSuchElementException if the account no longer exists — unreachable from the
+   *     verification path, which has just read the row inside the same transaction
+   */
   @Transactional
   public void markEmailVerified(UUID userId) {
     users.findById(userId).orElseThrow().markEmailVerified(clock.instant());
   }
 
-  // DTOs, not entities: the caller is UnverifiedAccountCleanup in the auth domain, and CLAUDE.md's
-  // rule is that an entity never leaves the domain that owns it. A List is safe to materialize here
-  // because the cutoff is days old — the result is the backlog of abandoned signups, not the table.
+  /**
+   * Lists the accounts old enough to purge: registered before {@code cutoff} and still unverified.
+   *
+   * <p>A {@link List} is safe to materialize because the cutoff is days old — the result is the
+   * backlog of abandoned signups, not the table.
+   */
   @Transactional(readOnly = true)
   public List<UserDto> findUnverifiedOlderThan(Instant cutoff) {
     return users.findByEmailVerifiedAtIsNullAndCreatedAtBefore(cutoff).stream()
@@ -62,19 +95,28 @@ public class UserService {
         .toList();
   }
 
-  // Deleting a user is this domain's job, not the caller's: every other domain holds only a plain
-  // user_id FK, so a caller reaching for UserRepository itself would put the order of the dependent
-  // deletes outside the domain that owns the row.
+  /**
+   * Deletes an account outright.
+   *
+   * <p>Deleting a user is this domain's job, not the caller's: every other domain holds only a
+   * plain {@code user_id} foreign key, so a caller reaching for the repository itself would put the
+   * order of the dependent deletes outside the domain that owns the row.
+   */
   @Transactional
   public void deleteById(UUID userId) {
     users.deleteById(userId);
   }
 
-  // The safe form of deleteById for the cleanup sweep, which lists its candidates in one
-  // transaction and purges each of them in another. In the gap between the two, an account can
-  // complete /auth/verify — a real user whose verification email sat in spam until the deadline —
-  // and purging it then would destroy a live, verified account on the strength of a stale listing.
-  // Returns whether a row actually went, so the caller can abandon a purge that lost that race.
+  /**
+   * The safe form of {@link #deleteById} for the cleanup sweep, which lists its candidates in one
+   * transaction and purges each of them in another.
+   *
+   * <p>In the gap between the two, an account can complete verification — a real person whose
+   * verification email sat in spam until the deadline — and purging it then would destroy a live,
+   * verified account on the strength of a stale listing.
+   *
+   * @return whether a row actually went, so the caller can abandon a purge that lost that race
+   */
   @Transactional
   public boolean deleteIfStillUnverified(UUID userId) {
     return users.deleteByIdAndEmailVerifiedAtIsNull(userId) > 0;

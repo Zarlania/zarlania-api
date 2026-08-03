@@ -11,6 +11,9 @@ public class EmailBudgetExhaustedException extends RuntimeException {
 
   private static final long serialVersionUID = 1L;
 
+  /**
+   * @param message states the budget and window that were exhausted, since this is read in logs
+   */
   public EmailBudgetExhaustedException(String message) {
     super(message);
   }

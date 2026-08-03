@@ -35,6 +35,9 @@ public final class CsrfCredentials {
     this.cookie = cookie;
   }
 
+  /**
+   * Fetches a matching token-and-cookie pair the way a real client does, over the CSRF endpoint.
+   */
   public static CsrfCredentials fetch(MockMvc mockMvc) throws Exception {
     MvcResult result = mockMvc.perform(get("/auth/csrf")).andExpect(status().isOk()).andReturn();
     String body = result.getResponse().getContentAsString();
@@ -44,6 +47,7 @@ public final class CsrfCredentials {
         result.getResponse().getCookie(CSRF_COOKIE));
   }
 
+  /** Attaches both halves of the pair, which is what a request to a guarded route needs. */
   public MockHttpServletRequestBuilder applyTo(MockHttpServletRequestBuilder request) {
     return applyHeaderTo(request).cookie(cookie);
   }

@@ -65,6 +65,10 @@ public class RegistrationEmailListener {
   // EmailVerificationService's own — and without this flag Spring would silently drop the event
   // there, losing every resent verification email. The duplicate notice has only the transactional
   // publisher, so it needs no fallback.
+  /**
+   * Sends the verification email once the registration that asked for it has committed, so a rolled
+   * back registration never emails a link to a row that does not exist.
+   */
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onVerificationEmailRequested(VerificationEmailRequested event) {
     String verificationUrl =
@@ -87,6 +91,10 @@ public class RegistrationEmailListener {
   // enters it — the account already exists, so there is nothing to create. With no transaction
   // active at publication time, Spring would silently discard the event and the duplicate-attempt
   // notice would never be sent.
+  /**
+   * Tells the existing owner that someone tried to register their address again. Carries no token
+   * and no link: whoever made the attempt has not proved they control the mailbox.
+   */
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onDuplicateRegistrationAttempted(DuplicateRegistrationAttempted event) {
     dispatch(
@@ -99,15 +107,17 @@ public class RegistrationEmailListener {
                 + " you, sign in with your existing account instead."));
   }
 
-  // EmailSender is a port (CLAUDE.md's "infra plug-and-play"): its implementations — a Resend
-  // HTTP client today, something else tomorrow — throw whatever unchecked exception their own
-  // client library uses, and the interface declares none. RuntimeException is the only type
-  // narrow enough to still be "an email failure" and broad enough to cover every current and
-  // future implementation, which is why this catch is deliberately wider than Checkstyle's
-  // IllegalCatch default allows.
-  //
-  // The two failure modes are caught separately so each gets its own marker: a budget rejection
-  // is this service stopping itself, a provider refusal is something outside it breaking.
+  /**
+   * EmailSender is a port (CLAUDE.md's "infra plug-and-play"): its implementations — a Resend HTTP
+   * client today, something else tomorrow — throw whatever unchecked exception their own client
+   * library uses, and the interface declares none. RuntimeException is the only type narrow enough
+   * to still be "an email failure" and broad enough to cover every current and future
+   * implementation, which is why this catch is deliberately wider than Checkstyle's IllegalCatch
+   * default allows.
+   *
+   * <p>The two failure modes are caught separately so each gets its own marker: a budget rejection
+   * is this service stopping itself, a provider refusal is something outside it breaking.
+   */
   @SuppressWarnings("checkstyle:IllegalCatch")
   private void sendSafely(String recipient, EmailMessage message) {
     try {
@@ -119,17 +129,19 @@ public class RegistrationEmailListener {
     }
   }
 
-  // The send is handed to EmailConfig's dispatch pool rather than run here, because "here" is the
-  // request thread. An AFTER_COMMIT listener still runs synchronously on whichever thread published
-  // the event — the commit has happened, but the response has not been written yet — so an inline
-  // provider round trip lands squarely in the caller's measured response time. That matters most on
-  // /auth/resend, where only one of the three outcomes publishes an event at all: leaving the send
-  // inline would make "this email belongs to an unverified account" measurable from the outside,
-  // undoing the decoy hash RegistrationService pays on every branch to prevent exactly that.
-  //
-  // Rejection is caught rather than allowed to escape, for the same reason. A full queue throwing
-  // back into the publisher would both surface a 500 for a registration that already committed and
-  // restore the timing difference, since only the sending branch could ever see it.
+  /**
+   * The send is handed to EmailConfig's dispatch pool rather than run here, because "here" is the
+   * request thread. An AFTER_COMMIT listener still runs synchronously on whichever thread published
+   * the event — the commit has happened, but the response has not been written yet — so an inline
+   * provider round trip lands squarely in the caller's measured response time. That matters most on
+   * /auth/resend, where only one of the three outcomes publishes an event at all: leaving the send
+   * inline would make "this email belongs to an unverified account" measurable from the outside,
+   * undoing the decoy hash RegistrationService pays on every branch to prevent exactly that.
+   *
+   * <p>Rejection is caught rather than allowed to escape, for the same reason. A full queue
+   * throwing back into the publisher would both surface a 500 for a registration that already
+   * committed and restore the timing difference, since only the sending branch could ever see it.
+   */
   private void dispatch(String recipient, EmailMessage message) {
     try {
       emailDispatchExecutor.execute(() -> sendSafely(recipient, message));

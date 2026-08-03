@@ -21,10 +21,12 @@ public enum ErrorCode {
     this.status = status;
   }
 
+  /** The stable string clients branch on. Part of the API contract — never change a shipped one. */
   public String getCode() {
     return code;
   }
 
+  /** The HTTP status this code answers with. */
   public int getStatus() {
     return status;
   }

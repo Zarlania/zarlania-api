@@ -19,9 +19,11 @@ public class LoggingEmailSender implements EmailSender {
         stripLineBreaks(message.textBody()));
   }
 
-  // Recipient, subject and body all originate from registration input, so a
-  // crafted value containing a line break could forge extra log lines. Strip
-  // line breaks before they reach the logger rather than trust the caller.
+  /**
+   * Recipient, subject and body all originate from registration input, so a crafted value
+   * containing a line break could forge extra log lines. Strip line breaks before they reach the
+   * logger rather than trust the caller.
+   */
   private static String stripLineBreaks(String value) {
     return value.replace("\r", "").replace("\n", " ");
   }

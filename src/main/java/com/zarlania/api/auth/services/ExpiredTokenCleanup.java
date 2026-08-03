@@ -29,6 +29,13 @@ public class ExpiredTokenCleanup {
   private final EmailVerificationService emailVerificationService;
   private final Clock clock;
 
+  /**
+   * Deletes refresh-token families past their expiry, and verification tokens nothing can read
+   * again.
+   *
+   * <p>Runs on a schedule rather than on each write: neither table is read on the hot path for rows
+   * this old, and sweeping periodically keeps the cost off every request.
+   */
   @Scheduled(fixedDelayString = "${zarlania.auth.cleanup-interval:PT1H}")
   public void pruneDeadTokens() {
     int refreshTokensDeleted = refreshTokens.deleteFamiliesExpiredBefore(clock.instant());

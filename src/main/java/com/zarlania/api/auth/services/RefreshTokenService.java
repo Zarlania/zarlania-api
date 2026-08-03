@@ -49,6 +49,13 @@ public class RefreshTokenService {
   private final AuthProperties authProperties;
   private final Clock clock;
 
+  /**
+   * Opens a new family and issues its first token. Called once per login; every later token in the
+   * session descends from this one.
+   *
+   * @return the raw token, which exists only here and in the client's cookie — the row stores its
+   *     hash
+   */
   @Transactional
   public IssuedRefreshToken startFamily(UUID userId, UUID organizationId) {
     String raw = TokenHasher.newUrlSafeToken();
@@ -63,10 +70,20 @@ public class RefreshTokenService {
     return new IssuedRefreshToken(raw, familyExpiresAt);
   }
 
-  // noRollbackFor is load-bearing: without it, ReusedRefreshTokenException marks the transaction
-  // rollback-only by Spring's default rule for unchecked exceptions, so the revocation below
-  // would be silently discarded at commit — exactly the theft-detection bypass this method exists
-  // to prevent.
+  /**
+   * Redeems a token and issues its successor into the same family.
+   *
+   * <p>{@code noRollbackFor} is load-bearing: without it, {@link ReusedRefreshTokenException} marks
+   * the transaction rollback-only by Spring's default rule for unchecked exceptions, so the
+   * revocation this method performs would be silently discarded at commit — exactly the
+   * theft-detection bypass it exists to prevent.
+   *
+   * @throws ReusedRefreshTokenException if the token was already redeemed, which revokes the whole
+   *     family: two parties hold tokens from one session, and there is no way to tell which is the
+   *     thief
+   * @throws InvalidRefreshTokenException if the token is unknown, revoked, or past its family's
+   *     lifetime
+   */
   @SuppressFBWarnings(
       value = "CRLF_INJECTION_LOGS",
       justification =
@@ -110,6 +127,10 @@ public class RefreshTokenService {
         newRaw, current.getUserId(), current.getOrganizationId(), current.getFamilyExpiresAt());
   }
 
+  /**
+   * Revokes every unrevoked row in the family a token belongs to. A no-op for an unknown token, so
+   * that logout says nothing about whether the token was real.
+   */
   @Transactional
   public void revokeFamilyOf(String raw) {
     tokens
@@ -121,10 +142,12 @@ public class RefreshTokenService {
             });
   }
 
-  // A pure function of familyId: XORing the UUID's two halves together folds all 128 bits of
-  // entropy into the 32-bit key pg_advisory_xact_lock(int, int) takes, so the same family always
-  // produces the same key. A collision between two different families only makes them serialize
-  // against each other unnecessarily — never a correctness problem, just lost concurrency.
+  /**
+   * A pure function of familyId: XORing the UUID's two halves together folds all 128 bits of
+   * entropy into the 32-bit key pg_advisory_xact_lock(int, int) takes, so the same family always
+   * produces the same key. A collision between two different families only makes them serialize
+   * against each other unnecessarily — never a correctness problem, just lost concurrency.
+   */
   private void lockFamily(UUID familyId) {
     long msb = familyId.getMostSignificantBits();
     long lsb = familyId.getLeastSignificantBits();
@@ -132,9 +155,11 @@ public class RefreshTokenService {
     tokens.acquireFamilyLock(FAMILY_LOCK_CLASSIFIER, key);
   }
 
-  // MessageDigest.isEqual, not String.equals: the hashes being compared are secrets derived from
-  // the caller-supplied raw token, and a short-circuiting equals() leaks how many leading bytes
-  // matched through response timing (FindSecBugs UNSAFE_HASH_EQUALS).
+  /**
+   * MessageDigest.isEqual, not String.equals: the hashes being compared are secrets derived from
+   * the caller-supplied raw token, and a short-circuiting equals() leaks how many leading bytes
+   * matched through response timing (FindSecBugs UNSAFE_HASH_EQUALS).
+   */
   private RefreshToken findByHash(List<RefreshToken> family, String tokenHash) {
     byte[] target = tokenHash.getBytes(StandardCharsets.UTF_8);
     return family.stream()

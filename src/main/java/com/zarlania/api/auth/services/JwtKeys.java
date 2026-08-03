@@ -50,15 +50,29 @@ public final class JwtKeys {
   private final RSAKey signingKey;
   private final JWKSet publicJwkSet;
 
+  /**
+   * Resolves the signing key once, at startup, so a misconfigured deployment fails to boot rather
+   * than failing on the first login.
+   *
+   * @throws IllegalStateException in production if no private key is configured; outside production
+   *     an ephemeral key is generated instead, which is why local development needs no secret
+   */
   public JwtKeys(AuthProperties authProperties, Environment environment) {
     this.signingKey = resolveSigningKey(authProperties, environment);
     this.publicJwkSet = buildPublicJwkSet(signingKey, authProperties.jwtRetiredPublicKeysPem());
   }
 
+  /** The private key access tokens are signed with. Never published — see {@link #publicJwkSet}. */
   public RSAKey signingKey() {
     return signingKey;
   }
 
+  /**
+   * The public half of the signing key plus any retired keys, for verification.
+   *
+   * <p>Retired keys stay in the set so that tokens minted before a rotation keep verifying until
+   * they expire, which is what makes rotating a key a non-event for logged-in clients.
+   */
   public JWKSet publicJwkSet() {
     return publicJwkSet;
   }

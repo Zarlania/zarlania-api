@@ -35,6 +35,15 @@ public class AuthTokenService {
   private final RefreshTokenService refreshTokenService;
   private final JwtService jwtService;
 
+  /**
+   * Authenticates a password and mints a session: an access token plus the first refresh token of a
+   * new family.
+   *
+   * @param identifier either the account's address or its username
+   * @throws com.zarlania.api.errors.ApiException with {@code INVALID_CREDENTIALS} for a wrong
+   *     password and an unknown identifier alike, or {@code EMAIL_UNVERIFIED} when the password was
+   *     right but the address was never proved
+   */
   public MintedSession login(String identifier, String rawPassword) {
     UserDto user = authenticate(identifier, rawPassword);
     if (!user.emailVerified()) {
@@ -48,12 +57,29 @@ public class AuthTokenService {
     return mint(user.id(), personal.id());
   }
 
+  /**
+   * Rotates a refresh token and mints a new access token against the same session.
+   *
+   * @throws com.zarlania.api.errors.ApiException with {@code INVALID_CREDENTIALS} if the token is
+   *     unknown, expired, revoked, or already redeemed — the last of which also revokes the whole
+   *     family, since a replay is the signal that the token was stolen
+   */
   public MintedSession refresh(String rawRefreshToken) {
     RefreshRotation rotation = rotateOrReject(rawRefreshToken);
     requireLiveVerifiedUser(rotation);
     return new MintedSession(
         jwtService.mint(rotation.userId(), rotation.organizationId(), TokenKinds.USER),
         new IssuedRefreshToken(rotation.newRaw(), rotation.familyExpiresAt()));
+  }
+
+  /**
+   * Ends a session by revoking its whole refresh-token family, so no descendant can be redeemed.
+   *
+   * <p>Silent for an unknown or already-revoked token: a client asking to be logged out is logged
+   * out either way, and answering differently would say whether the token was real.
+   */
+  public void logout(String rawRefreshToken) {
+    refreshTokenService.revokeFamilyOf(rawRefreshToken);
   }
 
   private RefreshRotation rotateOrReject(String rawRefreshToken) {
@@ -64,14 +90,16 @@ public class AuthTokenService {
     }
   }
 
-  // Unreachable today, by invariants rather than by a check: the only user-deletion path
-  // (UnverifiedAccountCleanup) clears refresh tokens in the same transaction as the user row, an
-  // unverified user cannot log in to obtain a family, and nothing un-verifies an email. But every
-  // one of those invariants is implicit, and the first future feature to break one — account
-  // deletion, disablement, email change with re-verification — would otherwise leave a dead
-  // account holding a live session for the rest of its 30-day family. The spec asks for this
-  // re-check on refresh explicitly; the rotation that just committed is revoked before rejecting,
-  // so the failed refresh cannot itself leave a fresh live token behind.
+  /**
+   * Unreachable today, by invariants rather than by a check: the only user-deletion path
+   * (UnverifiedAccountCleanup) clears refresh tokens in the same transaction as the user row, an
+   * unverified user cannot log in to obtain a family, and nothing un-verifies an email. But every
+   * one of those invariants is implicit, and the first future feature to break one — account
+   * deletion, disablement, email change with re-verification — would otherwise leave a dead account
+   * holding a live session for the rest of its 30-day family. The spec asks for this re-check on
+   * refresh explicitly; the rotation that just committed is revoked before rejecting, so the failed
+   * refresh cannot itself leave a fresh live token behind.
+   */
   private void requireLiveVerifiedUser(RefreshRotation rotation) {
     boolean verified =
         userService.findById(rotation.userId()).map(UserDto::emailVerified).orElse(false);
@@ -82,16 +110,14 @@ public class AuthTokenService {
     throw new ApiException(ErrorCode.INVALID_CREDENTIALS, REFRESH_REJECTED_MESSAGE);
   }
 
-  public void logout(String rawRefreshToken) {
-    refreshTokenService.revokeFamilyOf(rawRefreshToken);
-  }
-
-  // Split out of login() (rather than the brief's single findByIdentifier().filter(...).
-  // orElseThrow() chain) so the unknown-identifier branch can pay Argon2's cost before throwing.
-  // Without this, an unknown identifier returns after one fast SELECT while a known identifier
-  // with a wrong password additionally runs Argon2id (tens of milliseconds at this service's
-  // parameters), and that gap alone lets a caller enumerate valid identifiers purely by timing —
-  // the same channel Task 11 closed for register/resend, closed here the same way.
+  /**
+   * Split out of login() (rather than the brief's single findByIdentifier().filter(...).
+   * orElseThrow() chain) so the unknown-identifier branch can pay Argon2's cost before throwing.
+   * Without this, an unknown identifier returns after one fast SELECT while a known identifier with
+   * a wrong password additionally runs Argon2id (tens of milliseconds at this service's
+   * parameters), and that gap alone lets a caller enumerate valid identifiers purely by timing —
+   * the same channel Task 11 closed for register/resend, closed here the same way.
+   */
   private UserDto authenticate(String identifier, String rawPassword) {
     Optional<UserDto> user = userService.findByIdentifier(identifier);
     if (user.isEmpty()) {
@@ -110,5 +136,11 @@ public class AuthTokenService {
   }
 
   /** An access token paired with the refresh token issued alongside it. */
+  /**
+   * What a successful login or refresh hands back.
+   *
+   * @param accessToken the short-lived bearer token, returned in the response body
+   * @param refresh the long-lived refresh token, which the controller writes to an HttpOnly cookie
+   */
   public record MintedSession(String accessToken, IssuedRefreshToken refresh) {}
 }

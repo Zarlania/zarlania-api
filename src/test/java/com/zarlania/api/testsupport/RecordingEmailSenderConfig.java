@@ -17,6 +17,7 @@ import org.springframework.context.annotation.Primary;
 @TestConfiguration
 public class RecordingEmailSenderConfig {
 
+  /** Replaces the real sender, so a test can assert on what would have been emailed. */
   @Bean
   @Primary
   public RecordingEmailSender recordingEmailSender() {
@@ -31,6 +32,10 @@ public class RecordingEmailSenderConfig {
   // Carries the same @Qualifier as EmailConfig's bean rather than replacing it by name — bean
   // definition overriding is off by default in Boot. Both beans then match the injection point's
   // qualifier, and @Primary picks this one.
+  /**
+   * Runs dispatch on the calling thread, so a test can assert on a sent message immediately after
+   * the request that triggered it rather than polling for one.
+   */
   @Bean
   @Primary
   @Qualifier(EmailConfig.DISPATCH_EXECUTOR_BEAN)

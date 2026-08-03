@@ -40,8 +40,10 @@ public class ResendEmailSender implements EmailSender {
         "text", message.textBody());
   }
 
-  // Resend's own error responses carry no detail worth surfacing to the caller,
-  // so only the status is preserved. The caller (registration) maps this to a 500.
+  /**
+   * Resend's own error responses carry no detail worth surfacing to the caller, so only the status
+   * is preserved. The caller (registration) maps this to a 500.
+   */
   private void throwOnError(ClientHttpResponse response) throws IOException {
     throw new IllegalStateException("Resend responded with status " + response.getStatusCode());
   }

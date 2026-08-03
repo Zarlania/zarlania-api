@@ -6,7 +6,7 @@ import java.util.Enumeration;
 import java.util.Optional;
 
 /**
- * Resolves the address a request should be attributed to — the identity {@code AuthController}'s
+ * Resolves the address a request should be attributed to — the identity {@code ThrottleAspect}'s
  * throttle buckets are keyed on.
  *
  * <p>The deployed request chain has <strong>two</strong> appending hops, not one: Render fronts
@@ -77,23 +77,36 @@ public final class ClientIpResolver {
 
   private ClientIpResolver() {}
 
-  // Reading a request header is only sound here because of what this particular header is:
-  // CF-Connecting-IP is the one in the chain a client cannot dictate, since Cloudflare replaces it
-  // at the edge on every request it proxies. A request that never crossed the edge carries no such
-  // header and falls back to the TCP peer rather than to anything the caller wrote. The result keys
-  // a rate-limit bucket only — never an authorization decision, an audit identity, a query, or a
-  // response. (FindSecBugs's SERVLET_HEADER fires on getHeader, not getHeaders, so no suppression
-  // is needed; if that ever changes, this paragraph is the justification.)
+  /**
+   * Resolves the address this request should be attributed to.
+   *
+   * <p>The result keys a rate-limit bucket only — never an authorization decision, an audit
+   * identity, a query, or a response. That is what makes reading a request header sound here:
+   * {@code CF-Connecting-IP} is the one header in the chain a client cannot dictate, since
+   * Cloudflare replaces it at the edge on every request it proxies. A request that never crossed
+   * the edge carries no such header and falls back to the TCP peer rather than to anything the
+   * caller wrote.
+   *
+   * <p>FindSecBugs's {@code SERVLET_HEADER} fires on {@code getHeader}, not {@code getHeaders}, so
+   * no suppression is needed; if that ever changes, the paragraph above is the justification.
+   *
+   * @return a canonical IP literal, at most 45 characters, so no caller can mint unbounded distinct
+   *     bucket keys
+   */
   public static String resolve(HttpServletRequest request) {
     return lastHeaderValue(request, CLOUDFLARE_CLIENT_IP_HEADER)
         .flatMap(ClientIpResolver::canonicalAddress)
         .orElseGet(request::getRemoteAddr);
   }
 
-  // getHeaders, not getHeader: getHeader returns only the *first* line of a repeated header. If a
-  // client's own CF-Connecting-IP line and the edge's ever arrived as two lines rather than the
-  // edge overwriting the one, getHeader would read the client's and the header would be forgeable
-  // again. The last line is the one written latest in the chain, so that is the one taken.
+  /**
+   * Reads the last line of a repeated header, which is the one written latest in the proxy chain.
+   *
+   * <p>{@code getHeaders}, not {@code getHeader}: {@code getHeader} returns only the first line. If
+   * a client's own CF-Connecting-IP line and the edge's ever arrived as two lines rather than the
+   * edge overwriting the one, getHeader would read the client's and the header would be forgeable
+   * again.
+   */
   private static Optional<String> lastHeaderValue(HttpServletRequest request, String name) {
     Enumeration<String> values = request.getHeaders(name);
     if (values == null) {
@@ -106,29 +119,33 @@ public final class ClientIpResolver {
     return Optional.ofNullable(lastValue).map(String::trim);
   }
 
-  // The value has to parse as one bare IP literal or it is not used at all, because taking the last
-  // header line is only half the defence. RFC 9110 §5.3 makes `A: x` and `A: y` interchangeable
-  // with `A: x, y`, and any recipient in the chain may fold one form into the other — so a client
-  // line surviving alongside the edge's can arrive comma-folded into a single line, and
-  // "1.2.3.4, 208.54.226.138" would otherwise become the bucket key verbatim and vary with whatever
-  // the caller sent. Requiring a bare literal rejects that in the same move as a port suffix, an
-  // `unknown` token, and any other junk (a scope id is rejected separately below, and for a
-  // different reason): every shape this does not recognise becomes the shared TCP-peer bucket,
-  // which is the invariant this class claims throughout.
-  //
-  // InetAddress.ofLiteral, not getByName: ofLiteral parses textual forms only and never performs a
-  // DNS lookup, so an unrecognised value cannot turn into a blocking network call from the request
-  // thread. getHostAddress then canonicalises the parse — "[::1]" and "::1", or "::ffff:10.0.0.1"
-  // and "10.0.0.1", are one address and must not become two buckets, for the same reason the
-  // per-account keys in AuthController are normalised. It also bounds the key: a parsed literal is
-  // at most 45 characters, so no caller can mint unbounded distinct keys in the limiter's map.
-  // Rejected before parsing, not left to InetAddress.ofLiteral: a %-qualified literal such as
-  // "fe80::1%eth0" is a valid IPv6 zone id, so whether it parses depends on which interface names
-  // exist on the host running this code — real on a typical Linux box, absent on macOS. A scope id
-  // names a *local* interface for disambiguating link-local addresses on this machine; it says
-  // nothing about a remote peer, so it can never be part of that peer's identity. Rejecting it
-  // outright keeps the bucket key identical on every platform instead of depending on interface
-  // names that were never about the client in the first place.
+  /**
+   * Accepts a header value only if it is one bare IP literal, and canonicalises it.
+   *
+   * <p>Anything else is refused outright, because taking the last header line is only half the
+   * defence. RFC 9110 §5.3 makes {@code A: x} and {@code A: y} interchangeable with {@code A: x,
+   * y}, and any recipient in the chain may fold one form into the other — so a client line
+   * surviving alongside the edge's can arrive comma-folded into a single line, and "1.2.3.4,
+   * 208.54.226.138" would otherwise become the bucket key verbatim and vary with whatever the
+   * caller sent. Requiring a bare literal rejects that in the same move as a port suffix, an {@code
+   * unknown} token, and any other junk (a scope id is rejected separately below, and for a
+   * different reason): every shape this does not recognise becomes the shared TCP-peer bucket,
+   * which is the invariant this class claims throughout.
+   *
+   * <p>InetAddress.ofLiteral, not getByName: ofLiteral parses textual forms only and never performs
+   * a DNS lookup, so an unrecognised value cannot turn into a blocking network call from the
+   * request thread. getHostAddress then canonicalises the parse — "[::1]" and "::1", or
+   * "::ffff:10.0.0.1" and "10.0.0.1", are one address and must not become two buckets, for the same
+   * reason the per-account keys in {@code throttle.ThrottleKeys} are normalised. It also bounds the
+   * key: a parsed literal is at most 45 characters, so no caller can mint unbounded distinct keys
+   * in the limiter's map. Rejected before parsing, not left to InetAddress.ofLiteral: a %-qualified
+   * literal such as "fe80::1%eth0" is a valid IPv6 zone id, so whether it parses depends on which
+   * interface names exist on the host running this code — real on a typical Linux box, absent on
+   * macOS. A scope id names a *local* interface for disambiguating link-local addresses on this
+   * machine; it says nothing about a remote peer, so it can never be part of that peer's identity.
+   * Rejecting it outright keeps the bucket key identical on every platform instead of depending on
+   * interface names that were never about the client in the first place.
+   */
   private static Optional<String> canonicalAddress(String value) {
     if (value.indexOf('%') >= 0) {
       return Optional.empty();

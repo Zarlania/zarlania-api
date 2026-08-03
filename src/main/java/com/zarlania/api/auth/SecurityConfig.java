@@ -78,6 +78,10 @@ public class SecurityConfig {
   private final JwtKeys jwtKeys;
   private final AuthProperties authProperties;
 
+  /**
+   * The one filter chain: every request needs a valid JWT except {@link #PUBLIC_PATHS}, sessions
+   * are never created, and CSRF is scoped to the two cookie-authenticated routes.
+   */
   @Bean
   // THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION: HttpSecurity#build's `throws Exception` is
   // dictated by Spring Security's own SecurityBuilder<O> contract (see HttpSecurity,
@@ -100,49 +104,14 @@ public class SecurityConfig {
     return http.build();
   }
 
-  // Scoped, not disabled. Every route on this service except two authenticates with a bearer token
-  // in the Authorization header, and a browser never attaches that by itself — a forged cross-site
-  // request arrives with no credential at all, so there is nothing there to protect and demanding a
-  // CSRF token would only burden clients that face no risk. The exceptions are POST /auth/refresh
-  // and POST /auth/logout, which authenticate with the zarlania_refresh *cookie*; that the browser
-  // does attach automatically, which makes those two the service's entire CSRF surface and the only
-  // two the token check guards.
-  //
-  // The token is defence in depth rather than the first line: the refresh cookie is already
-  // SameSite=Strict, so a browser withholds it on cross-site requests to begin with, and the CORS
-  // allow-list is explicit rather than a wildcard. This closes what those leave open — a
-  // same-site-but-untrusted origin (any other host under the registrable domain), and browsers or
-  // extensions where SameSite is not honoured as advertised.
-  private void configureCsrf(CsrfConfigurer<HttpSecurity> csrf) {
-    csrf.csrfTokenRepository(csrfTokenRepository())
-        .requireCsrfProtectionMatcher(
-            new OrRequestMatcher(
-                PathPatternRequestMatcher.pathPattern(HttpMethod.POST, REFRESH_PATH),
-                PathPatternRequestMatcher.pathPattern(HttpMethod.POST, LOGOUT_PATH)));
-  }
-
-  // Double-submit: the server sets the token in a cookie, the client echoes it back in a header,
-  // and only a caller able to obtain both can produce a matching pair — an attacker's page can make
-  // the browser send the cookie but cannot read it to build the header.
-  //
-  // HttpOnly stays on, which is where this departs from the usual SPA recipe. That recipe has
-  // JavaScript read the cookie with document.cookie, which cannot work here: the browser client is
-  // served from zarlania.com while this API sets cookies for api.zarlania.com, and document.cookie
-  // is scoped by host, not by site. GET /auth/csrf hands the client the value over CORS instead, so
-  // the cookie can stay unreadable to script entirely — which is strictly better, because it also
-  // puts the token out of reach of an XSS on any sibling host.
-  private CookieCsrfTokenRepository csrfTokenRepository() {
-    CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
-    repository.setCookiePath(CSRF_COOKIE_PATH);
-    repository.setCookieCustomizer(
-        cookie -> cookie.secure(authProperties.cookieSecure()).sameSite(SAME_SITE_STRICT));
-    return repository;
-  }
-
-  // createDefaultWithIssuer, not the default validator: the default checks only that the token has
-  // not expired. Pinning `iss` means a token minted by some other issuer that happens to verify
-  // against a key in this set — the case a future shared or mistakenly reused key would create —
-  // is rejected rather than accepted as one of ours.
+  /**
+   * Verifies access tokens against this service's own key set, and pins the issuer.
+   *
+   * <p>{@code createDefaultWithIssuer}, not the default validator: the default checks only that the
+   * token has not expired. Pinning {@code iss} means a token minted by some other issuer that
+   * happens to verify against a key in this set — the case a future shared or mistakenly reused key
+   * would create — is rejected rather than accepted as one of ours.
+   */
   @Bean
   public JwtDecoder jwtDecoder() {
     NimbusJwtDecoder decoder =
@@ -151,6 +120,13 @@ public class SecurityConfig {
     return decoder;
   }
 
+  /**
+   * Allows the browser client's origin, with credentials, so the refresh cookie can travel.
+   *
+   * @param allowedOrigins comma-separated and always an explicit list, never a wildcard — Spring
+   *     rejects the wildcard paired with credentials at startup, which is the check that keeps this
+   *     safe
+   */
   @Bean
   public CorsConfigurationSource corsConfigurationSource(
       @Value("${zarlania.cors.allowed-origins}") String allowedOrigins) {
@@ -167,6 +143,49 @@ public class SecurityConfig {
     UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
     source.registerCorsConfiguration(CORS_ALL_PATHS_PATTERN, configuration);
     return source;
+  }
+
+  /**
+   * Scoped, not disabled. Every route on this service except two authenticates with a bearer token
+   * in the Authorization header, and a browser never attaches that by itself — a forged cross-site
+   * request arrives with no credential at all, so there is nothing there to protect and demanding a
+   * CSRF token would only burden clients that face no risk. The exceptions are POST /auth/refresh
+   * and POST /auth/logout, which authenticate with the zarlania_refresh *cookie*; that the browser
+   * does attach automatically, which makes those two the service's entire CSRF surface and the only
+   * two the token check guards.
+   *
+   * <p>The token is defence in depth rather than the first line: the refresh cookie is already
+   * SameSite=Strict, so a browser withholds it on cross-site requests to begin with, and the CORS
+   * allow-list is explicit rather than a wildcard. This closes what those leave open — a same-site-
+   * but-untrusted origin (any other host under the registrable domain), and browsers or extensions
+   * where SameSite is not honoured as advertised.
+   */
+  private void configureCsrf(CsrfConfigurer<HttpSecurity> csrf) {
+    csrf.csrfTokenRepository(csrfTokenRepository())
+        .requireCsrfProtectionMatcher(
+            new OrRequestMatcher(
+                PathPatternRequestMatcher.pathPattern(HttpMethod.POST, REFRESH_PATH),
+                PathPatternRequestMatcher.pathPattern(HttpMethod.POST, LOGOUT_PATH)));
+  }
+
+  /**
+   * Double-submit: the server sets the token in a cookie, the client echoes it back in a header,
+   * and only a caller able to obtain both can produce a matching pair — an attacker's page can make
+   * the browser send the cookie but cannot read it to build the header.
+   *
+   * <p>HttpOnly stays on, which is where this departs from the usual SPA recipe. That recipe has
+   * JavaScript read the cookie with document.cookie, which cannot work here: the browser client is
+   * served from zarlania.com while this API sets cookies for api.zarlania.com, and document.cookie
+   * is scoped by host, not by site. GET /auth/csrf hands the client the value over CORS instead, so
+   * the cookie can stay unreadable to script entirely — which is strictly better, because it also
+   * puts the token out of reach of an XSS on any sibling host.
+   */
+  private CookieCsrfTokenRepository csrfTokenRepository() {
+    CookieCsrfTokenRepository repository = new CookieCsrfTokenRepository();
+    repository.setCookiePath(CSRF_COOKIE_PATH);
+    repository.setCookieCustomizer(
+        cookie -> cookie.secure(authProperties.cookieSecure()).sameSite(SAME_SITE_STRICT));
+    return repository;
   }
 
   private static List<String> splitAndTrim(String commaSeparatedValues) {

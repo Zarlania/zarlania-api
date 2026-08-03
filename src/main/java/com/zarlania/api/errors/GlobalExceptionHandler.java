@@ -57,11 +57,28 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     return response.body(problem);
   }
 
-  // Overriding this protected hook (rather than adding a second @ExceptionHandler for
-  // MethodArgumentNotValidException) is what lets the superclass keep routing the rest of its
-  // exception family — HttpMessageNotReadableException, HttpRequestMethodNotSupportedException,
-  // etc. — through its own default handling. A second @ExceptionHandler for this exact type
-  // would collide with the superclass's mapping for it and fail to start.
+  /**
+   * Catches everything the framework family above and {@link ApiException} do not: a bug, an
+   * unreachable dependency, a constraint violation that slipped past a pre-check.
+   *
+   * <p>The client gets a generic message either way — the real detail belongs in the log, not in a
+   * response where it would describe this service's internals to whoever provoked it.
+   */
+  @ExceptionHandler(Exception.class)
+  public ProblemDetail handleUnexpectedException(Exception exception) {
+    log.error("Unhandled exception reached GlobalExceptionHandler", exception);
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.INTERNAL_SERVER_ERROR, UNEXPECTED_ERROR_DETAIL);
+  }
+
+  /**
+   * Answers a request whose body failed bean validation, listing which fields failed and why.
+   *
+   * <p>Overriding this protected hook — rather than adding a second {@code @ExceptionHandler} for
+   * {@link MethodArgumentNotValidException} — is what lets the superclass keep routing the rest of
+   * its exception family through its own default handling. A second handler for this exact type
+   * would collide with the superclass's mapping for it and fail to start.
+   */
   @Override
   protected ResponseEntity<Object> handleMethodArgumentNotValid(
       MethodArgumentNotValidException exception,
@@ -73,16 +90,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     problem.setProperty(CODE_PROPERTY, ErrorCode.VALIDATION_FAILED.getCode());
     problem.setProperty(ERRORS_PROPERTY, fieldErrors(exception));
     return handleExceptionInternal(exception, problem, headers, HttpStatus.BAD_REQUEST, request);
-  }
-
-  // Catches everything the framework family above and ApiException do not: a bug, an
-  // unreachable dependency, a constraint violation that slipped past a pre-check. The client
-  // gets a generic message either way — the real detail belongs in the log, not the response.
-  @ExceptionHandler(Exception.class)
-  public ProblemDetail handleUnexpectedException(Exception exception) {
-    log.error("Unhandled exception reached GlobalExceptionHandler", exception);
-    return ProblemDetail.forStatusAndDetail(
-        HttpStatus.INTERNAL_SERVER_ERROR, UNEXPECTED_ERROR_DETAIL);
   }
 
   private static Map<String, String> fieldErrors(MethodArgumentNotValidException exception) {

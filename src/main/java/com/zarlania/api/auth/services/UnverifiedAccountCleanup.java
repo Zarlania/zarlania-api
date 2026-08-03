@@ -29,6 +29,14 @@ public class UnverifiedAccountCleanup {
   private final AuthProperties authProperties;
   private final Clock clock;
 
+  /**
+   * Purges accounts that never verified their address within the configured window, along with
+   * everything hanging off them.
+   *
+   * <p>Each account is purged in its own transaction, so one failure abandons that account only and
+   * the sweep carries on. Listing and purging are separate transactions, so every purge re-checks
+   * that the account is still unverified before removing it.
+   */
   @Scheduled(fixedDelayString = "${zarlania.auth.cleanup-interval:PT1H}")
   public void purgeExpiredUnverifiedAccounts() {
     Instant cutoff = clock.instant().minus(authProperties.unverifiedAccountMaxAge());

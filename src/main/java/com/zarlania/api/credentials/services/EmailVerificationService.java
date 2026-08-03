@@ -12,6 +12,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Issues and redeems the single-use tokens that prove someone can read the address they registered
+ * with.
+ *
+ * <p>Two promises hold this together, and each needs a lock to be true under concurrency: issuing a
+ * fresh token invalidates every outstanding one, and a token can be redeemed exactly once. Only the
+ * SHA-256 hash is ever stored, so the raw token exists only in the email that was sent.
+ */
 @Service
 @RequiredArgsConstructor
 public class EmailVerificationService {
@@ -31,6 +39,11 @@ public class EmailVerificationService {
   private final CredentialsProperties credentialsProperties;
   private final Clock clock;
 
+  /**
+   * Issues a fresh token, invalidating every outstanding one for the account.
+   *
+   * @return the raw token, which the caller emails and this application never stores or sees again
+   */
   @Transactional
   public String issue(UUID userId) {
     // Before the delete, not after: the point is to serialize the whole delete-then-insert pair
@@ -44,16 +57,29 @@ public class EmailVerificationService {
     return raw;
   }
 
-  // Exposed for the auth domain's hourly sweep, which owns the schedule but must not reach into
-  // this domain's repository to run it. Returns how many rows went, so the caller can log it.
+  /**
+   * Prunes tokens nothing can read again — consumed ones, and expired ones.
+   *
+   * <p>Exposed for the auth domain's hourly sweep, which owns the schedule but must not reach into
+   * this domain's repository to run it.
+   *
+   * @return how many rows went, so the caller can log it
+   */
   @Transactional
   public int pruneDeadTokens() {
     return tokens.deleteConsumedTokensAndThoseExpiredBefore(clock.instant());
   }
 
-  // The locking finder, not the plain one: this method reads consumedAt and then writes it, so a
-  // second request carrying the same token must not be allowed to read the row in between. See
-  // EmailVerificationTokenRepository#findWithLockByTokenHash.
+  /**
+   * Redeems a token, if it is still redeemable.
+   *
+   * <p>Uses the locking finder, not the plain one: this reads {@code consumedAt} and then writes
+   * it, so a second request carrying the same token must not be allowed to read the row in between.
+   * See {@link EmailVerificationTokenRepository#findWithLockByTokenHash}.
+   *
+   * @return the account the token verifies, or empty if it is unknown, expired or already consumed
+   *     — the three are indistinguishable to the caller on purpose
+   */
   @Transactional
   public Optional<UUID> consume(String rawToken) {
     return tokens
@@ -66,10 +92,12 @@ public class EmailVerificationService {
             });
   }
 
-  // A pure function of userId: XORing the UUID's two halves together folds all 128 bits of entropy
-  // into the 32-bit key pg_advisory_xact_lock(int, int) takes, so the same user always produces the
-  // same key. A collision between two different users only makes them serialize against each other
-  // unnecessarily — never a correctness problem, just lost concurrency.
+  /**
+   * A pure function of userId: XORing the UUID's two halves together folds all 128 bits of entropy
+   * into the 32-bit key pg_advisory_xact_lock(int, int) takes, so the same user always produces the
+   * same key. A collision between two different users only makes them serialize against each other
+   * unnecessarily — never a correctness problem, just lost concurrency.
+   */
   private void lockUserTokens(UUID userId) {
     long msb = userId.getMostSignificantBits();
     long lsb = userId.getLeastSignificantBits();

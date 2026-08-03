@@ -2,6 +2,7 @@ package com.zarlania.api.throttle;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -18,6 +19,18 @@ public record ThrottleProperties(
     Map<String, EndpointLimits> endpoints,
     int emailBudgetLimit,
     Duration emailBudgetWindow) {
+
+  /**
+   * Copies the bound map, so the limits cannot be altered after startup by anything holding a
+   * reference to what the binder passed in. A throttle whose limits could be changed at runtime by
+   * an unrelated caller would be no throttle at all.
+   *
+   * @throws NullPointerException if no {@code endpoints} block is configured — failing at startup
+   *     is the right answer, since every {@link Throttled} endpoint would otherwise run unlimited
+   */
+  public ThrottleProperties {
+    endpoints = Map.copyOf(Objects.requireNonNull(endpoints, "zarlania.throttle.endpoints"));
+  }
 
   /**
    * One endpoint's two limits, both counted over {@link ThrottleProperties#window()}.

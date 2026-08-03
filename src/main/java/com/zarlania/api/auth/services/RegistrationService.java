@@ -38,11 +38,20 @@ public class RegistrationService {
   private final AccountCreator accountCreator;
   private final ApplicationEventPublisher events;
 
-  // Deliberately not @Transactional; the transaction lives one level down, in AccountCreator. The
-  // two existence checks below are advisory only — nothing stops a competing registration from
-  // committing between a check and the insert that follows it — so `users`' own unique constraints
-  // on email and username are the real enforcement, and losing to one of them has to be handled
-  // from outside the rolled-back transaction. See resolveRegistrationConflict.
+  /**
+   * Registers an account and starts email verification.
+   *
+   * <p>Deliberately not {@code @Transactional}; the transaction lives one level down, in {@code
+   * AccountCreator}. The existence checks are advisory only — nothing stops a competing
+   * registration from committing between a check and the insert that follows it — so the {@code
+   * users} table's own unique constraints are the real enforcement, and losing to one of them has
+   * to be handled from outside the rolled-back transaction.
+   *
+   * @throws com.zarlania.api.errors.ApiException with {@code USERNAME_TAKEN} if the username is
+   *     already in use. An address already in use is <em>not</em> an error: the caller gets the
+   *     same answer either way, and the existing owner is emailed instead, so the response cannot
+   *     be used to enumerate accounts.
+   */
   public void register(String email, String username, String rawPassword) {
     if (userService.usernameExists(username)) {
       throw new ApiException(ErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
@@ -59,17 +68,56 @@ public class RegistrationService {
     }
   }
 
-  // Reached only by the loser of two concurrent registrations, whose transaction has already rolled
-  // back. Without this the constraint violation would escape as a generic 500 — which is not just
-  // an ugly failure but an enumeration channel, since a caller who fires two requests at once gets
-  // a 500 for an email that is free and two indistinguishable 202s for one that is taken.
-  //
-  // Which constraint lost is re-derived by asking the same questions register() asked, rather than
-  // by parsing the constraint name out of the exception: the answers are now unambiguous, because
-  // the winning transaction has committed. Username is checked first so that the outcome matches
-  // the order of the checks in register() exactly, and the reminder path afterwards is the very
-  // same method the sequential "email already registered" case uses — so the two are identical in
-  // status, body and the email that follows, which is the whole point.
+  /**
+   * Reached only by the loser of two concurrent registrations, whose transaction has already rolled
+   * back. Without this the constraint violation would escape as a generic 500 — which is not just
+   * an ugly failure but an enumeration channel, since a caller who fires two requests at once gets
+   * a 500 for an email that is free and two indistinguishable 202s for one that is taken.
+   *
+   * <p>Which constraint lost is re-derived by asking the same questions register() asked, rather
+   * than by parsing the constraint name out of the exception: the answers are now unambiguous,
+   * because the winning transaction has committed. Username is checked first so that the outcome
+   * matches the order of the checks in register() exactly, and the reminder path afterwards is the
+   * very same method the sequential "email already registered" case uses — so the two are identical
+   * in status, body and the email that follows, which is the whole point.
+   */
+  /**
+   * Redeems a verification token and marks the account's address proved.
+   *
+   * @return whether the token was redeemable; false covers unknown, expired and already-consumed
+   *     alike, which the caller is expected to answer identically
+   */
+  @Transactional
+  public boolean verify(String rawToken) {
+    Optional<UUID> userId = emailVerificationService.consume(rawToken);
+    userId.ifPresent(userService::markEmailVerified);
+    return userId.isPresent();
+  }
+
+  /**
+   * Sends a fresh verification email, if the address exists and is not already verified.
+   *
+   * <p>Silent about which of those it was: an unknown address, an already-verified one and a real
+   * resend are indistinguishable to the caller, in timing as well as in response.
+   *
+   * <p>Deliberately not {@code @Transactional}, unlike registration: the decoy hash costs tens of
+   * milliseconds on every call, and a transaction opened around it would hold a pooled connection
+   * for all of that time — including on the two branches that then do nothing at all. Each
+   * collaborator manages its own transaction instead.
+   */
+  public void resend(String email) {
+    // Unconditional, not just on the branches that would otherwise skip it: resend has no
+    // "real" Argon2 work of its own (unlike register's createPassword) for a decoy to stand in
+    // for, so every outcome — unknown email, already verified, resent — needs the same paid-up-
+    // front cost to stay indistinguishable from each other. Hoisting it out of a transaction
+    // changes what it holds, not when it runs or what it costs.
+    credentialsService.hashDecoyPassword();
+    userService
+        .findByIdentifier(email)
+        .filter(user -> !user.emailVerified())
+        .ifPresent(user -> issueVerification(email, user.id()));
+  }
+
   private void resolveRegistrationConflict(
       String email, String username, DataIntegrityViolationException cause) {
     if (userService.usernameExists(username)) {
@@ -83,20 +131,23 @@ public class RegistrationService {
     remindExistingOwner(email);
   }
 
-  // Which reminder depends on whether the existing account was ever verified. The spec is explicit:
-  // "Re-registering an unverified email before then re-sends verification; it never alters
-  // credentials." Someone whose first verification mail landed in spam registers again and needs
-  // another link — sending them the duplicate-attempt notice instead would be untrue, would carry
-  // no link, and would strand them on a 403 the moment they followed its advice to sign in.
-  //
-  // Credentials are deliberately left alone on both paths: re-registering must never let a caller
-  // who does not control the mailbox overwrite the password on an account someone else created.
-  //
-  // Timing parity across the two paths is unchanged. Both are reached only after the same decoy
-  // Argon2 hash above, which dominates at tens of milliseconds; both publish exactly one event, and
-  // both emails are sent after commit, off the request thread. The extra token write on the
-  // unverified path is one DELETE plus one INSERT — the same order as the SELECT here, and
-  // invisible next to the hash.
+  /**
+   * Which reminder depends on whether the existing account was ever verified. The spec is explicit:
+   * "Re-registering an unverified email before then re-sends verification; it never alters
+   * credentials." Someone whose first verification mail landed in spam registers again and needs
+   * another link — sending them the duplicate-attempt notice instead would be untrue, would carry
+   * no link, and would strand them on a 403 the moment they followed its advice to sign in.
+   *
+   * <p>Credentials are deliberately left alone on both paths: re-registering must never let a
+   * caller who does not control the mailbox overwrite the password on an account someone else
+   * created.
+   *
+   * <p>Timing parity across the two paths is unchanged. Both are reached only after the same decoy
+   * Argon2 hash above, which dominates at tens of milliseconds; both publish exactly one event, and
+   * both emails are sent after commit, off the request thread. The extra token write on the
+   * unverified path is one DELETE plus one INSERT — the same order as the SELECT here, and
+   * invisible next to the hash.
+   */
   private void remindExistingOwner(String email) {
     Optional<UserDto> existing = userService.findByIdentifier(email);
     if (existing.isPresent() && !existing.get().emailVerified()) {
@@ -109,31 +160,5 @@ public class RegistrationService {
   private void issueVerification(String email, UUID userId) {
     String rawToken = emailVerificationService.issue(userId);
     events.publishEvent(new VerificationEmailRequested(email, rawToken));
-  }
-
-  @Transactional
-  public boolean verify(String rawToken) {
-    Optional<UUID> userId = emailVerificationService.consume(rawToken);
-    userId.ifPresent(userService::markEmailVerified);
-    return userId.isPresent();
-  }
-
-  // Deliberately not @Transactional, unlike register: the decoy hash below costs tens of
-  // milliseconds on every single call, and a transaction opened around it would hold a pooled
-  // connection for all of that time — including on the two branches that then do nothing at all.
-  // Each collaborator manages its own transaction instead, and the only write here (issue) commits
-  // inside EmailVerificationService's before the event is published. See
-  // RegistrationEmailListener's fallbackExecution for what that means for the email.
-  public void resend(String email) {
-    // Unconditional, not just on the branches that would otherwise skip it: resend has no
-    // "real" Argon2 work of its own (unlike register's createPassword) for a decoy to stand in
-    // for, so every outcome — unknown email, already verified, resent — needs the same paid-up-
-    // front cost to stay indistinguishable from each other. Hoisting it out of a transaction
-    // changes what it holds, not when it runs or what it costs.
-    credentialsService.hashDecoyPassword();
-    userService
-        .findByIdentifier(email)
-        .filter(user -> !user.emailVerified())
-        .ifPresent(user -> issueVerification(email, user.id()));
   }
 }

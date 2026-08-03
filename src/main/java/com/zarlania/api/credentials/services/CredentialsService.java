@@ -13,6 +13,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Passwords: hashing them, checking them, and bounding how many hashes can be in flight at once.
+ *
+ * <p>Two concerns run through everything here. Argon2id holds a 19 MiB buffer on the Java heap per
+ * hash, so unbounded concurrency is an out-of-memory kill reachable from unauthenticated traffic —
+ * hence the permit gate every hash passes through. And a branch that skips hashing returns
+ * measurably faster than one that does not, so callers with nothing to hash burn the same cost on a
+ * decoy rather than leaking which branch they took.
+ */
 @Service
 public class CredentialsService {
 
@@ -39,6 +48,11 @@ public class CredentialsService {
   // could mutate. Every other service in this codebase stores the same repositories the same way
   // and is not flagged only because Lombok marks its generated constructor; this one is written by
   // hand because the semaphore below is derived from configuration rather than injected as-is.
+  /**
+   * @param properties supplies the hashing concurrency cap, which is why this constructor is
+   *     written by hand rather than generated: the semaphore is derived from configuration, not
+   *     injected
+   */
   @SuppressFBWarnings(
       value = "EI_EXPOSE_REP2",
       justification =
@@ -56,16 +70,22 @@ public class CredentialsService {
     this.hashingPermits = new Semaphore(properties.maxConcurrentHashes());
   }
 
+  /** Hashes a password and stores it. One row per account, so calling this twice will conflict. */
   @Transactional
   public void createPassword(UUID userId, String rawPassword) {
     String passwordHash = hash(() -> passwordEncoder.encode(rawPassword));
     credentials.save(new PasswordCredential(userId, passwordHash));
   }
 
-  // Deliberately not @Transactional: the hash comparison below can wait on the concurrency gate,
-  // and holding a pooled connection for the whole of that wait would trade an out-of-memory risk
-  // for a connection-pool exhaustion one. The repository call opens and closes its own
-  // transaction, and PasswordCredential has no lazy state, so reading its hash afterwards is safe.
+  /**
+   * Whether a raw password matches the account's stored hash. False for an account with no password
+   * at all, which is indistinguishable to the caller from a wrong one.
+   *
+   * <p>Deliberately not {@code @Transactional}: the comparison can wait on the concurrency gate,
+   * and holding a pooled connection for the whole of that wait would trade an out-of-memory risk
+   * for a connection-pool exhaustion one. The repository call opens and closes its own transaction,
+   * and {@code PasswordCredential} has no lazy state, so reading its hash afterwards is safe.
+   */
   public boolean passwordMatches(UUID userId, String rawPassword) {
     return credentials
         .findByUserId(userId)
@@ -73,38 +93,48 @@ public class CredentialsService {
         .orElse(false);
   }
 
-  // RegistrationService calls this from every branch of /auth/register and /auth/resend that
-  // would otherwise return without hashing anything (an already-registered email, an unknown
-  // email, an already-verified account). Argon2id at PasswordEncoderConfig's parameters (19 MiB,
-  // 2 iterations) costs tens of milliseconds, versus roughly a millisecond for the single SELECT
-  // those branches would otherwise run — a gap trivially measurable over a network. Paying that
-  // same dominant cost on a fixed, discarded value closes it without touching a real password or
-  // writing to the database.
+  /**
+   * Burns one password hash's worth of time on a fixed, discarded value, so that a branch with
+   * nothing to hash costs what a branch that hashes costs.
+   *
+   * <p>Called from every path through registration and resend that would otherwise return without
+   * hashing: an already-registered address, an unknown address, an already-verified account.
+   * Argon2id at this application's parameters costs tens of milliseconds against roughly one for
+   * the single {@code SELECT} those branches run — a gap trivially measurable over a network, and
+   * an account-enumeration oracle if left open. Nothing is written and no real password is touched.
+   */
   public void hashDecoyPassword() {
     DECOY_HASH_SINK.set(hash(() -> passwordEncoder.encode(DECOY_PASSWORD)));
   }
 
-  // Both of this domain's tables in one call, so a caller purging an account never has to know
-  // that proof-of-identity material is split across two of them, nor reach for this domain's
-  // repositories to clear them. Order between the two does not matter — neither table references
-  // the other — but both must go before the users row they share a foreign key with.
+  /**
+   * Clears every credential an account holds, across both of this domain's tables.
+   *
+   * <p>One call, so a caller purging an account never has to know that proof material is split
+   * across two tables, nor reach for this domain's repositories to clear them. Order between the
+   * two does not matter — neither references the other — but both must go before the {@code users}
+   * row they share a foreign key with.
+   */
   @Transactional
   public void deleteAllForUser(UUID userId) {
     verificationTokens.deleteByUserId(userId);
     credentials.deleteByUserId(userId);
   }
 
-  // Argon2id's 19 MiB working buffer is allocated on the *Java heap* by BouncyCastle, and Tomcat
-  // will happily run its whole thread pool against a ~358 MB heap (render.yaml sets
-  // -XX:MaxRAMPercentage=70 on a 512 MB instance) — roughly 19 concurrent hashes exhaust it and
-  // the container is OOM-killed, which is trivially reachable from unauthenticated /auth/login
-  // traffic. This gate caps what the hash path can hold at any instant to
-  // zarlania.credentials.max-concurrent-hashes buffers; anything beyond that waits instead of
-  // allocating. server.tomcat.threads.max bounds how many can be waiting at once.
-  //
-  // Every hash in this class goes through here, the decoy included, and that is not incidental:
-  // a decoy that skipped the gate would return immediately while a real hash queued behind it,
-  // reopening precisely the timing channel hashDecoyPassword() exists to close.
+  /**
+   * Runs one hashing operation behind the concurrency gate.
+   *
+   * <p>Argon2id's 19 MiB working buffer is allocated on the <em>Java heap</em> by BouncyCastle, and
+   * Tomcat will happily run its whole thread pool against a ~358 MB heap — roughly 19 concurrent
+   * hashes exhaust it and the container is OOM-killed, which is trivially reachable from
+   * unauthenticated login traffic. This gate caps what the hash path can hold at any instant to
+   * {@code zarlania.credentials.max-concurrent-hashes} buffers; anything beyond that waits instead
+   * of allocating, and {@code server.tomcat.threads.max} bounds how many can be waiting at once.
+   *
+   * <p>Every hash in this class goes through here, the decoy included, and that is not incidental:
+   * a decoy that skipped the gate would return immediately while a real hash queued behind it,
+   * reopening precisely the timing channel the decoy exists to close.
+   */
   private <T> T hash(Supplier<T> hashing) {
     try {
       hashingPermits.acquire();

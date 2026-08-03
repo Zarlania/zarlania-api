@@ -9,6 +9,13 @@ import org.springframework.core.env.Environment;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.client.RestClient;
 
+/**
+ * Chooses the {@link EmailSender} for this environment and wraps it in the service-wide budget.
+ *
+ * <p>Which adapter depends on whether a provider key is configured, and a missing key is a startup
+ * failure in production rather than a silent fall back to logging — a deployment that quietly stops
+ * sending real verification emails is worse than one that will not start.
+ */
 @Configuration
 public class EmailConfig {
 
@@ -21,8 +28,16 @@ public class EmailConfig {
   private static final String DISPATCH_THREAD_PREFIX = "email-dispatch-";
   private static final int DISPATCH_SHUTDOWN_GRACE_SECONDS = 10;
 
-  // Wrapped rather than applied at the one caller that sends mail today: the budget is a property
-  // of the outbound channel, so every future caller inherits it without having to remember to.
+  /**
+   * The application's email sender: a real provider where one is configured, a logging adapter
+   * otherwise, always inside the service-wide budget.
+   *
+   * <p>Wrapped rather than applied at the one caller that sends mail today, because the budget is a
+   * property of the outbound channel — every future caller inherits it without having to remember
+   * to.
+   *
+   * @throws IllegalStateException in production if no provider key is configured
+   */
   @Bean
   public EmailSender emailSender(
       @Value("${zarlania.email.resend-api-key:}") String apiKey,
@@ -48,8 +63,12 @@ public class EmailConfig {
   // One thread, because BudgetedEmailSender caps the entire service at
   // zarlania.throttle.email-budget-limit messages per window: there is no volume here worth
   // parallelising, and a second thread would only add heap pressure on a 512 MB instance. The queue
-  // is bounded for the same reason — an unbounded queue turns a provider outage into an OOM, while
-  // a full one rejects and RegistrationEmailListener logs the dropped message.
+  /**
+   * The single thread email is dispatched on, so no request thread ever waits on a provider.
+   *
+   * @param queueCapacity bounded deliberately — an unbounded queue turns a provider outage into an
+   *     out-of-memory kill, while a full one rejects and the caller logs the dropped message
+   */
   @Bean(DISPATCH_EXECUTOR_BEAN)
   public ThreadPoolTaskExecutor emailDispatchExecutor(
       @Value("${zarlania.email.dispatch-queue-capacity}") int queueCapacity) {
@@ -65,8 +84,10 @@ public class EmailConfig {
     return executor;
   }
 
-  // Package-private rather than private so ResendEmailSenderTest can assert which provider is
-  // chosen without unwrapping the budget decorator the bean method above always applies.
+  /**
+   * Package-private rather than private so ResendEmailSenderTest can assert which provider is
+   * chosen without unwrapping the budget decorator the bean method above always applies.
+   */
   EmailSender provider(String apiKey, String from, Environment environment) {
     if (apiKey.isBlank()) {
       if (environment.matchesProfiles(PRODUCTION_PROFILE)) {

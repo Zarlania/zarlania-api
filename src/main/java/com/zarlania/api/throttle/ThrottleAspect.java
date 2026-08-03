@@ -88,10 +88,12 @@ public class ThrottleAspect {
     return Math.max(MINIMUM_RETRY_AFTER_SECONDS, roundedUp);
   }
 
-  // The servlet request is taken from the request-bound context rather than a handler parameter, so
-  // that a throttled endpoint does not have to declare an HttpServletRequest argument it otherwise
-  // has no use for. Every handler this advice matches is invoked on a request thread, so the
-  // attributes are always bound.
+  /**
+   * The servlet request is taken from the request-bound context rather than a handler parameter, so
+   * that a throttled endpoint does not have to declare an HttpServletRequest argument it otherwise
+   * has no use for. Every handler this advice matches is invoked on a request thread, so the
+   * attributes are always bound.
+   */
   private static HttpServletRequest currentRequest() {
     return ((ServletRequestAttributes) RequestContextHolder.currentRequestAttributes())
         .getRequest();
