@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.zarlania.api.email.EmailMessage;
 import com.zarlania.api.testsupport.FlowTestBase;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -32,6 +33,14 @@ import org.springframework.boot.test.context.SpringBootTest;
     })
 class RegistrationFlowTest extends FlowTestBase {
 
+  // This class asserts on total outbound volume, so it needs an empty recorder — safe here because
+  // its property set is unique, which gives it a Spring context, and therefore a recorder, of its
+  // own. A class sharing a context must scope its reads by recipient instead.
+  @BeforeEach
+  void clearRecordedEmails() {
+    recordedEmails.clear();
+  }
+
   @Test
   void registeringSendsOneVerificationEmailCarryingAUsableToken() throws Exception {
     auth.register("alice@example.com", "alice", PASSWORD).andExpect(status().isAccepted());
@@ -55,8 +64,11 @@ class RegistrationFlowTest extends FlowTestBase {
     // to reach the address branch at all rather than failing as a taken username.
     auth.register("bob@example.com", "bobsecondattempt", PASSWORD).andExpect(status().isAccepted());
 
-    assertThat(recordedEmails.messages()).hasSize(1);
-    assertThat(recordedEmails.messages().getFirst().subject())
+    // Scoped to the address rather than to the whole recorder, because the account's own
+    // verification mail from setup is legitimately still there. Two messages, and the second one is
+    // the notice — which is also the assertion that the notice went to the owner, not the caller.
+    assertThat(recordedEmails.messagesTo("bob@example.com")).hasSize(2);
+    assertThat(recordedEmails.messagesTo("bob@example.com").getLast().subject())
         .isEqualTo("Someone tried to register with your email");
   }
 

@@ -30,13 +30,13 @@ public abstract class FlowTestBase extends EndToEndTestBase {
    * Registers an account and verifies it, leaving it able to log in.
    *
    * <p>Goes through the emailed link rather than reaching into the database, because that round
-   * trip is part of what these tests exist to prove. Recorded email is cleared afterwards, so a
-   * test asserting on what was sent sees only what its own flow sent.
+   * trip is part of what these tests exist to prove. The link is read from the mail addressed to
+   * this account rather than from whatever was sent last, so a class sharing its Spring context
+   * with another cannot pick up someone else's token.
    */
   protected void registerAndVerify(String email, String username) throws Exception {
     auth.register(email, username, PASSWORD).andExpect(status().isAccepted());
-    auth.verify(AuthEndpoints.verificationTokenIn(lastEmailBody())).andExpect(status().isOk());
-    recordedEmails.clear();
+    auth.verify(AuthEndpoints.verificationTokenIn(lastEmailTo(email))).andExpect(status().isOk());
   }
 
   /** Registers, verifies and logs in, returning the login response to read a session out of. */
@@ -45,7 +45,21 @@ public abstract class FlowTestBase extends EndToEndTestBase {
     return auth.login(username, PASSWORD).andExpect(status().isOk()).andReturn();
   }
 
-  /** The body of the most recently sent email — the verification link, in practice. */
+  /**
+   * The body of the most recent email sent to one address — the verification link, in practice.
+   *
+   * <p>By recipient rather than "the last thing sent", so this stays correct whatever else is using
+   * the same recorder.
+   */
+  protected String lastEmailTo(String address) {
+    return recordedEmails.messagesTo(address).getLast().textBody();
+  }
+
+  /**
+   * The body of the most recently sent email, whoever it went to.
+   *
+   * <p>Only safe in a class that owns its Spring context; prefer {@link #lastEmailTo}.
+   */
   protected String lastEmailBody() {
     return recordedEmails.messages().getLast().textBody();
   }

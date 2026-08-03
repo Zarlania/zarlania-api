@@ -46,7 +46,7 @@ class AuthJourneyFlowTest extends FlowTestBase {
   @Test
   void walksTheFullRegistrationToLogoutJourneyCarryingStateAtEachStep() throws Exception {
     register().andExpect(status().isAccepted());
-    String verificationToken = extractToken(recordedEmails.messages().get(0).textBody());
+    String verificationToken = extractToken(lastEmailTo(EMAIL));
 
     login(USERNAME, PASSWORD)
         .andExpect(status().isForbidden())

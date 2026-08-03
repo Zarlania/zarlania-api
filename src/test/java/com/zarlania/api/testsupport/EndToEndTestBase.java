@@ -2,7 +2,6 @@ package com.zarlania.api.testsupport;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
@@ -16,9 +15,14 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * the way, and the {@code *FlowTest} tier built on it.
  *
  * <p>Holds what every such test needs and none of them should re-declare: {@link MockMvc}, the
- * recording email sender in place of a real provider, and the JSON request builder. Email is
- * cleared before each test here rather than in each subclass, because forgetting it produces a test
- * that passes alone and fails in a suite.
+ * recording email sender in place of a real provider, and the JSON request builder.
+ *
+ * <p>Deliberately does <em>not</em> clear recorded email before each test. {@link
+ * RecordingEmailSender} is a singleton per Spring context, and a context is shared by every class
+ * configured identically — so a blanket clear here would let a class that never looks at email wipe
+ * the inbox of one that is midway through reading it. Read your own mail by recipient instead
+ * ({@link RecordingEmailSender#messagesTo}); clear only in a class that owns its context and needs
+ * to assert on total volume.
  */
 @AutoConfigureMockMvc
 @Import(RecordingEmailSenderConfig.class)
@@ -27,11 +31,6 @@ public abstract class EndToEndTestBase extends IntegrationTestBase {
   @Autowired protected MockMvc mockMvc;
 
   @Autowired protected RecordingEmailSender recordedEmails;
-
-  @BeforeEach
-  void clearRecordedEmails() {
-    recordedEmails.clear();
-  }
 
   /**
    * A JSON POST to {@code path}, ready for a test to add headers or a cookie to.

@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.zarlania.api.testsupport.EndToEndTestBase;
 import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
@@ -29,6 +30,14 @@ import org.springframework.test.web.servlet.ResultActions;
       "zarlania.throttle.endpoints.resend.limit=1000"
     })
 class AccountThrottleEndToEndTest extends EndToEndTestBase {
+
+  // This class asserts on total outbound volume, so it needs an empty recorder — safe here because
+  // its property set is unique, which gives it a Spring context, and therefore a recorder, of its
+  // own. A class sharing a context must scope its reads by recipient instead.
+  @BeforeEach
+  void clearRecordedEmails() {
+    recordedEmails.clear();
+  }
 
   private static final String PASSWORD = "correct-horse-battery";
   private static final String CLOUDFLARE_CLIENT_IP_HEADER = "CF-Connecting-IP";
