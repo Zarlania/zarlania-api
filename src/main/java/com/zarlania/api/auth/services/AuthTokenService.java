@@ -2,9 +2,9 @@ package com.zarlania.api.auth.services;
 
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
-import com.zarlania.api.common.errors.ApiException;
-import com.zarlania.api.common.errors.ErrorCode;
 import com.zarlania.api.credentials.services.CredentialsService;
+import com.zarlania.api.errors.ApiException;
+import com.zarlania.api.errors.ErrorCode;
 import com.zarlania.api.organizations.dtos.OrganizationDto;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.users.dtos.UserDto;

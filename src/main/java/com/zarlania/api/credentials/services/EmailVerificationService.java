@@ -1,9 +1,9 @@
 package com.zarlania.api.credentials.services;
 
-import com.zarlania.api.common.security.TokenHasher;
 import com.zarlania.api.credentials.CredentialsProperties;
 import com.zarlania.api.credentials.entities.EmailVerificationToken;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
+import com.zarlania.api.security.TokenHasher;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;

@@ -1,6 +1,6 @@
 package com.zarlania.api.auth.entities;
 
-import com.zarlania.api.common.persistence.BaseEntity;
+import com.zarlania.api.persistence.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;

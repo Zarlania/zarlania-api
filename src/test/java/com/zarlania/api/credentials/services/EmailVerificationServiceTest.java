@@ -7,10 +7,10 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.zarlania.api.common.security.TokenHasher;
 import com.zarlania.api.credentials.CredentialsProperties;
 import com.zarlania.api.credentials.entities.EmailVerificationToken;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
+import com.zarlania.api.security.TokenHasher;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

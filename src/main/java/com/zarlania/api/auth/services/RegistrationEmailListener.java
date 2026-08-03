@@ -1,10 +1,10 @@
 package com.zarlania.api.auth.services;
 
 import com.zarlania.api.auth.AuthProperties;
-import com.zarlania.api.common.email.EmailBudgetExhaustedException;
-import com.zarlania.api.common.email.EmailConfig;
-import com.zarlania.api.common.email.EmailMessage;
-import com.zarlania.api.common.email.EmailSender;
+import com.zarlania.api.email.EmailBudgetExhaustedException;
+import com.zarlania.api.email.EmailConfig;
+import com.zarlania.api.email.EmailMessage;
+import com.zarlania.api.email.EmailSender;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;

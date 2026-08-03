@@ -81,8 +81,9 @@ overridden with an environment variable.
 ```text
 src/main/java/com/zarlania/api/
   ZarlaniaApiApplication.java   Entry point
-  common/                       Domain-agnostic infrastructure only (e.g. persistence
-                                base classes). Nothing with business meaning.
+  <topic>/                      Infrastructure grouped by the topic it is about —
+                                email/, errors/, http/, persistence/, security/,
+                                throttle/, time/. Never a general-purpose bucket.
   <domain>/                     One package per domain, layer sub-packages inside:
     controllers/                HTTP endpoints
     services/                   Business rules

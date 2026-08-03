@@ -6,7 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.zarlania.api.common.email.EmailMessage;
+import com.zarlania.api.email.EmailMessage;
 import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.testsupport.RecordingEmailSender;
 import com.zarlania.api.testsupport.RecordingEmailSenderConfig;

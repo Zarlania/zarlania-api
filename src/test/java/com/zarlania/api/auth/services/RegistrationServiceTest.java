@@ -9,10 +9,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.zarlania.api.common.errors.ApiException;
-import com.zarlania.api.common.errors.ErrorCode;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
+import com.zarlania.api.errors.ApiException;
+import com.zarlania.api.errors.ErrorCode;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;
 import java.util.Optional;

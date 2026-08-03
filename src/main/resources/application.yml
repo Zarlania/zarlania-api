@@ -55,7 +55,7 @@ server:
   # request. The rightmost entry is Render's internal load balancer, the same private address for
   # every request from every user, so keying on that collapses the whole service into one bucket.
   #
-  # ClientIpResolver (common/http) reads CF-Connecting-IP instead, which Cloudflare *replaces* on
+  # ClientIpResolver (http) reads CF-Connecting-IP instead, which Cloudflare *replaces* on
   # every request it proxies, and falls back to getRemoteAddr() when it is absent or is not one
   # bare IP literal.
   #

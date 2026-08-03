@@ -4,11 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.auth.entities.RefreshToken;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
-import com.zarlania.api.common.security.TokenHasher;
 import com.zarlania.api.credentials.entities.EmailVerificationToken;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.organizations.dtos.OrganizationDto;
 import com.zarlania.api.organizations.services.OrganizationService;
+import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.services.UserService;

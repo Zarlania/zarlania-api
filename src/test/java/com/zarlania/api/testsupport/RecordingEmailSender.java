@@ -1,7 +1,7 @@
 package com.zarlania.api.testsupport;
 
-import com.zarlania.api.common.email.EmailMessage;
-import com.zarlania.api.common.email.EmailSender;
+import com.zarlania.api.email.EmailMessage;
+import com.zarlania.api.email.EmailSender;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 

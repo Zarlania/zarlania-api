@@ -57,8 +57,9 @@ Always use `./mvnw`, never a system `mvn` — the wrapper pins the Maven version
 ```text
 src/main/java/com/zarlania/api/
   ZarlaniaApiApplication.java   Entry point
-  common/                       Domain-agnostic infrastructure only (e.g. persistence
-                                base classes). Nothing with business meaning.
+  <topic>/                      Infrastructure grouped by the topic it is about —
+                                email/, errors/, http/, persistence/, security/,
+                                throttle/, time/. Never a general-purpose bucket.
   <domain>/                     One package per domain, layer sub-packages inside:
     controllers/                HTTP endpoints
     services/                   Business rules
@@ -89,6 +90,12 @@ can be lifted out of the monolith with minimal work):
   Case-insensitive unique text columns use `citext`.
 - Do not create top-level `controllers/`, `services/` or `models/` packages for
   the whole application.
+- **No general-purpose bucket packages.** Infrastructure that several domains
+  share still gets a package named for the *topic* it is about — `throttle/`,
+  `email/`, `persistence/` — never a catch-all such as `common/`, `shared/` or
+  `util/`. A bucket collects whatever has no obvious home, so it accumulates
+  unrelated classes and stops telling a reader anything. If a class does not fit
+  an existing topic, that is the signal to name a new one, not to widen a bucket.
 
 ## Documentation (`docs/`)
 

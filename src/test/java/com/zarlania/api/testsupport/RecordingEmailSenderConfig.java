@@ -1,7 +1,7 @@
 package com.zarlania.api.testsupport;
 
-import com.zarlania.api.common.email.EmailConfig;
-import com.zarlania.api.common.email.EmailSender;
+import com.zarlania.api.email.EmailConfig;
+import com.zarlania.api.email.EmailSender;
 import java.util.concurrent.Executor;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;

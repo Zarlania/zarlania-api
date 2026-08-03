@@ -4,9 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 import com.zarlania.api.auth.AuthProperties;
-import com.zarlania.api.common.email.EmailBudgetExhaustedException;
-import com.zarlania.api.common.email.EmailMessage;
-import com.zarlania.api.common.email.EmailSender;
+import com.zarlania.api.email.EmailBudgetExhaustedException;
+import com.zarlania.api.email.EmailMessage;
+import com.zarlania.api.email.EmailSender;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;

@@ -10,9 +10,9 @@ import static org.mockito.Mockito.when;
 
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
-import com.zarlania.api.common.errors.ApiException;
-import com.zarlania.api.common.errors.ErrorCode;
 import com.zarlania.api.credentials.services.CredentialsService;
+import com.zarlania.api.errors.ApiException;
+import com.zarlania.api.errors.ErrorCode;
 import com.zarlania.api.organizations.dtos.OrganizationDto;
 import com.zarlania.api.organizations.entities.OrganizationType;
 import com.zarlania.api.organizations.services.OrganizationService;

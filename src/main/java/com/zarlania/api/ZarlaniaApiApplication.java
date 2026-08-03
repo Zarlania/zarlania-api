@@ -7,7 +7,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
 @ConfigurationPropertiesScan
-// Drives InMemoryRateLimiter's periodic eviction sweep (common/throttle).
+// Drives InMemoryRateLimiter's periodic eviction sweep (throttle).
 @EnableScheduling
 public class ZarlaniaApiApplication {
 

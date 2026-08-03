@@ -6,7 +6,6 @@ import static org.mockito.Mockito.doThrow;
 
 import com.zarlania.api.auth.entities.RefreshToken;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
-import com.zarlania.api.common.security.TokenHasher;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import com.zarlania.api.credentials.services.CredentialsService;
@@ -18,6 +17,7 @@ import com.zarlania.api.organizations.entities.OrganizationType;
 import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.repositories.OrganizationRepository;
 import com.zarlania.api.organizations.services.OrganizationService;
+import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.testsupport.PostgresTestContainer;
 import com.zarlania.api.users.dtos.UserDto;
 import com.zarlania.api.users.repositories.UserRepository;

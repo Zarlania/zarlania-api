@@ -5,7 +5,7 @@ import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
 import com.zarlania.api.auth.entities.RefreshToken;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
-import com.zarlania.api.common.security.TokenHasher;
+import com.zarlania.api.security.TokenHasher;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
