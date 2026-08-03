@@ -2,11 +2,11 @@ package com.zarlania.api.throttle;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.zarlania.api.testsupport.MutableClock;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -17,49 +17,60 @@ import org.junit.jupiter.api.Test;
 class InMemoryRateLimiterTest {
 
   private static final Duration WINDOW = Duration.ofMinutes(1);
-  private static final int SOME_OTHER_LIMIT = 100;
+  private static final int EMAIL_BUDGET_LIMIT = 100;
 
   private final MutableClock clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
   private final InMemoryRateLimiter limiter =
       new InMemoryRateLimiter(
-          new ThrottleProperties(
-              WINDOW,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              SOME_OTHER_LIMIT,
-              WINDOW),
-          clock);
+          new ThrottleProperties(WINDOW, Map.of(), EMAIL_BUDGET_LIMIT, WINDOW), clock);
 
   @Test
   void allowsUpToTheLimitThenRejects() {
-    assertThat(limiter.tryConsume("k", 3)).isTrue();
-    assertThat(limiter.tryConsume("k", 3)).isTrue();
-    assertThat(limiter.tryConsume("k", 3)).isTrue();
+    assertThat(limiter.tryConsume("k", 3).allowed()).isTrue();
+    assertThat(limiter.tryConsume("k", 3).allowed()).isTrue();
+    assertThat(limiter.tryConsume("k", 3).allowed()).isTrue();
 
-    assertThat(limiter.tryConsume("k", 3)).isFalse();
+    assertThat(limiter.tryConsume("k", 3).allowed()).isFalse();
   }
 
   @Test
   void advancingPastTheWindowResetsTheCount() {
-    assertThat(limiter.tryConsume("k", 1)).isTrue();
-    assertThat(limiter.tryConsume("k", 1)).isFalse();
+    assertThat(limiter.tryConsume("k", 1).allowed()).isTrue();
+    assertThat(limiter.tryConsume("k", 1).allowed()).isFalse();
 
     clock.advance(WINDOW.plusSeconds(1));
 
-    assertThat(limiter.tryConsume("k", 1)).isTrue();
+    assertThat(limiter.tryConsume("k", 1).allowed()).isTrue();
   }
 
   @Test
   void differentKeysAreIndependent() {
-    assertThat(limiter.tryConsume("a", 1)).isTrue();
+    assertThat(limiter.tryConsume("a", 1).allowed()).isTrue();
 
-    assertThat(limiter.tryConsume("b", 1)).isTrue();
+    assertThat(limiter.tryConsume("b", 1).allowed()).isTrue();
+  }
+
+  @Test
+  void aPermittedRequestReportsNoWaitAtAll() {
+    assertThat(limiter.tryConsume("k", 1).retryAfter()).isZero();
+  }
+
+  @Test
+  void aRefusedRequestReportsTheWholeWindowWhenItHasJustOpened() {
+    limiter.tryConsume("k", 1);
+
+    assertThat(limiter.tryConsume("k", 1).retryAfter()).isEqualTo(WINDOW);
+  }
+
+  // The wait shrinks as the window ages rather than restating the window length, which is the whole
+  // point of returning it: a caller refused one second before the refill is told to wait one
+  // second.
+  @Test
+  void aRefusedRequestReportsOnlyWhatIsLeftOfTheWindowItExhausted() {
+    limiter.tryConsume("k", 1);
+    clock.advance(WINDOW.minusSeconds(10));
+
+    assertThat(limiter.tryConsume("k", 1).retryAfter()).isEqualTo(Duration.ofSeconds(10));
   }
 
   @Test
@@ -82,33 +93,5 @@ class InMemoryRateLimiterTest {
     limiter.evictExpiredWindows();
 
     assertThat(limiter.trackedKeyCount()).isEqualTo(1);
-  }
-
-  /** Settable {@link Clock} test double: real time never advances, only what the test asks for. */
-  private static final class MutableClock extends Clock {
-    private Instant instant;
-
-    MutableClock(Instant instant) {
-      this.instant = instant;
-    }
-
-    void advance(Duration duration) {
-      instant = instant.plus(duration);
-    }
-
-    @Override
-    public Instant instant() {
-      return instant;
-    }
-
-    @Override
-    public ZoneId getZone() {
-      return ZoneOffset.UTC;
-    }
-
-    @Override
-    public Clock withZone(ZoneId zone) {
-      throw new UnsupportedOperationException();
-    }
   }
 }

@@ -53,8 +53,8 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 // AccountThrottleIntegrationTest (per account), each against real limits.
 @SpringBootTest(
     properties = {
-      "zarlania.throttle.register-limit=1000",
-      "zarlania.throttle.login-account-limit=1000"
+      "zarlania.throttle.endpoints.register.limit=1000",
+      "zarlania.throttle.endpoints.login.account-limit=1000"
     })
 @AutoConfigureMockMvc
 @Testcontainers

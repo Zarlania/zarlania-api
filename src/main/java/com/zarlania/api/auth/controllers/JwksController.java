@@ -11,11 +11,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class JwksController {
 
-  private static final String JWKS_PATH = "/.well-known/jwks.json";
-
   private final JwtKeys jwtKeys;
 
-  @GetMapping(JWKS_PATH)
+  /**
+   * Publishes the JWK set a client needs to verify an access token this service minted.
+   *
+   * <p>Public keys only, and public by design: it carries nothing secret, and anything that
+   * verifies a token has to be able to fetch it without holding one.
+   */
+  @GetMapping("/.well-known/jwks.json")
   public Map<String, Object> jwks() {
     return jwtKeys.publicJwkSet().toJSONObject();
   }

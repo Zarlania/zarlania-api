@@ -14,6 +14,7 @@ import com.zarlania.api.throttle.InMemoryRateLimiter;
 import com.zarlania.api.throttle.ThrottleProperties;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -132,8 +133,7 @@ class ResendEmailSenderTest {
   void emailConfigWrapsTheChosenProviderInTheGlobalBudget() {
     EmailConfig config = new EmailConfig();
     ThrottleProperties properties =
-        new ThrottleProperties(
-            Duration.ofMinutes(1), 10, 5, 3, 30, 60, 10, 3, 3, 80, Duration.ofDays(1));
+        new ThrottleProperties(Duration.ofMinutes(1), Map.of(), 80, Duration.ofDays(1));
 
     EmailSender sender =
         config.emailSender(

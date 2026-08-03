@@ -13,14 +13,10 @@ import com.zarlania.api.auth.services.AuthTokenService.MintedSession;
 import com.zarlania.api.auth.services.RegistrationService;
 import com.zarlania.api.errors.ApiException;
 import com.zarlania.api.errors.ErrorCode;
-import com.zarlania.api.http.ClientIpResolver;
-import com.zarlania.api.throttle.RateLimiter;
-import com.zarlania.api.throttle.ThrottleProperties;
-import jakarta.servlet.http.HttpServletRequest;
+import com.zarlania.api.throttle.Throttled;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.Locale;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -35,6 +31,14 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+/**
+ * The public entry points to registration, email verification and session issuance.
+ *
+ * <p>Every route here is reachable without a token — nothing has one yet — so all but {@code
+ * /verify} and {@code /logout} are rate limited. The limits are declared with {@link Throttled} and
+ * applied by {@code ThrottleAspect}; none of the methods below contains throttling code, and the
+ * limits themselves live in {@code zarlania.throttle.endpoints}.
+ */
 @RestController
 @RequestMapping("/auth")
 @RequiredArgsConstructor
@@ -42,19 +46,6 @@ public class AuthController {
 
   private static final String INVALID_TOKEN_MESSAGE = "Invalid or expired verification token";
   private static final String NO_REFRESH_TOKEN_MESSAGE = "No refresh token";
-  private static final String THROTTLED_MESSAGE = "Too many requests";
-
-  // Bucket keys are "<endpoint>:<client-ip>" and "<endpoint>:acct:<identifier>". An IP can never
-  // collide with the account form, since no address starts with "acct:".
-  private static final String KEY_SEPARATOR = ":";
-  private static final String ACCOUNT_KEY_INFIX = ":acct:";
-  private static final int MAX_ACCOUNT_KEY_LENGTH = 100;
-
-  private static final String REGISTER_ENDPOINT = "register";
-  private static final String RESEND_ENDPOINT = "resend";
-  private static final String LOGIN_ENDPOINT = "login";
-  private static final String REFRESH_ENDPOINT = "refresh";
-  private static final String CSRF_ENDPOINT = "csrf";
 
   private static final String REFRESH_COOKIE = "zarlania_refresh";
   private static final String REFRESH_COOKIE_PATH = "/auth";
@@ -67,38 +58,50 @@ public class AuthController {
   private final RegistrationService registrationService;
   private final AuthTokenService authTokenService;
   private final AuthProperties authProperties;
-  private final RateLimiter rateLimiter;
-  private final ThrottleProperties throttleProperties;
   private final Clock clock;
 
+  /**
+   * Starts registration: creates the account and sends a verification email.
+   *
+   * <p>Answers 202 rather than 201 because the account is not usable yet — it cannot log in until
+   * the emailed token is presented to {@link #verify}.
+   */
   @PostMapping("/register")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  public void register(@Valid @RequestBody RegisterRequest request, HttpServletRequest servlet) {
-    requireCapacity(REGISTER_ENDPOINT, throttleProperties.registerLimit(), servlet);
-    requireAccountCapacity(
-        REGISTER_ENDPOINT, throttleProperties.registerAccountLimit(), request.email());
+  @Throttled(endpoint = "register", accountFrom = "email")
+  public void register(@Valid @RequestBody RegisterRequest request) {
     registrationService.register(request.email(), request.username(), request.password());
   }
 
-  // The client's way in to the CSRF pair guarding /auth/refresh and /auth/logout. Reading the
-  // CsrfToken argument is what makes the token exist: Spring Security defers generation until
-  // something asks for it, and that first read is also what writes the matching Set-Cookie onto
-  // this response. The client keeps the returned value in memory and sends it back in headerName.
-  //
-  // There is an endpoint at all — rather than the usual "read the cookie from JavaScript" — because
-  // the browser client is served from a different host than this API, and document.cookie is scoped
-  // by host. It also has to be reachable on a cold start: the refresh cookie is HttpOnly and
-  // outlives a page reload, but the token the client held in memory does not, so without this a
-  // reloaded tab could never refresh its session again.
-  //
-  // Throttled per IP like every other public /auth route, though it is the cheapest of them —
-  // no database work, no hashing, just a random token.
+  /**
+   * Hands the client the CSRF token pair guarding {@link #refresh} and {@link #logout}.
+   *
+   * <p>Reading the {@link CsrfToken} argument is what makes the token exist: Spring Security defers
+   * generation until something asks for it, and that first read is also what writes the matching
+   * {@code Set-Cookie} onto this response. The client keeps the returned value in memory and sends
+   * it back in {@code headerName}.
+   *
+   * <p>There is an endpoint at all — rather than the usual "read the cookie from JavaScript" —
+   * because the browser client is served from a different host than this API, and {@code
+   * document.cookie} is scoped by host. It also has to be reachable on a cold start: the refresh
+   * cookie is HttpOnly and outlives a page reload, but the token the client held in memory does
+   * not, so without this a reloaded tab could never refresh its session again.
+   *
+   * <p>Throttled per IP like every other public route here, though it is the cheapest of them — no
+   * database work, no hashing, just a random token.
+   */
   @GetMapping("/csrf")
-  public CsrfTokenResponse csrf(CsrfToken token, HttpServletRequest servlet) {
-    requireCapacity(CSRF_ENDPOINT, throttleProperties.csrfLimit(), servlet);
+  @Throttled(endpoint = "csrf")
+  public CsrfTokenResponse csrf(CsrfToken token) {
     return new CsrfTokenResponse(token.getHeaderName(), token.getToken());
   }
 
+  /**
+   * Completes registration by consuming an emailed verification token.
+   *
+   * @throws ApiException with {@link ErrorCode#INVALID_TOKEN} if the token is unknown, expired or
+   *     already consumed — the three are indistinguishable to the caller on purpose
+   */
   @PostMapping("/verify")
   public void verify(@Valid @RequestBody VerifyRequest request) {
     if (!registrationService.verify(request.token())) {
@@ -106,82 +109,58 @@ public class AuthController {
     }
   }
 
+  /**
+   * Sends a fresh verification email for an address that has not been verified yet.
+   *
+   * <p>Answers 202 for every input, including addresses that do not exist and addresses already
+   * verified, so the response cannot be used to enumerate accounts.
+   */
   @PostMapping("/resend")
   @ResponseStatus(HttpStatus.ACCEPTED)
-  public void resend(@Valid @RequestBody ResendRequest request, HttpServletRequest servlet) {
-    requireCapacity(RESEND_ENDPOINT, throttleProperties.resendLimit(), servlet);
-    requireAccountCapacity(
-        RESEND_ENDPOINT, throttleProperties.resendAccountLimit(), request.email());
+  @Throttled(endpoint = "resend", accountFrom = "email")
+  public void resend(@Valid @RequestBody ResendRequest request) {
     registrationService.resend(request.email());
   }
 
+  /**
+   * Exchanges an email-or-username and password for a session: an access token in the body and a
+   * refresh token in an HttpOnly cookie.
+   *
+   * @throws ApiException with {@link ErrorCode#INVALID_CREDENTIALS} for a wrong password and for an
+   *     unknown identifier alike, or {@link ErrorCode#EMAIL_UNVERIFIED} when the password was right
+   *     but the address was never verified
+   */
   @PostMapping("/login")
-  public ResponseEntity<TokenResponse> login(
-      @Valid @RequestBody LoginRequest request, HttpServletRequest servlet) {
-    requireCapacity(LOGIN_ENDPOINT, throttleProperties.loginLimit(), servlet);
-    requireAccountCapacity(
-        LOGIN_ENDPOINT, throttleProperties.loginAccountLimit(), request.identifier());
-    MintedSession session = authTokenService.login(request.identifier(), request.password());
-    return withSession(session);
+  @Throttled(endpoint = "login", accountFrom = "identifier")
+  public ResponseEntity<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
+    return withSession(authTokenService.login(request.identifier(), request.password()));
   }
 
+  /**
+   * Rotates the refresh cookie and mints a new access token.
+   *
+   * <p>Authenticates with the {@code zarlania_refresh} cookie rather than a bearer token, which is
+   * why it is one of the two routes {@code SecurityConfig} guards with a CSRF token.
+   *
+   * @throws ApiException with {@link ErrorCode#INVALID_CREDENTIALS} if no cookie was sent, or the
+   *     one sent is expired, revoked or already redeemed
+   */
   @PostMapping("/refresh")
+  @Throttled(endpoint = "refresh")
   public ResponseEntity<TokenResponse> refresh(
-      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie,
-      HttpServletRequest servlet) {
-    requireCapacity(REFRESH_ENDPOINT, throttleProperties.refreshLimit(), servlet);
+      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
     if (cookie == null) {
       throw new ApiException(ErrorCode.INVALID_CREDENTIALS, NO_REFRESH_TOKEN_MESSAGE);
     }
     return withSession(authTokenService.refresh(cookie));
   }
 
-  // Key is <endpoint>:<client-ip>. The address comes from ClientIpResolver rather than from
-  // getRemoteAddr() or X-Forwarded-For, because the deployed chain has two appending hops
-  // (client -> Cloudflare -> Render's load balancer -> here) and none of those three sources gives
-  // the caller: getRemoteAddr() and the header's rightmost entry are both Render's load balancer,
-  // one address shared by the entire service, while the leftmost entry is written by the client and
-  // can be rotated for a fresh bucket per request. The resolver reads CF-Connecting-IP, which
-  // Cloudflare replaces rather than appends. See ClientIpResolver for the full derivation.
-  private void requireCapacity(String endpoint, int limit, HttpServletRequest request) {
-    consumeOrThrow(endpoint + KEY_SEPARATOR + ClientIpResolver.resolve(request), limit);
-  }
-
-  // A second, independent bucket keyed on the account a request names rather than on where it came
-  // from. Per-IP alone leaves credential stuffing distributed across many addresses against one
-  // known username limited only by how many addresses the attacker controls, which is why the spec
-  // asked for per-IP *and* per-account limits.
-  //
-  // The identifier is trimmed and lower-cased because email and username are citext columns:
-  // Postgres treats "Bob" and "bob" as the same account, so keying on the raw string would hand an
-  // attacker a fresh bucket per spelling. Locale.ROOT rather than the default locale, so the
-  // mapping cannot shift with the server's locale.
-  //
-  // The bucket exists for whatever string the caller supplied, whether or not an account matches
-  // it, which is what keeps this out of the enumeration channel: a 429 says the identifier has been
-  // tried a lot, never that it is real. Nor is this an account lockout, which the spec declined —
-  // the window is a minute and refills itself; a sustained attack can suppress one account's logins
-  // while it runs, but nothing stays locked once it stops.
-  private void requireAccountCapacity(String endpoint, int limit, String accountIdentifier) {
-    consumeOrThrow(endpoint + ACCOUNT_KEY_INFIX + accountKey(accountIdentifier), limit);
-  }
-
-  // Truncated because `identifier` is only @NotBlank — a caller could otherwise mint arbitrarily
-  // long keys in the limiter's map. Sharing a bucket between two accounts whose first 100
-  // characters match only ever makes the limit stricter, never weaker.
-  private static String accountKey(String accountIdentifier) {
-    String normalized = accountIdentifier.trim().toLowerCase(Locale.ROOT);
-    return normalized.length() <= MAX_ACCOUNT_KEY_LENGTH
-        ? normalized
-        : normalized.substring(0, MAX_ACCOUNT_KEY_LENGTH);
-  }
-
-  private void consumeOrThrow(String key, int limit) {
-    if (!rateLimiter.tryConsume(key, limit)) {
-      throw new ApiException(ErrorCode.THROTTLED, THROTTLED_MESSAGE);
-    }
-  }
-
+  /**
+   * Revokes the whole refresh-token family and clears the cookie.
+   *
+   * <p>Answers 204 whether or not a cookie was sent: a client asking to be logged out is told it is
+   * logged out, and a missing or unknown cookie means it already was.
+   */
   @PostMapping("/logout")
   public ResponseEntity<Void> logout(
       @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
@@ -204,9 +183,11 @@ public class AuthController {
     return buildRefreshCookie(refresh.raw(), maxAgeSeconds);
   }
 
-  // Built through the same helper as the live cookie above, rather than a separately assembled
-  // ResponseCookie, so set and clear can never drift apart on HttpOnly/Secure/SameSite/Path —
-  // only the value and Max-Age differ, and both differences are the point of clearing.
+  /**
+   * Built through the same helper as the live cookie, rather than a separately assembled {@link
+   * ResponseCookie}, so set and clear can never drift apart on HttpOnly/Secure/SameSite/Path — only
+   * the value and Max-Age differ, and both differences are the point of clearing.
+   */
   private ResponseCookie clearedRefreshCookie() {
     return buildRefreshCookie(EMPTY_COOKIE_VALUE, CLEARED_COOKIE_MAX_AGE_SECONDS);
   }

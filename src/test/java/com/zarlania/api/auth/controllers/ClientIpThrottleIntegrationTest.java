@@ -1,10 +1,13 @@
 package com.zarlania.api.auth.controllers;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zarlania.api.testsupport.PostgresTestContainer;
+import java.time.Duration;
 import java.util.function.UnaryOperator;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
@@ -12,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -37,7 +41,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * AccountThrottleIntegrationTest} is the mirror image. Every method uses its own client address so
  * no method's bucket state can bleed into another's, whatever order JUnit runs them in.
  */
-@SpringBootTest(properties = {"zarlania.throttle.login-account-limit=1000"})
+@SpringBootTest(properties = {"zarlania.throttle.endpoints.login.account-limit=1000"})
 @AutoConfigureMockMvc
 @Testcontainers
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
@@ -58,7 +62,11 @@ class ClientIpThrottleIntegrationTest {
   private static final String CLIENT_INDEPENDENCE_TEST_PRIMARY = "198.51.100.30";
   private static final String CLIENT_INDEPENDENCE_TEST_SECONDARY = "198.51.100.40";
   private static final String CLIENT_SPOOFING_TEST = "198.51.100.50";
+  private static final String CLIENT_RETRY_AFTER_TEST = "198.51.100.60";
   private static final String UNPROXIED_REMOTE_ADDR = "203.0.113.7";
+
+  // Mirrors zarlania.throttle.window, which these tests deliberately leave at its production value.
+  private static final Duration THROTTLE_WINDOW = Duration.ofMinutes(1);
 
   @Container @ServiceConnection
   static final PostgreSQLContainer POSTGRES = PostgresTestContainer.create();
@@ -75,6 +83,25 @@ class ClientIpThrottleIntegrationTest {
     loginAsDeployed(CLIENT_SHARED_BUCKET_TEST, "nobody-shared")
         .andExpect(status().isTooManyRequests())
         .andExpect(jsonPath("$.code").value("auth.throttled"));
+  }
+
+  // A 429 with no Retry-After leaves a client guessing, and a client that guesses short spends its
+  // whole backoff being refused again. The value is whole seconds and never zero, so a client that
+  // obeys it to the letter arrives after the window has genuinely refilled.
+  @Test
+  void aThrottledResponseTellsTheClientHowLongToWait() throws Exception {
+    for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING; attempt++) {
+      loginAsDeployed(CLIENT_RETRY_AFTER_TEST, "nobody-retry").andExpect(status().isUnauthorized());
+    }
+
+    loginAsDeployed(CLIENT_RETRY_AFTER_TEST, "nobody-retry")
+        .andExpect(status().isTooManyRequests())
+        .andExpect(header().exists(HttpHeaders.RETRY_AFTER))
+        .andExpect(
+            result ->
+                assertThat(
+                        Integer.parseInt(result.getResponse().getHeader(HttpHeaders.RETRY_AFTER)))
+                    .isBetween(1, (int) THROTTLE_WINDOW.toSeconds()));
   }
 
   // Drives the primary client past its limit rather than only up to it: an assertion made while the

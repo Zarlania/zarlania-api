@@ -112,23 +112,30 @@ zarlania:
     max-concurrent-hashes: 4
   throttle:
     window: PT1M
-    # Per client IP.
-    login-limit: 10
-    register-limit: 5
-    resend-limit: 3
-    refresh-limit: 30
-    # Higher than refresh-limit, because a client fetches a CSRF token before it can refresh at
-    # all and must never be the reason a refresh is refused. The endpoint does no database work
-    # and no hashing, so the limit is here for uniformity across public /auth routes rather than
-    # to protect anything expensive.
-    csrf-limit: 60
-    # Per account named in the request, across every IP, so credential stuffing spread over many
-    # addresses is bounded too. Login sits at the same 10 as the per-IP limit: a real person never
-    # makes ten login attempts in a minute, and going lower would let an attacker suppress one
-    # account's logins more cheaply.
-    login-account-limit: 10
-    register-account-limit: 3
-    resend-account-limit: 3
+    # Keyed by the name in @Throttled(endpoint = "..."). `limit` is per client IP; `account-limit`
+    # is a second, independent bucket per account named in the request, across every IP, so
+    # credential stuffing spread over many addresses is bounded too. Endpoints that name no
+    # account (refresh carries only a cookie, csrf carries nothing) set no account-limit.
+    endpoints:
+      login:
+        limit: 10
+        # The same 10 as the per-IP limit: a real person never makes ten login attempts in a
+        # minute, and going lower would let an attacker suppress one account's logins more cheaply.
+        account-limit: 10
+      register:
+        limit: 5
+        account-limit: 3
+      resend:
+        limit: 3
+        account-limit: 3
+      refresh:
+        limit: 30
+      csrf:
+        # Higher than refresh, because a client fetches a CSRF token before it can refresh at all
+        # and must never be the reason a refresh is refused. The endpoint does no database work
+        # and no hashing, so the limit is here for uniformity across public /auth routes rather
+        # than to protect anything expensive.
+        limit: 60
     # Total outbound email for the whole service, across every caller and endpoint. The per-caller
     # limits above do not bound this: 5 registrations/min from one compliant IP is ~7,200 messages
     # a day against a Resend free tier of roughly 100. 80/day leaves headroom under that ceiling,

@@ -84,6 +84,21 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
+    <!--
+      Carries throttling. The per-account buckets key on a field of the parsed
+      request body, which a servlet filter or HandlerInterceptor cannot see —
+      both run before argument resolution. An aspect around the handler method
+      runs after binding, so one mechanism can cover both bucket kinds.
+
+      Named spring-boot-starter-aspectj, not the spring-boot-starter-aop of
+      Boot 3 and earlier: Boot 4 renamed it, and the old id is not managed by
+      the parent at all, so requesting it fails the build with a missing
+      version rather than resolving to something stale.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-aspectj</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcprov-jdk18on</artifactId>

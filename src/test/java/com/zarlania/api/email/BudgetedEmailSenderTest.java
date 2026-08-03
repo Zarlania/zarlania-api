@@ -3,6 +3,7 @@ package com.zarlania.api.email;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.zarlania.api.testsupport.MutableClock;
 import com.zarlania.api.throttle.InMemoryRateLimiter;
 import com.zarlania.api.throttle.ThrottleProperties;
 import java.time.Clock;
@@ -11,6 +12,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -74,42 +76,12 @@ class BudgetedEmailSenderTest {
 
   private BudgetedEmailSender sender(Clock clock) {
     ThrottleProperties properties =
-        new ThrottleProperties(
-            Duration.ofMinutes(1), 10, 5, 3, 30, 60, 10, 3, 3, BUDGET_LIMIT, BUDGET_WINDOW);
+        new ThrottleProperties(Duration.ofMinutes(1), Map.of(), BUDGET_LIMIT, BUDGET_WINDOW);
     return new BudgetedEmailSender(
         delivered::add, new InMemoryRateLimiter(properties, clock), BUDGET_LIMIT, BUDGET_WINDOW);
   }
 
   private static EmailMessage message(String to) {
     return new EmailMessage(to, "subject", "body");
-  }
-
-  /** Minimal advanceable clock; {@link Clock#fixed} cannot move and Thread.sleep is not a test. */
-  private static final class MutableClock extends Clock {
-
-    private Instant now;
-
-    private MutableClock(Instant now) {
-      this.now = now;
-    }
-
-    private void advance(Duration amount) {
-      now = now.plus(amount);
-    }
-
-    @Override
-    public ZoneOffset getZone() {
-      return ZoneOffset.UTC;
-    }
-
-    @Override
-    public Clock withZone(java.time.ZoneId zone) {
-      return this;
-    }
-
-    @Override
-    public Instant instant() {
-      return now;
-    }
   }
 }

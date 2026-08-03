@@ -37,14 +37,24 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
   private static final String UNEXPECTED_ERROR_DETAIL = "Unexpected error";
   private static final String VALIDATION_FAILED_DETAIL = "One or more fields failed validation";
 
+  /**
+   * Answers a domain rule violation with its own status and code.
+   *
+   * <p>Returns a {@link ResponseEntity} rather than a bare {@link ProblemDetail} so that an
+   * exception carrying response headers keeps them: a 429 without its {@code Retry-After} tells the
+   * client to back off without saying for how long.
+   */
   @ExceptionHandler(ApiException.class)
-  public ProblemDetail handleApiException(ApiException exception) {
+  public ResponseEntity<ProblemDetail> handleApiException(ApiException exception) {
     ErrorCode errorCode = exception.getErrorCode();
     ProblemDetail problem =
         ProblemDetail.forStatusAndDetail(
             HttpStatus.valueOf(errorCode.getStatus()), exception.getMessage());
     problem.setProperty(CODE_PROPERTY, errorCode.getCode());
-    return problem;
+
+    ResponseEntity.BodyBuilder response = ResponseEntity.status(errorCode.getStatus());
+    exception.getResponseHeaders().forEach(response::header);
+    return response.body(problem);
   }
 
   // Overriding this protected hook (rather than adding a second @ExceptionHandler for

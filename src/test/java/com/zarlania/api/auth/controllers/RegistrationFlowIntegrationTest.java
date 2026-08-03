@@ -43,7 +43,10 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 // lifetime. The point of Task 13 is exercised in LoginFlowIntegrationTest instead, against the
 // real defaults.
 @SpringBootTest(
-    properties = {"zarlania.throttle.register-limit=1000", "zarlania.throttle.resend-limit=1000"})
+    properties = {
+      "zarlania.throttle.endpoints.register.limit=1000",
+      "zarlania.throttle.endpoints.resend.limit=1000"
+    })
 @AutoConfigureMockMvc
 @Testcontainers
 @Import(RecordingEmailSenderConfig.class)

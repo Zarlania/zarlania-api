@@ -33,6 +33,10 @@ public class InMemoryRateLimiter implements RateLimiter {
     boolean hasPassed(Instant now) {
       return now.isAfter(start.plus(length));
     }
+
+    Duration remainingAt(Instant now) {
+      return Duration.between(now, start.plus(length));
+    }
   }
 
   private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
@@ -40,12 +44,12 @@ public class InMemoryRateLimiter implements RateLimiter {
   private final Clock clock;
 
   @Override
-  public boolean tryConsume(String key, int limit) {
+  public ThrottleDecision tryConsume(String key, int limit) {
     return tryConsume(key, limit, properties.window());
   }
 
   @Override
-  public boolean tryConsume(String key, int limit, Duration windowLength) {
+  public ThrottleDecision tryConsume(String key, int limit, Duration windowLength) {
     Instant now = clock.instant();
     Window window =
         windows.compute(
@@ -63,7 +67,10 @@ public class InMemoryRateLimiter implements RateLimiter {
     // it, which discounts at most one increment against a key nobody will read again. That is
     // an acceptable approximation for a limiter, not a hole a client could exploit to bypass
     // the limit.
-    return window.count().incrementAndGet() <= limit;
+    if (window.count().incrementAndGet() <= limit) {
+      return ThrottleDecision.permitted();
+    }
+    return ThrottleDecision.refused(window.remainingAt(now));
   }
 
   @Scheduled(fixedDelayString = "${zarlania.throttle.window}")

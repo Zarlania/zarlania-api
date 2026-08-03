@@ -29,7 +29,7 @@ public class BudgetedEmailSender implements EmailSender {
 
   @Override
   public void send(EmailMessage message) {
-    if (!rateLimiter.tryConsume(BUDGET_KEY, budgetLimit, budgetWindow)) {
+    if (!rateLimiter.tryConsume(BUDGET_KEY, budgetLimit, budgetWindow).allowed()) {
       throw new EmailBudgetExhaustedException(
           "Outbound email budget of " + budgetLimit + " per " + budgetWindow + " is exhausted");
     }

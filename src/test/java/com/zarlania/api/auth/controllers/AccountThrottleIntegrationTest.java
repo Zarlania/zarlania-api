@@ -36,9 +36,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  */
 @SpringBootTest(
     properties = {
-      "zarlania.throttle.login-limit=1000",
-      "zarlania.throttle.register-limit=1000",
-      "zarlania.throttle.resend-limit=1000"
+      "zarlania.throttle.endpoints.login.limit=1000",
+      "zarlania.throttle.endpoints.register.limit=1000",
+      "zarlania.throttle.endpoints.resend.limit=1000"
     })
 @AutoConfigureMockMvc
 @Testcontainers

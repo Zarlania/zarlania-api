@@ -13,14 +13,23 @@ public interface RateLimiter {
 
   /**
    * Consumes one unit against {@code key} within the configured {@code zarlania.throttle.window}.
+   *
+   * @param key the bucket to consume from; see {@link ThrottleKeys}
+   * @param limit how many units the window allows
+   * @return whether the request fits, and how long until the window refills if it does not
    */
-  boolean tryConsume(String key, int limit);
+  ThrottleDecision tryConsume(String key, int limit);
 
   /**
    * Consumes one unit against {@code key} within an explicit window. Exists for budgets whose
    * period is not the request-throttling window: the global outbound email cap ({@code
    * email.BudgetedEmailSender}) is a daily allowance, and expressing it in one-minute windows would
    * cap the rate while leaving the day's total unbounded.
+   *
+   * @param key the bucket to consume from
+   * @param limit how many units the window allows
+   * @param window how long the window lasts before it refills
+   * @return whether the request fits, and how long until the window refills if it does not
    */
-  boolean tryConsume(String key, int limit, Duration window);
+  ThrottleDecision tryConsume(String key, int limit, Duration window);
 }

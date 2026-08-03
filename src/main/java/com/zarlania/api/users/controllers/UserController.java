@@ -16,12 +16,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class UserController {
 
-  private static final String ME_PATH = "/users/me";
-
   private final UserService userService;
   private final OrganizationService organizationService;
 
-  @GetMapping(ME_PATH)
+  /**
+   * Returns the caller's own user and active organization, resolved from the bearer token rather
+   * than from anything in the request, so one caller can never read another's identity.
+   */
+  @GetMapping("/users/me")
   public MeResponse me(@AuthenticationPrincipal AuthPrincipal principal) {
     // Unreachable for a live session: a token outliving its user or organization needs the row to
     // have been deleted inside the access token's 15-minute TTL, and the only deletion path
