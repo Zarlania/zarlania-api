@@ -36,11 +36,21 @@ class AccountCreator {
   private final EmailVerificationService emailVerificationService;
   private final ApplicationEventPublisher events;
 
-  // The verification token is issued and its event published in here rather than by the caller, so
-  // that a crash between "user exists" and "user has a way to verify" is impossible: either all
-  // four rows commit or none do. The event is published inside the transaction on purpose —
-  // RegistrationEmailListener is an AFTER_COMMIT listener, so the email goes out only if the
-  // account it points at actually survived.
+  /**
+   * Writes all four rows and publishes the event that sends the verification email.
+   *
+   * <p>The verification token is issued and its event published in here rather than by the caller,
+   * so that a crash between "user exists" and "user has a way to verify" is impossible: either all
+   * four rows commit or none do. The event is published inside the transaction on purpose — {@link
+   * RegistrationEmailListener} is an {@code AFTER_COMMIT} listener, so the email goes out only if
+   * the account it points at actually survived.
+   *
+   * @param rawPassword the password as the caller typed it; {@link CredentialsService} hashes it,
+   *     and it is never stored or logged in this form
+   * @throws org.springframework.dao.DataIntegrityViolationException if a concurrent registration
+   *     claimed the email or username first. It surfaces at commit, so only a caller outside this
+   *     transaction can catch it — see this class's own documentation.
+   */
   @Transactional
   void createAccount(String email, String username, String rawPassword) {
     UserDto user = userService.createUnverified(email, username);
