@@ -58,16 +58,15 @@ public class RegistrationEmailListener {
   @Qualifier(EmailConfig.DISPATCH_EXECUTOR_BEAN)
   private final Executor emailDispatchExecutor;
 
-  // fallbackExecution, unlike the duplicate-notice listener below, because this event has two
-  // publishers with different transaction shapes. RegistrationService.register publishes inside its
-  // own transaction, so the send is deferred to AFTER_COMMIT as normal; resend publishes with no
-  // transaction active — its only write, the new token, has already committed in
-  // EmailVerificationService's own — and without this flag Spring would silently drop the event
-  // there, losing every resent verification email. The duplicate notice has only the transactional
-  // publisher, so it needs no fallback.
   /**
    * Sends the verification email once the registration that asked for it has committed, so a rolled
    * back registration never emails a link to a row that does not exist.
+   *
+   * <p>{@code fallbackExecution} because this event has two publishers with different transaction
+   * shapes. Registration publishes inside its own transaction, so the send is deferred to {@code
+   * AFTER_COMMIT} as normal; resend publishes with no transaction active — its only write, the new
+   * token, has already committed in {@code EmailVerificationService}'s own — and without the flag
+   * Spring would silently drop the event there, losing every resent verification email.
    */
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onVerificationEmailRequested(VerificationEmailRequested event) {
@@ -86,14 +85,15 @@ public class RegistrationEmailListener {
             "Click the link below to verify your Zarlania account:\n\n" + verificationUrl));
   }
 
-  // fallbackExecution here too, now that RegistrationService.register is no longer @Transactional
-  // itself: its transaction lives in AccountCreator, and the branch that publishes this event never
-  // enters it — the account already exists, so there is nothing to create. With no transaction
-  // active at publication time, Spring would silently discard the event and the duplicate-attempt
-  // notice would never be sent.
   /**
    * Tells the existing owner that someone tried to register their address again. Carries no token
    * and no link: whoever made the attempt has not proved they control the mailbox.
+   *
+   * <p>{@code fallbackExecution} here too, because registration is not itself
+   * {@code @Transactional}: its transaction lives in {@code AccountCreator}, and the branch that
+   * publishes this event never enters it — the account already exists, so there is nothing to
+   * create. With no transaction active at publication, Spring would silently discard the event and
+   * the notice would never be sent.
    */
   @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
   public void onDuplicateRegistrationAttempted(DuplicateRegistrationAttempted event) {

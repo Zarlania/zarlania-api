@@ -52,22 +52,24 @@ public class EmailConfig {
         throttleProperties.emailBudgetWindow());
   }
 
-  // Sending happens off the request thread, never on it. RegistrationService pays a decoy Argon2
-  // hash on every early-return branch so that "unknown email", "already verified" and "verification
-  // resent" cannot be told apart by how long /auth/resend takes to answer — but only the third of
-  // those actually sends anything, and a provider HTTP round trip taken inline costs far more than
-  // the hash the other two pay. That difference alone would re-open the enumeration channel the
-  // decoy exists to close. Handing every send to this executor makes all three branches cost the
-  // same no matter what the provider does.
-  //
-  // One thread, because BudgetedEmailSender caps the entire service at
-  // zarlania.throttle.email-budget-limit messages per window: there is no volume here worth
-  // parallelising, and a second thread would only add heap pressure on a 512 MB instance. The queue
   /**
    * The single thread email is dispatched on, so no request thread ever waits on a provider.
    *
-   * @param queueCapacity bounded deliberately — an unbounded queue turns a provider outage into an
-   *     out-of-memory kill, while a full one rejects and the caller logs the dropped message
+   * <p>Off the request thread for enumeration safety, not for throughput. {@code
+   * RegistrationService} pays a decoy Argon2 hash on every early-return branch so that "unknown
+   * address", "already verified" and "verification resent" cannot be told apart by how long the
+   * resend endpoint takes to answer — but only the third of those actually sends anything, and a
+   * provider HTTP round trip taken inline costs far more than the hash the other two pay. That
+   * difference alone would re-open the channel the decoy exists to close. Handing every send here
+   * makes all three branches cost the same whatever the provider does.
+   *
+   * <p>One thread, because {@link BudgetedEmailSender} caps the entire service at {@code
+   * zarlania.throttle.email-budget-limit} messages per window: there is no volume here worth
+   * parallelising, and a second thread would only add heap pressure on a 512 MB instance.
+   *
+   * @param queueCapacity bounded for the same reason — an unbounded queue turns a provider outage
+   *     into an out-of-memory kill, while a full one rejects and {@code RegistrationEmailListener}
+   *     logs the dropped message
    */
   @Bean(DISPATCH_EXECUTOR_BEAN)
   public ThreadPoolTaskExecutor emailDispatchExecutor(

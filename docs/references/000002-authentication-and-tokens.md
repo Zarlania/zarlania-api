@@ -9,9 +9,10 @@ tags:
 - http
 - security
 created: '2026-07-27'
-updated: '2026-08-02'
+updated: '2026-08-03'
 related:
 - '000001'
+- '000003'
 ---
 
 # Authentication and tokens
@@ -24,8 +25,8 @@ related:
 | Description | How registration, email verification, login, JWT access tokens, refresh-token families, and the abuse defenses around them work end to end. |
 | Tags | architecture, configuration, http, security |
 | Created | 2026-07-27 |
-| Updated | 2026-08-02 |
-| Related | [000001](000001-persistence-foundation.md) |
+| Updated | 2026-08-03 |
+| Related | [000001](000001-persistence-foundation.md), [000003](000003-outbound-email.md) |
 <!-- reference-table:end -->
 
 Registration, email verification, login, JWT access tokens, refresh-token
@@ -88,7 +89,8 @@ flowchart LR
 - **`email`** — the `EmailSender` port and its two adapters
   (`ResendEmailSender` for a real provider, `LoggingEmailSender` for local
   dev). In the diagram above because registration depends on it, though it
-  is topic infrastructure rather than a domain.
+  is topic infrastructure rather than a domain. [Outbound
+  email](000003-outbound-email.md) covers it in full.
 
 `GET /users/me` (in the `users` domain) and the JWKS endpoint (in `auth`) are
 the two read paths that reach across these boundaries the same way every
@@ -213,7 +215,8 @@ not "after the response": a `@TransactionalEventListener` still runs on the
 publishing thread, which is the request thread, so the round trip would land
 squarely in the caller's measured time. A rejected submission (full queue)
 is caught and logged for the same reason — only the sending branch could
-ever observe it. See [Email dispatch](#email-dispatch).
+ever observe it. The executor itself, and what those logs look like, are in
+[Outbound email](000003-outbound-email.md).
 
 ## Login, access tokens, and refresh-token families
 
@@ -479,49 +482,15 @@ plan runs exactly one instance — distributed state would buy nothing today.
 Redis-backed implementation can drop in behind it without any caller
 changing, the day the service ever runs on more than one instance.
 
-### Global email budget
+### Outbound email has its own budget
 
-The per-caller limits above bound requests, not mail. Five registrations a
-minute from one compliant IP is roughly 7,200 messages a day, against a
-Resend free tier of about 100. With no cap of its own, this service would
-find out only when the provider's quota tripped: the provider throws,
-`RegistrationEmailListener` logs it, and the endpoint still answers `202`
-— so every legitimate verification email after that point is silently
-lost.
-
-`BudgetedEmailSender` wraps whichever `EmailSender` `EmailConfig` builds
-and spends from one service-wide budget before delegating: 80 sends
-(`zarlania.throttle.email-budget-limit`) per day (`email-budget-window`).
-It wraps the port rather than the one caller that sends mail today, so
-anything added later inherits the cap. A rejected send throws
-`EmailBudgetExhaustedException`, and the listener logs both failure modes
-at `error` under greppable markers: `EMAIL_BUDGET_EXHAUSTED` (this service
-stopped itself — re-derive the cap) and `EMAIL_SEND_FAILED` (the provider
-refused).
-
-This is what `RateLimiter`'s explicit-window overload exists for: a daily
-allowance expressed in one-minute windows would cap the rate while leaving
-the day's total unbounded.
-
-### Email dispatch
-
-`EmailConfig` builds a dedicated `emailDispatchExecutor`, and
-`RegistrationEmailListener` submits every send to it rather than calling the
-sender directly. The reason is enumeration safety, not throughput: see
-[Enumeration
-safety](#enumeration-safety-status-body-and-timing-all-have-to-match).
-
-One thread, because the budget above already caps the whole service at 80
-messages a day — there is no volume worth parallelising, and a second thread
-would only add heap pressure on a 512 MB instance. The queue is bounded at
-`zarlania.email.dispatch-queue-capacity` (200) so that a provider outage
-cannot grow it until the instance is OOM-killed; it sits comfortably above
-the daily budget, so the budget is what bounds outbound volume in practice.
-A full queue is logged under a third greppable marker, `EMAIL_QUEUE_FULL`,
-distinct from the two above because it means the message never reached the
-sender at all. On shutdown the executor drains rather than dropping: an
-in-flight send has already been counted against the budget and is somebody's
-verification link.
+Every limit above bounds requests, not mail. Five registrations a minute from
+one compliant address is far more mail than a free provider tier allows in a
+day, so outbound email carries a second, service-wide cap of its own, counted
+by this same `RateLimiter` over a daily window rather than the one-minute one.
+It is not per-caller and does not appear in the table above. See [Outbound
+email](000003-outbound-email.md), which owns that budget and the rest of the
+sending path.
 
 ## Scheduled cleanup
 
@@ -566,21 +535,20 @@ ordinary unknown-token `401` and lose the detection.
 Nothing here happens automatically; each of these is a one-time step a
 maintainer performs outside this repository.
 
-1. **Resend account.** Create an account at Resend (free tier, roughly
-   3,000 emails/month) and generate an API key.
-2. **DNS.** Add Resend's SPF and DKIM records to the `zarlania.com` DNS zone
-   so outgoing mail from `EMAIL_FROM` (`no-reply@zarlania.com` by default)
-   is authenticated and does not land in spam.
-3. **Render env vars.** In the Render dashboard, set `RESEND_API_KEY`,
-   `JWT_PRIVATE_KEY`, and (only once a rotation is in flight)
-   `JWT_RETIRED_PUBLIC_KEYS`. All three are declared with `sync: false` in
-   `render.yaml` — the blueprint reserves the slot, but the value is never
-   committed and has to be entered by hand in the dashboard.
-4. **Local development.** Leave `JWT_PRIVATE_KEY` and `RESEND_API_KEY`
-   unset: `JwtKeys` falls back to an ephemeral dev keypair, and
-   `EmailConfig` falls back to `LoggingEmailSender`, which logs the email
-   instead of sending it. `.env.example` documents the local-only knobs
-   (`AUTH_COOKIE_SECURE=false` in particular — see the cookie table above).
+1. **Render env vars.** In the Render dashboard, set `JWT_PRIVATE_KEY` and
+   (only once a rotation is in flight) `JWT_RETIRED_PUBLIC_KEYS`. Both are
+   declared with `sync: false` in `render.yaml` — the blueprint reserves the
+   slot, but the value is never committed and has to be entered by hand in
+   the dashboard.
+2. **Local development.** Leave `JWT_PRIVATE_KEY` unset and `JwtKeys` falls
+   back to an ephemeral dev keypair. `.env.example` documents the local-only
+   knobs (`AUTH_COOKIE_SECURE=false` in particular — see the cookie table
+   above).
+
+Sending real verification email needs a provider account, DNS records and a
+third `sync: false` env var; [Outbound
+email](000003-outbound-email.md#manual-setup) has that setup, and what happens
+locally when it is skipped.
 
 ## Design decisions worth preserving
 

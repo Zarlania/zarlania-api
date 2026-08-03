@@ -41,8 +41,13 @@ public class ResendEmailSender implements EmailSender {
   }
 
   /**
-   * Resend's own error responses carry no detail worth surfacing to the caller, so only the status
-   * is preserved. The caller (registration) maps this to a 500.
+   * Turns any non-2xx response into a failure carrying the status and nothing else — Resend's error
+   * bodies hold no detail worth surfacing.
+   *
+   * <p>Nothing downstream turns this into a response. Sends happen off the request thread, after
+   * the work that triggered them has committed, so the caller catches this and logs it under {@code
+   * EMAIL_SEND_FAILED}; answering differently when mail fails would re-open the enumeration channel
+   * that off-thread dispatch exists to close.
    */
   private void throwOnError(ClientHttpResponse response) throws IOException {
     throw new IllegalStateException("Resend responded with status " + response.getStatusCode());

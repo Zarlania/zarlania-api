@@ -42,13 +42,16 @@ public class CredentialsService {
   private final PasswordEncoder passwordEncoder;
   private final Semaphore hashingPermits;
 
-  // EI_EXPOSE_REP2: the "externally mutable objects" here are Spring Data repository proxies —
-  // stateless, container-managed singletons shared by every bean that injects them, which is the
-  // entire point of dependency injection. There is no representation to copy and nothing a caller
-  // could mutate. Every other service in this codebase stores the same repositories the same way
-  // and is not flagged only because Lombok marks its generated constructor; this one is written by
-  // hand because the semaphore below is derived from configuration rather than injected as-is.
   /**
+   * Builds the service and sizes the hashing gate.
+   *
+   * <p>{@code EI_EXPOSE_REP2} is suppressed because the "externally mutable objects" it flags are
+   * Spring Data repository proxies: stateless, container-managed singletons shared by every bean
+   * that injects them, which is the entire point of dependency injection. There is no
+   * representation to copy and nothing a caller could mutate. Every other service here stores the
+   * same repositories the same way and goes unflagged only because Lombok marks its generated
+   * constructor.
+   *
    * @param properties supplies the hashing concurrency cap, which is why this constructor is
    *     written by hand rather than generated: the semaphore is derived from configuration, not
    *     injected

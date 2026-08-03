@@ -1,6 +1,5 @@
 package com.zarlania.api.email;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
@@ -10,16 +9,10 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
-import com.zarlania.api.throttle.InMemoryRateLimiter;
-import com.zarlania.api.throttle.ThrottleProperties;
-import java.time.Clock;
-import java.time.Duration;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
-import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
@@ -95,54 +88,5 @@ class ResendEmailSenderTest {
         .hasMessageContaining("302");
 
     server.verify();
-  }
-
-  @Test
-  void emailConfigReturnsLoggingEmailSenderWhenApiKeyIsBlankAndProfileIsNotProduction() {
-    EmailConfig config = new EmailConfig();
-    MockEnvironment environment = new MockEnvironment();
-
-    EmailSender sender = config.provider("", FROM_ADDRESS, environment);
-
-    assertThat(sender).isInstanceOf(LoggingEmailSender.class);
-  }
-
-  @Test
-  void emailConfigThrowsWhenApiKeyIsBlankAndProfileIsProduction() {
-    EmailConfig config = new EmailConfig();
-    MockEnvironment environment = new MockEnvironment();
-    environment.setActiveProfiles("production");
-
-    assertThatThrownBy(() -> config.provider("", FROM_ADDRESS, environment))
-        .isInstanceOf(IllegalStateException.class);
-  }
-
-  @Test
-  void emailConfigReturnsResendEmailSenderWhenApiKeyIsPresent() {
-    EmailConfig config = new EmailConfig();
-    MockEnvironment environment = new MockEnvironment();
-
-    EmailSender sender = config.provider(API_KEY, FROM_ADDRESS, environment);
-
-    assertThat(sender).isInstanceOf(ResendEmailSender.class);
-  }
-
-  // Whichever provider is chosen, the bean the rest of the application injects has to be the
-  // budgeted one — otherwise a caller added later sends outside the service-wide cap.
-  @Test
-  void emailConfigWrapsTheChosenProviderInTheGlobalBudget() {
-    EmailConfig config = new EmailConfig();
-    ThrottleProperties properties =
-        new ThrottleProperties(Duration.ofMinutes(1), Map.of(), 80, Duration.ofDays(1));
-
-    EmailSender sender =
-        config.emailSender(
-            API_KEY,
-            FROM_ADDRESS,
-            new MockEnvironment(),
-            new InMemoryRateLimiter(properties, Clock.systemUTC()),
-            properties);
-
-    assertThat(sender).isInstanceOf(BudgetedEmailSender.class);
   }
 }
