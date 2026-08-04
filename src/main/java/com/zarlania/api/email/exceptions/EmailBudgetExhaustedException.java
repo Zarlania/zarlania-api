@@ -1,4 +1,7 @@
-package com.zarlania.api.email;
+package com.zarlania.api.email.exceptions;
+
+import com.zarlania.api.email.BudgetedEmailSender;
+import com.zarlania.api.email.EmailSender;
 
 /**
  * Thrown by {@link BudgetedEmailSender} when a send would exceed the service-wide outbound budget.
@@ -8,8 +11,6 @@ package com.zarlania.api.email;
  * the cap may need raising, while a provider failure means something outside it went wrong.
  */
 public class EmailBudgetExhaustedException extends RuntimeException {
-
-  private static final long serialVersionUID = 1L;
 
   /**
    * @param message states the budget and window that were exhausted, since this is read in logs

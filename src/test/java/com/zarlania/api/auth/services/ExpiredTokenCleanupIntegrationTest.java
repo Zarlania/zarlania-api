@@ -2,15 +2,15 @@ package com.zarlania.api.auth.services;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.zarlania.api.auth.entities.RefreshToken;
+import com.zarlania.api.auth.entities.RefreshTokenEntity;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
-import com.zarlania.api.credentials.entities.EmailVerificationToken;
+import com.zarlania.api.credentials.entities.EmailVerificationTokenEntity;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
-import com.zarlania.api.organizations.dtos.OrganizationDto;
+import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.testsupport.IntegrationTestBase;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.time.Clock;
 import java.time.Duration;
@@ -39,10 +39,11 @@ class ExpiredTokenCleanupIntegrationTest extends IntegrationTestBase {
 
   @Test
   void deletesRefreshTokenFamiliesPastTheirExpiryAndKeepsLiveOnes() {
-    UserDto user = seedUser("refresh-prune");
-    OrganizationDto org = organizationService.createPersonalOrganization(user.id(), "refresh's");
-    String expired = seedRefreshToken(user, org, clock.instant().minus(PAST));
-    String live = seedRefreshToken(user, org, clock.instant().plus(FUTURE));
+    User user = seedUser("refresh-prune");
+    Organization organization =
+        organizationService.createPersonalOrganization(user.id(), "refresh's");
+    String expired = seedRefreshToken(user, organization, clock.instant().minus(PAST));
+    String live = seedRefreshToken(user, organization, clock.instant().plus(FUTURE));
 
     cleanup.pruneDeadTokens();
 
@@ -55,14 +56,14 @@ class ExpiredTokenCleanupIntegrationTest extends IntegrationTestBase {
   // ordinary unknown-token 401 instead, losing the detection entirely.
   @Test
   void keepsAUsedRefreshTokenWhileItsFamilyIsStillLive() {
-    UserDto user = seedUser("used-token");
-    OrganizationDto org = organizationService.createPersonalOrganization(user.id(), "used's");
+    User user = seedUser("used-token");
+    Organization organization = organizationService.createPersonalOrganization(user.id(), "used's");
     String raw = TokenHasher.newUrlSafeToken();
-    RefreshToken token =
-        new RefreshToken(
+    RefreshTokenEntity token =
+        new RefreshTokenEntity(
             UUID.randomUUID(),
             user.id(),
-            org.id(),
+            organization.id(),
             TokenHasher.sha256Hex(raw),
             clock.instant().plus(FUTURE));
     token.markUsed(clock.instant());
@@ -75,7 +76,7 @@ class ExpiredTokenCleanupIntegrationTest extends IntegrationTestBase {
 
   @Test
   void deletesConsumedAndExpiredVerificationTokensAndKeepsOutstandingOnes() {
-    UserDto user = seedUser("verification-prune");
+    User user = seedUser("verification-prune");
     String consumed = seedVerificationToken(user, clock.instant().plus(FUTURE), true);
     String expired = seedVerificationToken(user, clock.instant().minus(PAST), false);
     String outstanding = seedVerificationToken(user, clock.instant().plus(FUTURE), false);
@@ -87,22 +88,26 @@ class ExpiredTokenCleanupIntegrationTest extends IntegrationTestBase {
     assertThat(verificationTokens.findByTokenHash(outstanding)).isPresent();
   }
 
-  private UserDto seedUser(String slug) {
+  private User seedUser(String slug) {
     return userService.createUnverified(slug + "@example.com", slug);
   }
 
-  private String seedRefreshToken(UserDto user, OrganizationDto org, Instant familyExpiresAt) {
+  private String seedRefreshToken(User user, Organization organization, Instant familyExpiresAt) {
     String raw = TokenHasher.newUrlSafeToken();
     refreshTokens.saveAndFlush(
-        new RefreshToken(
-            UUID.randomUUID(), user.id(), org.id(), TokenHasher.sha256Hex(raw), familyExpiresAt));
+        new RefreshTokenEntity(
+            UUID.randomUUID(),
+            user.id(),
+            organization.id(),
+            TokenHasher.sha256Hex(raw),
+            familyExpiresAt));
     return TokenHasher.sha256Hex(raw);
   }
 
-  private String seedVerificationToken(UserDto user, Instant expiresAt, boolean consumed) {
+  private String seedVerificationToken(User user, Instant expiresAt, boolean consumed) {
     String raw = TokenHasher.newUrlSafeToken();
-    EmailVerificationToken token =
-        new EmailVerificationToken(user.id(), TokenHasher.sha256Hex(raw), expiresAt);
+    EmailVerificationTokenEntity token =
+        new EmailVerificationTokenEntity(user.id(), TokenHasher.sha256Hex(raw), expiresAt);
     if (consumed) {
       token.consume(clock.instant());
     }

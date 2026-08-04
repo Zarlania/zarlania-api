@@ -1,5 +1,6 @@
 package com.zarlania.api.organizations.entities;
 
+import com.zarlania.api.organizations.dtos.OrganizationType;
 import com.zarlania.api.persistence.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -18,7 +19,7 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "organizations")
-public class Organization extends BaseEntity {
+public class OrganizationEntity extends BaseEntity {
 
   @Column(nullable = false, unique = true, columnDefinition = "citext")
   private String name;
@@ -27,13 +28,13 @@ public class Organization extends BaseEntity {
   @Column(nullable = false)
   private OrganizationType type;
 
-  protected Organization() {}
+  protected OrganizationEntity() {}
 
   /**
    * @param name unique across all organizations, case-insensitively
    * @param type whether this belongs to one account or is shared
    */
-  public Organization(String name, OrganizationType type) {
+  public OrganizationEntity(String name, OrganizationType type) {
     this.name = name;
     this.type = type;
   }

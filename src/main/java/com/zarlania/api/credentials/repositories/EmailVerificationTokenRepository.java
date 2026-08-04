@@ -1,6 +1,6 @@
 package com.zarlania.api.credentials.repositories;
 
-import com.zarlania.api.credentials.entities.EmailVerificationToken;
+import com.zarlania.api.credentials.entities.EmailVerificationTokenEntity;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.Optional;
@@ -13,14 +13,14 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Persistence for {@link EmailVerificationToken}. Everything here is keyed on the token hash or the
- * user, never the raw token, which this side of the system never sees.
+ * Persistence for {@link EmailVerificationTokenEntity}. Everything here is keyed on the token hash
+ * or the user, never the raw token, which this side of the system never sees.
  */
 public interface EmailVerificationTokenRepository
-    extends JpaRepository<EmailVerificationToken, UUID> {
+    extends JpaRepository<EmailVerificationTokenEntity, UUID> {
 
   /** Finds a token by its hash, without locking it. For reads that will not go on to write. */
-  Optional<EmailVerificationToken> findByTokenHash(String tokenHash);
+  Optional<EmailVerificationTokenEntity> findByTokenHash(String tokenHash);
 
   /**
    * The locking twin of {@link #findByTokenHash}, for the one caller that goes on to write the row.
@@ -37,7 +37,7 @@ public interface EmailVerificationTokenRepository
    * non-transactional reads.
    */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
-  Optional<EmailVerificationToken> findWithLockByTokenHash(String tokenHash);
+  Optional<EmailVerificationTokenEntity> findWithLockByTokenHash(String tokenHash);
 
   /**
    * Invalidates an account's outstanding tokens. Issuing a fresh token runs this first, so only the
@@ -79,7 +79,7 @@ public interface EmailVerificationTokenRepository
   @Modifying
   @Transactional
   @Query(
-      "delete from EmailVerificationToken t"
+      "delete from EmailVerificationTokenEntity t"
           + " where t.consumedAt is not null or t.expiresAt < :cutoff")
   int deleteConsumedTokensAndThoseExpiredBefore(@Param("cutoff") Instant cutoff);
 }

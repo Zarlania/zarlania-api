@@ -15,10 +15,10 @@ import com.zarlania.api.auth.services.JwtKeys;
 import com.zarlania.api.auth.services.JwtService;
 import com.zarlania.api.auth.services.TokenClaims;
 import com.zarlania.api.auth.services.TokenKinds;
-import com.zarlania.api.organizations.dtos.OrganizationDto;
+import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.testsupport.EndToEndTestBase;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.time.Duration;
 import java.time.Instant;
@@ -55,10 +55,10 @@ class SecurityConfigEndToEndTest extends EndToEndTestBase {
 
   @Test
   void meWithAValidTokenReturnsTheSeededUserAndPersonalOrganization() throws Exception {
-    UserDto user = userService.createUnverified("me@example.com", "meuser");
-    OrganizationDto org =
+    User user = userService.createUnverified("me@example.com", "meuser");
+    Organization organization =
         organizationService.createPersonalOrganization(user.id(), "meuser's Space");
-    String token = jwtService.mint(user.id(), org.id(), TokenKinds.USER);
+    String token = jwtService.mint(user.id(), organization.id(), TokenKinds.USER);
 
     mockMvc
         .perform(get("/users/me").header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + token))
@@ -69,10 +69,10 @@ class SecurityConfigEndToEndTest extends EndToEndTestBase {
 
   @Test
   void meWithATamperedSignatureTokenIsUnauthorizedNotServerError() throws Exception {
-    UserDto user = userService.createUnverified("tampered@example.com", "tampereduser");
-    OrganizationDto org =
+    User user = userService.createUnverified("tampered@example.com", "tampereduser");
+    Organization organization =
         organizationService.createPersonalOrganization(user.id(), "tampereduser's Space");
-    String token = jwtService.mint(user.id(), org.id(), TokenKinds.USER);
+    String token = jwtService.mint(user.id(), organization.id(), TokenKinds.USER);
 
     mockMvc
         .perform(

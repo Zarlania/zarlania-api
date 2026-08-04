@@ -6,7 +6,7 @@ import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepositor
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import java.time.Clock;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +31,7 @@ class CredentialsServiceIntegrationTest extends IntegrationTestBase {
 
   @Test
   void aStoredPasswordStillVerifiesAfterARoundTripThroughTheDatabase() {
-    UserDto user = accounts.user("cred-roundtrip");
+    User user = accounts.user("cred-roundtrip");
 
     credentialsService.createPassword(user.id(), TestAccounts.PASSWORD);
 
@@ -43,7 +43,7 @@ class CredentialsServiceIntegrationTest extends IntegrationTestBase {
   // and nothing that can be presented.
   @Test
   void whatIsStoredIsAnArgonHashRatherThanThePassword() {
-    UserDto user = accounts.user("cred-hashed");
+    User user = accounts.user("cred-hashed");
 
     credentialsService.createPassword(user.id(), TestAccounts.PASSWORD);
 
@@ -55,7 +55,7 @@ class CredentialsServiceIntegrationTest extends IntegrationTestBase {
   // not be discoverable through the answer to a login attempt.
   @Test
   void anAccountWithNoPasswordNeverMatches() {
-    UserDto user = accounts.user("cred-none");
+    User user = accounts.user("cred-none");
 
     assertThat(credentialsService.passwordMatches(user.id(), TestAccounts.PASSWORD)).isFalse();
   }
@@ -64,7 +64,7 @@ class CredentialsServiceIntegrationTest extends IntegrationTestBase {
   // material is split across two of them.
   @Test
   void deleteAllForUserClearsBothTheCredentialAndEveryVerificationToken() {
-    UserDto user = accounts.user("cred-purge");
+    User user = accounts.user("cred-purge");
     credentialsService.createPassword(user.id(), TestAccounts.PASSWORD);
     String tokenHash =
         accounts.verificationToken(user.id(), clock.instant().plus(Duration.ofDays(1)), false);
@@ -79,7 +79,7 @@ class CredentialsServiceIntegrationTest extends IntegrationTestBase {
   // branch with nothing to hash cannot be told apart from one that hashes.
   @Test
   void hashingADecoyLeavesNoTraceInTheDatabase() {
-    UserDto user = accounts.user("cred-decoy");
+    User user = accounts.user("cred-decoy");
 
     credentialsService.hashDecoyPassword();
 

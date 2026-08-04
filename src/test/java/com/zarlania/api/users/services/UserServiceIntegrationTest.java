@@ -5,7 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import java.time.Clock;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
@@ -33,12 +33,12 @@ class UserServiceIntegrationTest extends IntegrationTestBase {
 
   @Test
   void createUnverifiedPersistsAnAccountThatIsNotYetVerified() {
-    UserDto created = userService.createUnverified("newcomer@example.com", "newcomer");
+    User created = userService.createUnverified("newcomer@example.com", "newcomer");
 
     assertThat(created.emailVerified()).isFalse();
     assertThat(userService.findById(created.id()))
         .get()
-        .extracting(UserDto::username)
+        .extracting(User::username)
         .isEqualTo("newcomer");
   }
 
@@ -72,11 +72,11 @@ class UserServiceIntegrationTest extends IntegrationTestBase {
     "findermailcase, FINDERMAILCASE@EXAMPLE.COM"
   })
   void findByIdentifierMatchesEitherColumnCaseInsensitively(String slug, String identifier) {
-    UserDto created = accounts.user(slug);
+    User created = accounts.user(slug);
 
     assertThat(userService.findByIdentifier(identifier))
         .get()
-        .extracting(UserDto::id)
+        .extracting(User::id)
         .isEqualTo(created.id());
   }
 
@@ -87,33 +87,33 @@ class UserServiceIntegrationTest extends IntegrationTestBase {
 
   @Test
   void markEmailVerifiedStampsTheRowSoTheChangeSurvivesAReload() {
-    UserDto created = accounts.user("verifier");
+    User created = accounts.user("verifier");
 
     userService.markEmailVerified(created.id());
 
     assertThat(userService.findById(created.id()))
         .get()
-        .extracting(UserDto::emailVerified)
+        .extracting(User::emailVerified)
         .isEqualTo(true);
   }
 
   @Test
   void findUnverifiedOlderThanReturnsTheStaleUnverifiedAndNothingElse() {
-    UserDto stale = accounts.user("service-stale");
+    User stale = accounts.user("service-stale");
     accounts.backdateCreatedAt(stale.id(), Duration.ofDays(8));
-    UserDto fresh = accounts.user("service-fresh");
+    User fresh = accounts.user("service-fresh");
 
     var candidates = userService.findUnverifiedOlderThan(clock.instant().minus(Duration.ofDays(7)));
 
-    assertThat(candidates).extracting(UserDto::id).contains(stale.id()).doesNotContain(fresh.id());
+    assertThat(candidates).extracting(User::id).contains(stale.id()).doesNotContain(fresh.id());
   }
 
   // The row count the repository reports is the caller's only way to know it lost the race against
   // a verification, so it has to reflect what actually happened rather than what was attempted.
   @Test
   void deleteIfStillUnverifiedReportsWhetherARowActuallyWent() {
-    UserDto doomed = accounts.user("service-doomed");
-    UserDto saved = accounts.user("service-saved");
+    User doomed = accounts.user("service-doomed");
+    User saved = accounts.user("service-saved");
     userService.markEmailVerified(saved.id());
 
     assertThat(userService.deleteIfStillUnverified(doomed.id())).isTrue();

@@ -3,7 +3,6 @@ package com.zarlania.api.throttle;
 import com.zarlania.api.errors.ApiException;
 import com.zarlania.api.errors.ErrorCode;
 import com.zarlania.api.http.ClientIpResolver;
-import com.zarlania.api.throttle.ThrottleProperties.EndpointLimits;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
 import java.util.Map;

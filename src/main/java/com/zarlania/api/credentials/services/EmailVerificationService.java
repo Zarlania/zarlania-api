@@ -1,7 +1,7 @@
 package com.zarlania.api.credentials.services;
 
 import com.zarlania.api.credentials.CredentialsProperties;
-import com.zarlania.api.credentials.entities.EmailVerificationToken;
+import com.zarlania.api.credentials.entities.EmailVerificationTokenEntity;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.security.TokenHasher;
 import java.time.Clock;
@@ -35,7 +35,7 @@ public class EmailVerificationService {
   // contribution rather than just discarding its top bits.
   private static final int LONG_HALF_WIDTH_BITS = 32;
 
-  private final EmailVerificationTokenRepository tokens;
+  private final EmailVerificationTokenRepository emailVerificationTokenRepository;
   private final CredentialsProperties credentialsProperties;
   private final Clock clock;
 
@@ -50,10 +50,11 @@ public class EmailVerificationService {
     // against another issue() for the same user, and a lock taken afterwards would let both
     // callers' deletes run first — the exact interleaving that leaves two live tokens behind.
     lockUserTokens(userId);
-    tokens.deleteByUserIdAndConsumedAtIsNull(userId);
+    emailVerificationTokenRepository.deleteByUserIdAndConsumedAtIsNull(userId);
     String raw = TokenHasher.newUrlSafeToken();
     Instant expiresAt = clock.instant().plus(credentialsProperties.verificationTokenTtl());
-    tokens.save(new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), expiresAt));
+    emailVerificationTokenRepository.save(
+        new EmailVerificationTokenEntity(userId, TokenHasher.sha256Hex(raw), expiresAt));
     return raw;
   }
 
@@ -67,7 +68,8 @@ public class EmailVerificationService {
    */
   @Transactional
   public int pruneDeadTokens() {
-    return tokens.deleteConsumedTokensAndThoseExpiredBefore(clock.instant());
+    return emailVerificationTokenRepository.deleteConsumedTokensAndThoseExpiredBefore(
+        clock.instant());
   }
 
   /**
@@ -82,7 +84,7 @@ public class EmailVerificationService {
    */
   @Transactional
   public Optional<UUID> consume(String rawToken) {
-    return tokens
+    return emailVerificationTokenRepository
         .findWithLockByTokenHash(TokenHasher.sha256Hex(rawToken))
         .filter(token -> token.isUsable(clock.instant()))
         .map(
@@ -102,6 +104,6 @@ public class EmailVerificationService {
     long msb = userId.getMostSignificantBits();
     long lsb = userId.getLeastSignificantBits();
     int key = (int) (msb ^ (msb >>> LONG_HALF_WIDTH_BITS) ^ lsb ^ (lsb >>> LONG_HALF_WIDTH_BITS));
-    tokens.acquireUserTokenLock(USER_TOKEN_LOCK_CLASSIFIER, key);
+    emailVerificationTokenRepository.acquireUserTokenLock(USER_TOKEN_LOCK_CLASSIFIER, key);
   }
 }

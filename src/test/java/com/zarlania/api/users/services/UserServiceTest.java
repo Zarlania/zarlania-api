@@ -6,8 +6,8 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.zarlania.api.users.dtos.UserDto;
-import com.zarlania.api.users.entities.User;
+import com.zarlania.api.users.dtos.User;
+import com.zarlania.api.users.entities.UserEntity;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.Clock;
 import java.time.Duration;
@@ -39,11 +39,12 @@ class UserServiceTest {
 
   @Test
   void createUnverifiedSavesAndReturnsUnverifiedDto() {
-    when(users.save(any(User.class))).thenReturn(new User("new@example.com", "newuser"));
+    when(users.save(any(UserEntity.class)))
+        .thenReturn(new UserEntity("new@example.com", "newuser"));
 
-    UserDto dto = service.createUnverified("new@example.com", "newuser");
+    User dto = service.createUnverified("new@example.com", "newuser");
 
-    ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+    ArgumentCaptor<UserEntity> saved = ArgumentCaptor.forClass(UserEntity.class);
     verify(users).save(saved.capture());
     assertThat(saved.getValue().getEmail()).isEqualTo("new@example.com");
     assertThat(saved.getValue().getUsername()).isEqualTo("newuser");
@@ -55,11 +56,11 @@ class UserServiceTest {
 
   @Test
   void findByIdentifierFallsBackFromEmailToUsername() {
-    User user = new User("someone@example.com", "someone");
+    UserEntity user = new UserEntity("someone@example.com", "someone");
     when(users.findByEmail("someone")).thenReturn(Optional.empty());
     when(users.findByUsername("someone")).thenReturn(Optional.of(user));
 
-    Optional<UserDto> found = service.findByIdentifier("someone");
+    Optional<User> found = service.findByIdentifier("someone");
 
     assertThat(found).isPresent();
     assertThat(found.get().username()).isEqualTo("someone");
@@ -75,12 +76,12 @@ class UserServiceTest {
 
   @Test
   void findByIdReturnsMappedDtoReflectingVerifiedState() {
-    User user = new User("found@example.com", "found");
+    UserEntity user = new UserEntity("found@example.com", "found");
     user.markEmailVerified(FIXED_INSTANT);
     UUID id = UUID.randomUUID();
     when(users.findById(id)).thenReturn(Optional.of(user));
 
-    Optional<UserDto> found = service.findById(id);
+    Optional<User> found = service.findById(id);
 
     assertThat(found).isPresent();
     assertThat(found.get().emailVerified()).isTrue();
@@ -106,9 +107,9 @@ class UserServiceTest {
   void findUnverifiedOlderThanReturnsDtosNotEntities() {
     Instant cutoff = FIXED_INSTANT.minus(Duration.ofDays(7));
     when(users.findByEmailVerifiedAtIsNullAndCreatedAtBefore(cutoff))
-        .thenReturn(List.of(new User("stale@example.com", "stale")));
+        .thenReturn(List.of(new UserEntity("stale@example.com", "stale")));
 
-    List<UserDto> found = service.findUnverifiedOlderThan(cutoff);
+    List<User> found = service.findUnverifiedOlderThan(cutoff);
 
     assertThat(found)
         .singleElement()
@@ -126,7 +127,7 @@ class UserServiceTest {
 
   @Test
   void markEmailVerifiedStampsTheFixedClockInstant() {
-    User user = spy(new User("verify@example.com", "verify"));
+    UserEntity user = spy(new UserEntity("verify@example.com", "verify"));
     UUID id = UUID.randomUUID();
     when(users.findById(id)).thenReturn(Optional.of(user));
 

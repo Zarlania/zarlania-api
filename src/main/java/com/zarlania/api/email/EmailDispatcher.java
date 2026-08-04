@@ -1,5 +1,6 @@
 package com.zarlania.api.email;
 
+import com.zarlania.api.email.exceptions.EmailBudgetExhaustedException;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -57,8 +58,8 @@ public class EmailDispatcher {
   public void dispatch(EmailMessage message) {
     try {
       emailDispatchExecutor.execute(() -> sendSafely(message));
-    } catch (RejectedExecutionException e) {
-      logFailure(QUEUE_FULL_MARKER, message, e);
+    } catch (RejectedExecutionException exception) {
+      logFailure(QUEUE_FULL_MARKER, message, exception);
     }
   }
 
@@ -76,10 +77,10 @@ public class EmailDispatcher {
   private void sendSafely(EmailMessage message) {
     try {
       emailSender.send(message);
-    } catch (EmailBudgetExhaustedException e) {
-      logFailure(BUDGET_EXHAUSTED_MARKER, message, e);
-    } catch (RuntimeException e) {
-      logFailure(SEND_FAILED_MARKER, message, e);
+    } catch (EmailBudgetExhaustedException exception) {
+      logFailure(BUDGET_EXHAUSTED_MARKER, message, exception);
+    } catch (RuntimeException exception) {
+      logFailure(SEND_FAILED_MARKER, message, exception);
     }
   }
 

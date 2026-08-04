@@ -13,7 +13,9 @@ import static org.mockito.Mockito.when;
 import com.zarlania.api.auth.AuthProperties;
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
-import com.zarlania.api.auth.entities.RefreshToken;
+import com.zarlania.api.auth.entities.RefreshTokenEntity;
+import com.zarlania.api.auth.exceptions.InvalidRefreshTokenException;
+import com.zarlania.api.auth.exceptions.ReusedRefreshTokenException;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.security.TokenHasher;
 import java.nio.charset.StandardCharsets;
@@ -51,7 +53,7 @@ class RefreshTokenServiceTest {
 
   @Mock private RefreshTokenRepository tokens;
 
-  @Captor private ArgumentCaptor<RefreshToken> savedToken;
+  @Captor private ArgumentCaptor<RefreshTokenEntity> savedToken;
 
   private RefreshTokenService refreshTokenService;
 
@@ -125,7 +127,7 @@ class RefreshTokenServiceTest {
     RefreshRotation rotation = refreshTokenService.rotate(raw);
 
     verify(tokens).save(savedToken.capture());
-    RefreshToken successor = savedToken.getValue();
+    RefreshTokenEntity successor = savedToken.getValue();
     assertThat(successor.getTokenHash()).isEqualTo(TokenHasher.sha256Hex(rotation.newRaw()));
     assertThat(successor.getFamilyExpiresAt()).isEqualTo(NOW.plus(FAMILY_LIFETIME));
     assertThat(rotation.userId()).isEqualTo(successor.getUserId());
@@ -137,9 +139,9 @@ class RefreshTokenServiceTest {
   void rotatingAnAlreadyRedeemedTokenRevokesEveryRowBeforeThrowing() {
     UUID familyId = UUID.randomUUID();
     String raw = TokenHasher.newUrlSafeToken();
-    RefreshToken used = liveToken(familyId, raw);
+    RefreshTokenEntity used = liveToken(familyId, raw);
     used.markUsed(NOW.minusSeconds(1));
-    RefreshToken sibling = liveToken(familyId, TokenHasher.newUrlSafeToken());
+    RefreshTokenEntity sibling = liveToken(familyId, TokenHasher.newUrlSafeToken());
     when(tokens.findFamilyIdByTokenHash(TokenHasher.sha256Hex(raw)))
         .thenReturn(Optional.of(familyId));
     when(tokens.findByFamilyIdOrderById(familyId)).thenReturn(List.of(used, sibling));
@@ -156,7 +158,7 @@ class RefreshTokenServiceTest {
   void rotatingARevokedTokenIsInvalidRatherThanReuse() {
     UUID familyId = UUID.randomUUID();
     String raw = TokenHasher.newUrlSafeToken();
-    RefreshToken revoked = liveToken(familyId, raw);
+    RefreshTokenEntity revoked = liveToken(familyId, raw);
     revoked.revoke(NOW.minusSeconds(1));
     when(tokens.findFamilyIdByTokenHash(TokenHasher.sha256Hex(raw)))
         .thenReturn(Optional.of(familyId));
@@ -170,8 +172,8 @@ class RefreshTokenServiceTest {
   void rotatingATokenPastItsFamilysLifetimeIsInvalid() {
     UUID familyId = UUID.randomUUID();
     String raw = TokenHasher.newUrlSafeToken();
-    RefreshToken expired =
-        new RefreshToken(
+    RefreshTokenEntity expired =
+        new RefreshTokenEntity(
             familyId,
             UUID.randomUUID(),
             UUID.randomUUID(),
@@ -202,8 +204,8 @@ class RefreshTokenServiceTest {
   void revokingMarksEveryUnrevokedRowInTheFamily() {
     UUID familyId = UUID.randomUUID();
     String raw = TokenHasher.newUrlSafeToken();
-    RefreshToken first = liveToken(familyId, raw);
-    RefreshToken second = liveToken(familyId, TokenHasher.newUrlSafeToken());
+    RefreshTokenEntity first = liveToken(familyId, raw);
+    RefreshTokenEntity second = liveToken(familyId, TokenHasher.newUrlSafeToken());
     when(tokens.findFamilyIdByTokenHash(TokenHasher.sha256Hex(raw)))
         .thenReturn(Optional.of(familyId));
     when(tokens.findByFamilyIdOrderById(familyId)).thenReturn(List.of(first, second));
@@ -238,8 +240,8 @@ class RefreshTokenServiceTest {
     return raw;
   }
 
-  private static RefreshToken liveToken(UUID familyId, String raw) {
-    return new RefreshToken(
+  private static RefreshTokenEntity liveToken(UUID familyId, String raw) {
+    return new RefreshTokenEntity(
         familyId,
         UUID.randomUUID(),
         UUID.randomUUID(),

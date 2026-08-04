@@ -2,7 +2,6 @@ package com.zarlania.api.throttle;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.zarlania.api.throttle.ThrottleProperties.EndpointLimits;
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.RecordComponent;
@@ -121,8 +120,8 @@ class ThrottledEndpointConventionTest {
   private static Class<?> load(BeanDefinition definition) {
     try {
       return Class.forName(definition.getBeanClassName());
-    } catch (ClassNotFoundException e) {
-      throw new IllegalStateException(e);
+    } catch (ClassNotFoundException exception) {
+      throw new IllegalStateException(exception);
     }
   }
 
@@ -136,8 +135,8 @@ class ThrottledEndpointConventionTest {
       return binder
           .bind("zarlania.throttle", ThrottleProperties.class)
           .orElseThrow(() -> new IllegalStateException("No zarlania.throttle block found"));
-    } catch (IOException e) {
-      throw new IllegalStateException("Cannot read application.yml", e);
+    } catch (IOException exception) {
+      throw new IllegalStateException("Cannot read application.yml", exception);
     }
   }
 }

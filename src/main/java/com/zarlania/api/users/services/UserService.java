@@ -1,7 +1,7 @@
 package com.zarlania.api.users.services;
 
-import com.zarlania.api.users.dtos.UserDto;
-import com.zarlania.api.users.entities.User;
+import com.zarlania.api.users.dtos.User;
+import com.zarlania.api.users.entities.UserEntity;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -15,15 +15,15 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * The users domain's whole surface to the rest of the application.
  *
- * <p>Everything here returns {@link UserDto}, never {@link User}: an entity never leaves the domain
- * that owns it, so a caller in another domain cannot reach a lazy relation or mutate a row behind
- * this service's back.
+ * <p>Everything here returns {@link User}, never {@link UserEntity}: an entity never leaves the
+ * domain that owns it, so a caller in another domain cannot reach a lazy relation or mutate a row
+ * behind this service's back.
  */
 @Service
 @RequiredArgsConstructor
 public class UserService {
 
-  private final UserRepository users;
+  private final UserRepository userRepository;
   private final Clock clock;
 
   /**
@@ -34,8 +34,8 @@ public class UserService {
    *     already taken — the uniqueness constraints are the authority, not a prior existence check
    */
   @Transactional
-  public UserDto createUnverified(String email, String username) {
-    return toDto(users.save(new User(email, username)));
+  public User createUnverified(String email, String username) {
+    return toUser(userRepository.save(new UserEntity(email, username)));
   }
 
   /**
@@ -45,29 +45,29 @@ public class UserService {
    * first, never which account is found.
    */
   @Transactional(readOnly = true)
-  public Optional<UserDto> findByIdentifier(String emailOrUsername) {
-    return users
+  public Optional<User> findByIdentifier(String emailOrUsername) {
+    return userRepository
         .findByEmail(emailOrUsername)
-        .or(() -> users.findByUsername(emailOrUsername))
-        .map(this::toDto);
+        .or(() -> userRepository.findByUsername(emailOrUsername))
+        .map(this::toUser);
   }
 
   /** Finds an account by id, or empty if no such row exists. */
   @Transactional(readOnly = true)
-  public Optional<UserDto> findById(UUID id) {
-    return users.findById(id).map(this::toDto);
+  public Optional<User> findById(UUID id) {
+    return userRepository.findById(id).map(this::toUser);
   }
 
   /** Whether a username is taken, case-insensitively. */
   @Transactional(readOnly = true)
   public boolean usernameExists(String username) {
-    return users.existsByUsername(username);
+    return userRepository.existsByUsername(username);
   }
 
   /** Whether an address is taken, case-insensitively. */
   @Transactional(readOnly = true)
   public boolean emailExists(String email) {
-    return users.existsByEmail(email);
+    return userRepository.existsByEmail(email);
   }
 
   /**
@@ -79,7 +79,7 @@ public class UserService {
    */
   @Transactional
   public void markEmailVerified(UUID userId) {
-    users.findById(userId).orElseThrow().markEmailVerified(clock.instant());
+    userRepository.findById(userId).orElseThrow().markEmailVerified(clock.instant());
   }
 
   /**
@@ -89,9 +89,9 @@ public class UserService {
    * backlog of abandoned signups, not the table.
    */
   @Transactional(readOnly = true)
-  public List<UserDto> findUnverifiedOlderThan(Instant cutoff) {
-    return users.findByEmailVerifiedAtIsNullAndCreatedAtBefore(cutoff).stream()
-        .map(this::toDto)
+  public List<User> findUnverifiedOlderThan(Instant cutoff) {
+    return userRepository.findByEmailVerifiedAtIsNullAndCreatedAtBefore(cutoff).stream()
+        .map(this::toUser)
         .toList();
   }
 
@@ -104,7 +104,7 @@ public class UserService {
    */
   @Transactional
   public void deleteById(UUID userId) {
-    users.deleteById(userId);
+    userRepository.deleteById(userId);
   }
 
   /**
@@ -119,10 +119,10 @@ public class UserService {
    */
   @Transactional
   public boolean deleteIfStillUnverified(UUID userId) {
-    return users.deleteByIdAndEmailVerifiedAtIsNull(userId) > 0;
+    return userRepository.deleteByIdAndEmailVerifiedAtIsNull(userId) > 0;
   }
 
-  private UserDto toDto(User user) {
-    return new UserDto(user.getId(), user.getEmail(), user.getUsername(), user.isEmailVerified());
+  private User toUser(UserEntity user) {
+    return new User(user.getId(), user.getEmail(), user.getUsername(), user.isEmailVerified());
   }
 }

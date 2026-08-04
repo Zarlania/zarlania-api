@@ -15,7 +15,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "email_verification_tokens")
-public class EmailVerificationToken extends BaseEntity {
+public class EmailVerificationTokenEntity extends BaseEntity {
 
   @Column(name = "user_id", nullable = false)
   private UUID userId;
@@ -29,13 +29,13 @@ public class EmailVerificationToken extends BaseEntity {
   @Column(name = "consumed_at")
   private Instant consumedAt;
 
-  protected EmailVerificationToken() {}
+  protected EmailVerificationTokenEntity() {}
 
   /**
    * @param tokenHash the SHA-256 hash of the emailed token; the raw value is never stored
    * @param expiresAt when the token stops being usable, whether or not it was consumed
    */
-  public EmailVerificationToken(UUID userId, String tokenHash, Instant expiresAt) {
+  public EmailVerificationTokenEntity(UUID userId, String tokenHash, Instant expiresAt) {
     this.userId = userId;
     this.tokenHash = tokenHash;
     this.expiresAt = expiresAt;

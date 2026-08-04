@@ -152,7 +152,7 @@ public final class ClientIpResolver {
     }
     try {
       return Optional.of(InetAddress.ofLiteral(value).getHostAddress());
-    } catch (IllegalArgumentException e) {
+    } catch (IllegalArgumentException exception) {
       return Optional.empty();
     }
   }

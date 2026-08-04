@@ -1,6 +1,6 @@
 package com.zarlania.api.auth.repositories;
 
-import com.zarlania.api.auth.entities.RefreshToken;
+import com.zarlania.api.auth.entities.RefreshTokenEntity;
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
 import java.util.List;
@@ -14,27 +14,27 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Persistence for {@link RefreshToken}. Several methods here exist specifically to make concurrent
- * rotation and revocation of one family safe; each states what breaks without it.
+ * Persistence for {@link RefreshTokenEntity}. Several methods here exist specifically to make
+ * concurrent rotation and revocation of one family safe; each states what breaks without it.
  */
-public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID> {
+public interface RefreshTokenRepository extends JpaRepository<RefreshTokenEntity, UUID> {
 
   /** Finds a token by its hash, without locking it. The raw token is never stored or queried. */
-  Optional<RefreshToken> findByTokenHash(String tokenHash);
+  Optional<RefreshTokenEntity> findByTokenHash(String tokenHash);
 
   /** Every token descended from one login, in no particular order and regardless of state. */
-  List<RefreshToken> findByFamilyId(UUID familyId);
+  List<RefreshTokenEntity> findByFamilyId(UUID familyId);
 
   /**
    * Resolves a token's family without loading the token.
    *
-   * <p>A scalar projection, deliberately not an entity load: loading a {@link RefreshToken} here
-   * would attach it to the persistence context, and Hibernate's identity map would then hand that
-   * stale, pre-lock instance back out of {@link #findByFamilyIdOrderById} instead of the fresh,
-   * just-unblocked row, silently defeating the lock. A projection never enters the identity map, so
-   * it cannot shadow the locked read that follows it.
+   * <p>A scalar projection, deliberately not an entity load: loading a {@link RefreshTokenEntity}
+   * here would attach it to the persistence context, and Hibernate's identity map would then hand
+   * that stale, pre-lock instance back out of {@link #findByFamilyIdOrderById} instead of the
+   * fresh, just-unblocked row, silently defeating the lock. A projection never enters the identity
+   * map, so it cannot shadow the locked read that follows it.
    */
-  @Query("select r.familyId from RefreshToken r where r.tokenHash = :tokenHash")
+  @Query("select r.familyId from RefreshTokenEntity r where r.tokenHash = :tokenHash")
   Optional<UUID> findFamilyIdByTokenHash(@Param("tokenHash") String tokenHash);
 
   /**
@@ -47,7 +47,7 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
    * one waiting on row X while holding row Y, the other waiting on Y while holding X.
    */
   @Lock(LockModeType.PESSIMISTIC_WRITE)
-  List<RefreshToken> findByFamilyIdOrderById(UUID familyId);
+  List<RefreshTokenEntity> findByFamilyIdOrderById(UUID familyId);
 
   /**
    * Takes a transaction-scoped advisory lock on one family, so Postgres releases it automatically
@@ -91,6 +91,6 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, UUID
    */
   @Modifying
   @Transactional
-  @Query("delete from RefreshToken r where r.familyExpiresAt < :cutoff")
+  @Query("delete from RefreshTokenEntity r where r.familyExpiresAt < :cutoff")
   int deleteFamiliesExpiredBefore(@Param("cutoff") Instant cutoff);
 }

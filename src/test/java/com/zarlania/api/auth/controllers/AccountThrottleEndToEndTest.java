@@ -14,9 +14,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
 
 /**
- * Covers the per-account half of the throttle: the spec asked for per-IP <em>and</em> per-account
- * limits, and without the second one an attacker with many addresses is unbounded against a single
- * known account.
+ * Covers the per-account half of the throttle. The limiter counts per-IP <em>and</em> per-account,
+ * and without the second one an attacker with many addresses is unbounded against a single known
+ * account.
  *
  * <p>Every per-IP limit is raised out of the way here, and every request below arrives from a
  * different client address (in {@code CF-Connecting-IP}, the header {@code ClientIpResolver}

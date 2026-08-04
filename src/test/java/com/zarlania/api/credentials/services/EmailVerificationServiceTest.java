@@ -8,7 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zarlania.api.credentials.CredentialsProperties;
-import com.zarlania.api.credentials.entities.EmailVerificationToken;
+import com.zarlania.api.credentials.entities.EmailVerificationTokenEntity;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.security.TokenHasher;
 import java.time.Clock;
@@ -66,7 +66,7 @@ class EmailVerificationServiceTest {
     InOrder inOrder = inOrder(tokens);
     inOrder.verify(tokens).acquireUserTokenLock(anyInt(), anyInt());
     inOrder.verify(tokens).deleteByUserIdAndConsumedAtIsNull(userId);
-    inOrder.verify(tokens).save(any(EmailVerificationToken.class));
+    inOrder.verify(tokens).save(any(EmailVerificationTokenEntity.class));
   }
 
   @Test
@@ -75,8 +75,8 @@ class EmailVerificationServiceTest {
 
     String raw = service.issue(userId);
 
-    ArgumentCaptor<EmailVerificationToken> saved =
-        ArgumentCaptor.forClass(EmailVerificationToken.class);
+    ArgumentCaptor<EmailVerificationTokenEntity> saved =
+        ArgumentCaptor.forClass(EmailVerificationTokenEntity.class);
     verify(tokens).save(saved.capture());
     assertThat(saved.getValue().getTokenHash()).isNotEqualTo(raw);
     assertThat(saved.getValue().getTokenHash()).isEqualTo(TokenHasher.sha256Hex(raw));
@@ -88,8 +88,8 @@ class EmailVerificationServiceTest {
 
     service.issue(userId);
 
-    ArgumentCaptor<EmailVerificationToken> saved =
-        ArgumentCaptor.forClass(EmailVerificationToken.class);
+    ArgumentCaptor<EmailVerificationTokenEntity> saved =
+        ArgumentCaptor.forClass(EmailVerificationTokenEntity.class);
     verify(tokens).save(saved.capture());
     assertThat(saved.getValue().getExpiresAt()).isEqualTo(NOW.plus(VERIFICATION_TOKEN_TTL));
   }
@@ -98,8 +98,8 @@ class EmailVerificationServiceTest {
   void consumeOnAUsableTokenStampsItConsumedAndReturnsTheUserId() {
     UUID userId = UUID.randomUUID();
     String raw = "raw-token";
-    EmailVerificationToken token =
-        new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), NOW.plusSeconds(60));
+    EmailVerificationTokenEntity token =
+        new EmailVerificationTokenEntity(userId, TokenHasher.sha256Hex(raw), NOW.plusSeconds(60));
     when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
 
     Optional<UUID> result = service.consume(raw);
@@ -112,8 +112,8 @@ class EmailVerificationServiceTest {
   void consumeOnAnExpiredTokenReturnsEmpty() {
     UUID userId = UUID.randomUUID();
     String raw = "raw-token";
-    EmailVerificationToken token =
-        new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), NOW.minusSeconds(1));
+    EmailVerificationTokenEntity token =
+        new EmailVerificationTokenEntity(userId, TokenHasher.sha256Hex(raw), NOW.minusSeconds(1));
     when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
 
     Optional<UUID> result = service.consume(raw);
@@ -126,8 +126,8 @@ class EmailVerificationServiceTest {
     UUID userId = UUID.randomUUID();
     String raw = "raw-token";
     Instant expiresAt = NOW.plus(VERIFICATION_TOKEN_TTL);
-    EmailVerificationToken token =
-        new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), expiresAt);
+    EmailVerificationTokenEntity token =
+        new EmailVerificationTokenEntity(userId, TokenHasher.sha256Hex(raw), expiresAt);
     when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
     clock = Clock.fixed(NOW.plus(Duration.ofHours(25)), ZoneOffset.UTC);
     service =
@@ -143,8 +143,8 @@ class EmailVerificationServiceTest {
   void consumeOnAnAlreadyConsumedTokenReturnsEmpty() {
     UUID userId = UUID.randomUUID();
     String raw = "raw-token";
-    EmailVerificationToken token =
-        new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), NOW.plusSeconds(60));
+    EmailVerificationTokenEntity token =
+        new EmailVerificationTokenEntity(userId, TokenHasher.sha256Hex(raw), NOW.plusSeconds(60));
     token.consume(NOW.minusSeconds(30));
     when(tokens.findWithLockByTokenHash(TokenHasher.sha256Hex(raw))).thenReturn(Optional.of(token));
 

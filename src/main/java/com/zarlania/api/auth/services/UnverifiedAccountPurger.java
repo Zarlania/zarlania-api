@@ -1,5 +1,6 @@
 package com.zarlania.api.auth.services;
 
+import com.zarlania.api.auth.exceptions.AccountVerifiedDuringPurgeException;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.organizations.services.OrganizationService;
@@ -28,7 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 class UnverifiedAccountPurger {
 
   private final CredentialsService credentialsService;
-  private final RefreshTokenRepository refreshTokens;
+  private final RefreshTokenRepository refreshTokenRepository;
   private final OrganizationService organizationService;
   private final UserService userService;
 
@@ -38,7 +39,7 @@ class UnverifiedAccountPurger {
     // An unverified user cannot log in, so normally has none of these — but refresh_tokens has a
     // real FK on both user_id and organization_id, so it must be cleared before the personal
     // organization and the user row below can be deleted.
-    refreshTokens.deleteByUserId(userId);
+    refreshTokenRepository.deleteByUserId(userId);
     organizationService.deletePersonalOrganizationOf(userId);
     // The listing that produced this id was read in an earlier, already-committed transaction, so
     // it is only ever a hint: an account can complete /auth/verify in the gap before this purge

@@ -6,10 +6,10 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.zarlania.api.organizations.dtos.OrganizationDto;
-import com.zarlania.api.organizations.entities.Membership;
-import com.zarlania.api.organizations.entities.Organization;
-import com.zarlania.api.organizations.entities.OrganizationType;
+import com.zarlania.api.organizations.dtos.Organization;
+import com.zarlania.api.organizations.dtos.OrganizationType;
+import com.zarlania.api.organizations.entities.MembershipEntity;
+import com.zarlania.api.organizations.entities.OrganizationEntity;
 import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.repositories.OrganizationRepository;
 import java.util.List;
@@ -42,7 +42,7 @@ class OrganizationServiceTest {
 
   @Mock private MembershipRepository memberships;
 
-  @Captor private ArgumentCaptor<Membership> savedMembership;
+  @Captor private ArgumentCaptor<MembershipEntity> savedMembership;
 
   @InjectMocks private OrganizationService organizationService;
 
@@ -51,10 +51,10 @@ class OrganizationServiceTest {
   @Test
   void creatingAPersonalOrganizationAlsoMakesTheCallerItsOwner() {
     UUID ownerId = UUID.randomUUID();
-    Organization saved = new Organization("mira", OrganizationType.PERSONAL);
+    OrganizationEntity saved = new OrganizationEntity("mira", OrganizationType.PERSONAL);
     when(organizations.save(any())).thenReturn(saved);
 
-    OrganizationDto dto = organizationService.createPersonalOrganization(ownerId, "mira");
+    Organization dto = organizationService.createPersonalOrganization(ownerId, "mira");
 
     verify(memberships).save(savedMembership.capture());
     assertThat(savedMembership.getValue().getUserId()).isEqualTo(ownerId);
@@ -75,9 +75,9 @@ class OrganizationServiceTest {
   @Test
   void thePersonalOrganizationLookupIgnoresSharedOrganizations() {
     UUID userId = UUID.randomUUID();
-    Organization shared = new Organization("Shared", OrganizationType.GENERAL);
+    OrganizationEntity shared = new OrganizationEntity("Shared", OrganizationType.GENERAL);
     when(memberships.findByUserId(userId))
-        .thenReturn(List.of(new Membership(shared, userId, false)));
+        .thenReturn(List.of(new MembershipEntity(shared, userId, false)));
 
     assertThat(organizationService.personalOrganizationOf(userId)).isEmpty();
   }
@@ -89,7 +89,7 @@ class OrganizationServiceTest {
   @ParameterizedTest(name = "{0} is never deleted")
   @MethodSource("organizationsThatMustSurvive")
   void deletingRemovesNothingUnlessTheAccountOwnsAPersonalOrganization(
-      String description, Membership membership) {
+      String description, MembershipEntity membership) {
     UUID userId = membership.getUserId();
     when(memberships.findByUserId(userId)).thenReturn(List.of(membership));
 
@@ -104,21 +104,24 @@ class OrganizationServiceTest {
     return Stream.of(
         Arguments.of(
             "a shared organization the account owns",
-            new Membership(new Organization("Shared", OrganizationType.GENERAL), userId, true)),
+            new MembershipEntity(
+                new OrganizationEntity("Shared", OrganizationType.GENERAL), userId, true)),
         Arguments.of(
             "a shared organization the account merely belongs to",
-            new Membership(new Organization("Shared", OrganizationType.GENERAL), userId, false)),
+            new MembershipEntity(
+                new OrganizationEntity("Shared", OrganizationType.GENERAL), userId, false)),
         Arguments.of(
             "a personal organization the account does not own",
-            new Membership(
-                new Organization("Someone Else", OrganizationType.PERSONAL), userId, false)));
+            new MembershipEntity(
+                new OrganizationEntity("Someone Else", OrganizationType.PERSONAL), userId, false)));
   }
 
   @Test
   void deletingRemovesThePersonalOrganizationTheAccountOwns() {
     UUID userId = UUID.randomUUID();
-    Organization own = new Organization("mira", OrganizationType.PERSONAL);
-    when(memberships.findByUserId(userId)).thenReturn(List.of(new Membership(own, userId, true)));
+    OrganizationEntity own = new OrganizationEntity("mira", OrganizationType.PERSONAL);
+    when(memberships.findByUserId(userId))
+        .thenReturn(List.of(new MembershipEntity(own, userId, true)));
 
     organizationService.deletePersonalOrganizationOf(userId);
 
@@ -129,12 +132,12 @@ class OrganizationServiceTest {
   @Test
   void findByIdMapsToADtoAndReportsAnUnknownIdAsEmpty() {
     UUID id = UUID.randomUUID();
-    Organization organization = new Organization("mira", OrganizationType.PERSONAL);
+    OrganizationEntity organization = new OrganizationEntity("mira", OrganizationType.PERSONAL);
     when(organizations.findById(id)).thenReturn(Optional.of(organization));
 
     assertThat(organizationService.findById(id))
         .get()
-        .extracting(OrganizationDto::name)
+        .extracting(Organization::name)
         .isEqualTo("mira");
   }
 

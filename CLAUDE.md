@@ -61,11 +61,12 @@ src/main/java/com/zarlania/api/
                                 email/, errors/, http/, persistence/, security/,
                                 throttle/, time/. Never a general-purpose bucket.
   <domain>/                     One package per domain, layer sub-packages inside:
-    controllers/                HTTP endpoints
+    controllers/                HTTP endpoints, and the domain's exception handler
     services/                   Business rules
     repositories/               Spring Data interfaces
     entities/                   JPA entities — never leave the domain
     dtos/                       Records crossing the domain boundary
+    exceptions/                 What this domain throws
 src/main/resources/
   application.yml               Configuration, with env-var overrides
   db/migration/                 Flyway migrations (V<n>__<slug>.sql) — the only thing
@@ -85,6 +86,17 @@ can be lifted out of the monolith with minimal work):
   (`fruit/controllers`, `fruit/apple/controllers`, …). Every sub-domain is a
   full domain boundary in its own right; the parent level holds orchestration
   only — never entities.
+- **Exceptions live in an `exceptions/` sub-package**, in the domain or topic
+  package that throws them — `auth/exceptions/`, `email/exceptions/`. A reader
+  looking for what a domain can fail with finds one directory, and the domain
+  lifts out with its failures attached. An exception genuinely shared across
+  domains belongs in `errors/`, which is that bucket by name; nothing else is.
+- **A DTO carries the plain name; a JPA entity is suffixed `Entity`.** The DTO
+  is the type every other domain speaks in, so it gets the unqualified name —
+  `User`, `Organization`. The entity never leaves its domain and is the one that
+  takes the qualifier: `UserEntity`, `OrganizationEntity`. This holds for every
+  entity, not only the ones a DTO would otherwise collide with, so that adding a
+  DTO later never forces a rename.
 - **Every table** gets `id uuid primary key`, `created_at timestamptz(6) not
   null`, `updated_at timestamptz(6) not null`, with real FK constraints.
   Case-insensitive unique text columns use `citext`.
@@ -199,6 +211,36 @@ without reading the rest of the codebase.
   is written out in both places with a comment naming the other, since two
   occurrences is not yet an abstraction.
 - Use records for immutable data carriers such as request and response bodies.
+- **A record gets its own file.** No nested records — not in main code, not in
+  tests, not even a `private` one used by a single class. A record is a type, and
+  a type declared inside another is invisible to anyone searching for it by name
+  and cannot be referred to without naming its host. The nesting also puts a type
+  declaration in the middle of a class body, where the member-order rule below
+  wants fields.
+- **Services never throw an HTTP-aware exception.** A service throws its own
+  domain exception, naming what went wrong and nothing about how it is reported.
+  Each domain's `controllers/` package holds a `@RestControllerAdvice` — scoped
+  with `basePackageClasses` to that package, so the mapping travels with the
+  domain — that turns those exceptions into a status and an `ErrorCode`. Build
+  the body with `ProblemDetails`, so every error keeps one shape. `ApiException`
+  is reserved for code that is already an HTTP concern: a controller, or
+  infrastructure sitting in the request path like `ThrottleAspect`. Client-facing
+  messages live in the handler, not on the exception — several are deliberately
+  identical across different causes, and side by side is the only way that stays
+  checkable.
+- **Write names out in full.** `applicationEventPublisher`, not `events`;
+  `organization`, not `org`; `exception`, not `e`, including in a `catch`. A
+  field holding a collaborator is named for that collaborator —
+  `userRepository`, not `users`. Java's conventional short names are conventions,
+  not exemptions: the point is that a reader never has to expand an abbreviation
+  from context, and one-letter names are the worst case of it.
+- **Never reference a plan, spec, brief, task or phase** in a comment or Javadoc.
+  Those documents are snapshots that stop being true, and a reader of the code
+  has no way to open one. Say the reason itself — what the constraint is and why
+  it holds — so the comment stays true on its own.
+- **No `serialVersionUID` on exceptions.** Nothing here is ever Java-serialized,
+  so the field pins compatibility for a format the service does not use. It reads
+  as though serialization matters somewhere, and it cannot be kept consistent.
 - **Javadoc every public type and method.** Someone opening one file — person or
   model — should be able to state the contract without reading the rest of the
   codebase, and a signature does not carry nullability, units, or which of

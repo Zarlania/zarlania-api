@@ -7,7 +7,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zarlania.api.credentials.CredentialsProperties;
-import com.zarlania.api.credentials.entities.PasswordCredential;
+import com.zarlania.api.credentials.entities.PasswordCredentialEntity;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import java.time.Duration;
@@ -56,7 +56,8 @@ class CredentialsServiceTest {
 
     service.createPassword(userId, CORRECT_PASSWORD);
 
-    ArgumentCaptor<PasswordCredential> saved = ArgumentCaptor.forClass(PasswordCredential.class);
+    ArgumentCaptor<PasswordCredentialEntity> saved =
+        ArgumentCaptor.forClass(PasswordCredentialEntity.class);
     verify(credentials).save(saved.capture());
     assertThat(saved.getValue().getUserId()).isEqualTo(userId);
     assertThat(ENCODER.matches(CORRECT_PASSWORD, saved.getValue().getPasswordHash())).isTrue();
@@ -65,7 +66,8 @@ class CredentialsServiceTest {
   @Test
   void passwordMatchesReturnsTrueForTheStoredHashOfTheCorrectPassword() {
     UUID userId = UUID.randomUUID();
-    PasswordCredential stored = new PasswordCredential(userId, ENCODER.encode(CORRECT_PASSWORD));
+    PasswordCredentialEntity stored =
+        new PasswordCredentialEntity(userId, ENCODER.encode(CORRECT_PASSWORD));
     when(credentials.findByUserId(userId)).thenReturn(Optional.of(stored));
 
     assertThat(service.passwordMatches(userId, CORRECT_PASSWORD)).isTrue();
@@ -74,7 +76,8 @@ class CredentialsServiceTest {
   @Test
   void passwordMatchesReturnsFalseForAWrongPassword() {
     UUID userId = UUID.randomUUID();
-    PasswordCredential stored = new PasswordCredential(userId, ENCODER.encode(CORRECT_PASSWORD));
+    PasswordCredentialEntity stored =
+        new PasswordCredentialEntity(userId, ENCODER.encode(CORRECT_PASSWORD));
     when(credentials.findByUserId(userId)).thenReturn(Optional.of(stored));
 
     assertThat(service.passwordMatches(userId, WRONG_PASSWORD)).isFalse();
@@ -174,7 +177,7 @@ class CredentialsServiceTest {
     private void awaitRelease() {
       try {
         releaseDecoy.await(UNBLOCKED_CALL_TIMEOUT.toMillis(), MILLISECONDS);
-      } catch (InterruptedException e) {
+      } catch (InterruptedException exception) {
         Thread.currentThread().interrupt();
       }
     }

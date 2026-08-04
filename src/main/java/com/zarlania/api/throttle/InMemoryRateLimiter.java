@@ -24,24 +24,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class InMemoryRateLimiter implements RateLimiter {
 
-  /**
-   * Each entry carries its own length rather than reading the configured one: keys with different
-   * periods share this map (the per-request buckets on a one-minute window, the global email budget
-   * on a daily one), and eviction has to know which is which or it would drop a day-long window the
-   * moment a minute had passed.
-   */
-  private record Window(Instant start, Duration length, AtomicInteger count) {
-
-    boolean hasPassed(Instant now) {
-      return now.isAfter(start.plus(length));
-    }
-
-    Duration remainingAt(Instant now) {
-      return Duration.between(now, start.plus(length));
-    }
-  }
-
-  private final ConcurrentHashMap<String, Window> windows = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, RateLimitWindow> windows = new ConcurrentHashMap<>();
   private final ThrottleProperties properties;
   private final Clock clock;
 
@@ -53,19 +36,20 @@ public class InMemoryRateLimiter implements RateLimiter {
   @Override
   public ThrottleDecision tryConsume(String key, int limit, Duration windowLength) {
     Instant now = clock.instant();
-    Window window =
+    RateLimitWindow window =
         windows.compute(
             key,
             (k, existing) ->
                 existing == null || existing.hasPassed(now)
-                    ? new Window(now, windowLength, new AtomicInteger())
+                    ? new RateLimitWindow(now, windowLength, new AtomicInteger())
                     : existing);
     // incrementAndGet() runs outside compute() deliberately. compute()'s per-key lock only
-    // guarantees a single Window instance is published for this key; it says nothing about
+    // guarantees a single RateLimitWindow instance is published for this key; it says nothing about
     // ordering against evictExpiredWindows() removing that same entry once its window has
     // passed. The counter itself is an AtomicInteger, so the increment can never be lost or
     // double-counted for callers racing on the *same* live window — the only edge case is a
-    // request landing in the gap between compute() returning a Window and the sweep dropping
+    // request landing in the gap between compute() returning a RateLimitWindow and the sweep
+    // dropping
     // it, which discounts at most one increment against a key nobody will read again. That is
     // an acceptable approximation for a limiter, not a hole a client could exploit to bypass
     // the limit.

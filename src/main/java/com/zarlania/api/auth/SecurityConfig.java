@@ -134,7 +134,7 @@ public class SecurityConfig {
     configuration.setAllowedOrigins(splitAndTrim(allowedOrigins));
     configuration.setAllowedMethods(CORS_ALLOWED_METHODS);
     configuration.setAllowedHeaders(CORS_ALLOWED_HEADERS);
-    // Task 12's refresh cookie only reaches the browser if the response can carry
+    // The refresh cookie only reaches the browser if the response can carry
     // Set-Cookie back through CORS, which requires allowCredentials. This is safe only
     // because the origin list above is an explicit allow-list, never a wildcard — Spring
     // rejects allowCredentials(true) paired with "*" at startup.
@@ -201,13 +201,13 @@ public class SecurityConfig {
                 UUID.fromString(requireClaim(jwt, TokenClaims.ORGANIZATION)),
                 jwt.getClaimAsString(TokenClaims.KIND));
         return new UsernamePasswordAuthenticationToken(principal, jwt, List.of());
-      } catch (IllegalArgumentException e) {
+      } catch (IllegalArgumentException exception) {
         // A token that verifies cryptographically but is missing or has a malformed
         // subject/org claim cannot become an AuthPrincipal. BearerTokenAuthenticationFilter
         // only catches AuthenticationException, so throwing that (rather than letting
         // IllegalArgumentException propagate) is what turns this into a 401 instead of an
         // unhandled 500.
-        throw new InvalidBearerTokenException("JWT is missing a required claim", e);
+        throw new InvalidBearerTokenException("JWT is missing a required claim", exception);
       }
     };
   }

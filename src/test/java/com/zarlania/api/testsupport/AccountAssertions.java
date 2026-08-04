@@ -7,7 +7,6 @@ import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepositor
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.repositories.OrganizationRepository;
-import com.zarlania.api.testsupport.TestAccounts.SeededAccount;
 import com.zarlania.api.users.repositories.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.test.context.TestComponent;

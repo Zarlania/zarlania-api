@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class ExpiredTokenCleanup {
 
-  private final RefreshTokenRepository refreshTokens;
+  private final RefreshTokenRepository refreshTokenRepository;
   private final EmailVerificationService emailVerificationService;
   private final Clock clock;
 
@@ -38,7 +38,7 @@ public class ExpiredTokenCleanup {
    */
   @Scheduled(fixedDelayString = "${zarlania.auth.cleanup-interval:PT1H}")
   public void pruneDeadTokens() {
-    int refreshTokensDeleted = refreshTokens.deleteFamiliesExpiredBefore(clock.instant());
+    int refreshTokensDeleted = refreshTokenRepository.deleteFamiliesExpiredBefore(clock.instant());
     // Through the credentials domain's service, not its repository: that domain decides what one
     // of its tokens being dead means, and this one only owns the schedule.
     int verificationTokensDeleted = emailVerificationService.pruneDeadTokens();

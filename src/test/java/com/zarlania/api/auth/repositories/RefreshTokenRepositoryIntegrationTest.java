@@ -3,8 +3,8 @@ package com.zarlania.api.auth.repositories;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.testsupport.IntegrationTestBase;
+import com.zarlania.api.testsupport.SeededAccount;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.testsupport.TestAccounts.SeededAccount;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;

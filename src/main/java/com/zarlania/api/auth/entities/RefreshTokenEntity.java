@@ -21,7 +21,7 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "refresh_tokens")
-public class RefreshToken extends BaseEntity {
+public class RefreshTokenEntity extends BaseEntity {
 
   @Column(name = "family_id", nullable = false)
   private UUID familyId;
@@ -44,7 +44,7 @@ public class RefreshToken extends BaseEntity {
   @Column(name = "revoked_at")
   private Instant revokedAt;
 
-  protected RefreshToken() {}
+  protected RefreshTokenEntity() {}
 
   /**
    * Starts or extends a family. The token is live from here until it is redeemed, revoked, or the
@@ -54,7 +54,7 @@ public class RefreshToken extends BaseEntity {
    * @param tokenHash the SHA-256 hash of the raw token; the raw value is never stored
    * @param familyExpiresAt the absolute ceiling on the whole family, not just this token
    */
-  public RefreshToken(
+  public RefreshTokenEntity(
       UUID familyId, UUID userId, UUID organizationId, String tokenHash, Instant familyExpiresAt) {
     this.familyId = familyId;
     this.userId = userId;

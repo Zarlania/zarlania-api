@@ -27,7 +27,8 @@ import org.springframework.stereotype.Component;
  * Holds the RSA key pair that signs access tokens plus any retired public keys still needed to
  * verify tokens minted before a rotation. Keys are resolved once at construction time — signing
  * every token during the process's lifetime with the same key, and the same {@code kid}, is what
- * makes JWKS-based verification in Task 9 work.
+ * makes the published JWKS usable for verification: a token outlives neither its key nor its {@code
+ * kid}, so any holder of the JWKS can check a signature without asking this service.
  */
 @Component
 public final class JwtKeys {
@@ -97,8 +98,8 @@ public final class JwtKeys {
           (RSAPrivateKey) keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
       RSAPublicKey publicKey = derivePublicKey(keyFactory, privateKey);
       return new RSAKey.Builder(publicKey).privateKey(privateKey).keyIDFromThumbprint().build();
-    } catch (NoSuchAlgorithmException | InvalidKeySpecException | JOSEException e) {
-      throw new IllegalStateException("Failed to parse the configured JWT private key", e);
+    } catch (NoSuchAlgorithmException | InvalidKeySpecException | JOSEException exception) {
+      throw new IllegalStateException("Failed to parse the configured JWT private key", exception);
     }
   }
 
@@ -124,8 +125,8 @@ public final class JwtKeys {
           .privateKey(keyPair.getPrivate())
           .keyIDFromThumbprint()
           .build();
-    } catch (NoSuchAlgorithmException | JOSEException e) {
-      throw new IllegalStateException("Failed to generate an ephemeral JWT signing key", e);
+    } catch (NoSuchAlgorithmException | JOSEException exception) {
+      throw new IllegalStateException("Failed to generate an ephemeral JWT signing key", exception);
     }
   }
 
@@ -156,8 +157,8 @@ public final class JwtKeys {
       KeyFactory keyFactory = KeyFactory.getInstance(RSA_ALGORITHM);
       PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(keyBytes));
       return new RSAKey.Builder((RSAPublicKey) publicKey).keyIDFromThumbprint().build();
-    } catch (NoSuchAlgorithmException | InvalidKeySpecException | JOSEException e) {
-      throw new IllegalStateException("Failed to parse a retired JWT public key", e);
+    } catch (NoSuchAlgorithmException | InvalidKeySpecException | JOSEException exception) {
+      throw new IllegalStateException("Failed to parse a retired JWT public key", exception);
     }
   }
 

@@ -9,11 +9,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.zarlania.api.auth.exceptions.UsernameTakenException;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
-import com.zarlania.api.errors.ApiException;
-import com.zarlania.api.errors.ErrorCode;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.util.Optional;
 import java.util.UUID;
@@ -60,10 +59,7 @@ class RegistrationServiceTest {
     when(userService.usernameExists(USERNAME)).thenReturn(true);
 
     assertThatThrownBy(() -> service.register(EMAIL, USERNAME, PASSWORD))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode()).isEqualTo(ErrorCode.USERNAME_TAKEN));
+        .isInstanceOf(UsernameTakenException.class);
 
     verify(userService, never()).emailExists(any(String.class));
     verifyNoInteractions(credentialsService, accountCreator, emailVerificationService, events);
@@ -74,7 +70,7 @@ class RegistrationServiceTest {
     when(userService.usernameExists(USERNAME)).thenReturn(false);
     when(userService.emailExists(EMAIL)).thenReturn(true);
     when(userService.findByIdentifier(EMAIL))
-        .thenReturn(Optional.of(new UserDto(UUID.randomUUID(), EMAIL, USERNAME, true)));
+        .thenReturn(Optional.of(new User(UUID.randomUUID(), EMAIL, USERNAME, true)));
 
     service.register(EMAIL, USERNAME, PASSWORD);
 
@@ -95,7 +91,7 @@ class RegistrationServiceTest {
     when(userService.usernameExists(USERNAME)).thenReturn(false);
     when(userService.emailExists(EMAIL)).thenReturn(true);
     when(userService.findByIdentifier(EMAIL))
-        .thenReturn(Optional.of(new UserDto(existingId, EMAIL, USERNAME, false)));
+        .thenReturn(Optional.of(new User(existingId, EMAIL, USERNAME, false)));
     when(emailVerificationService.issue(existingId)).thenReturn("fresh-token");
 
     service.register(EMAIL, USERNAME, PASSWORD);
@@ -137,7 +133,7 @@ class RegistrationServiceTest {
         .when(accountCreator)
         .createAccount(EMAIL, USERNAME, PASSWORD);
     when(userService.findByIdentifier(EMAIL))
-        .thenReturn(Optional.of(new UserDto(existingId, EMAIL, USERNAME, false)));
+        .thenReturn(Optional.of(new User(existingId, EMAIL, USERNAME, false)));
     when(emailVerificationService.issue(existingId)).thenReturn("fresh-token");
 
     service.register(EMAIL, USERNAME, PASSWORD);
@@ -156,10 +152,7 @@ class RegistrationServiceTest {
         .createAccount(EMAIL, USERNAME, PASSWORD);
 
     assertThatThrownBy(() -> service.register(EMAIL, USERNAME, PASSWORD))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode()).isEqualTo(ErrorCode.USERNAME_TAKEN));
+        .isInstanceOf(UsernameTakenException.class);
 
     verifyNoInteractions(events);
   }
@@ -211,7 +204,7 @@ class RegistrationServiceTest {
 
   @Test
   void resendForAnAlreadyVerifiedEmailHashesADecoyPasswordAndIssuesNoToken() {
-    UserDto verifiedUser = new UserDto(UUID.randomUUID(), EMAIL, USERNAME, true);
+    User verifiedUser = new User(UUID.randomUUID(), EMAIL, USERNAME, true);
     when(userService.findByIdentifier(EMAIL)).thenReturn(Optional.of(verifiedUser));
 
     service.resend(EMAIL);
@@ -223,7 +216,7 @@ class RegistrationServiceTest {
   @Test
   void resendForAnUnverifiedEmailHashesADecoyPasswordAndAlsoIssuesAFreshToken() {
     UUID userId = UUID.randomUUID();
-    UserDto unverifiedUser = new UserDto(userId, EMAIL, USERNAME, false);
+    User unverifiedUser = new User(userId, EMAIL, USERNAME, false);
     when(userService.findByIdentifier(EMAIL)).thenReturn(Optional.of(unverifiedUser));
     when(emailVerificationService.issue(userId)).thenReturn("fresh-token");
 

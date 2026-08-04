@@ -59,8 +59,9 @@ public final class AccountIdentifierReader {
   private static String invoke(Method accessor, Object argument) {
     try {
       return Objects.toString(accessor.invoke(argument), "");
-    } catch (IllegalAccessException | InvocationTargetException e) {
-      throw new IllegalStateException("Cannot read " + accessor.getName() + " for throttling", e);
+    } catch (IllegalAccessException | InvocationTargetException exception) {
+      throw new IllegalStateException(
+          "Cannot read " + accessor.getName() + " for throttling", exception);
     }
   }
 }

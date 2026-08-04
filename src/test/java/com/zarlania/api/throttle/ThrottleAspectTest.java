@@ -12,7 +12,6 @@ import static org.mockito.Mockito.when;
 
 import com.zarlania.api.errors.ApiException;
 import com.zarlania.api.errors.ErrorCode;
-import com.zarlania.api.throttle.ThrottleProperties.EndpointLimits;
 import java.time.Duration;
 import java.util.Map;
 import org.aspectj.lang.JoinPoint;
@@ -38,8 +37,6 @@ class ThrottleAspectTest {
   private static final String CLIENT_IP = "203.0.113.7";
   private static final int IP_LIMIT = 10;
   private static final int ACCOUNT_LIMIT = 5;
-
-  private record LoginBody(String identifier) {}
 
   /** Source of real {@link Throttled} instances — an annotation cannot be constructed by hand. */
   private static final class AnnotatedHandlers {
@@ -82,7 +79,8 @@ class ThrottleAspectTest {
   @Test
   void aRequestWithRoomInBothBucketsReachesTheHandler() {
     permitEverything();
-    when(joinPoint.getArgs()).thenReturn(new Object[] {new LoginBody("bob@example.com")});
+    when(joinPoint.getArgs())
+        .thenReturn(new Object[] {new LoginBody("bob@example.com", "hunter2")});
 
     assertThatCode(() -> aspect.enforce(joinPoint, throttled("withAccountBucket")))
         .doesNotThrowAnyException();
@@ -91,7 +89,8 @@ class ThrottleAspectTest {
   @Test
   void bothBucketsAreConsumedWithTheirOwnLimits() {
     permitEverything();
-    when(joinPoint.getArgs()).thenReturn(new Object[] {new LoginBody("bob@example.com")});
+    when(joinPoint.getArgs())
+        .thenReturn(new Object[] {new LoginBody("bob@example.com", "hunter2")});
 
     aspect.enforce(joinPoint, throttled("withAccountBucket"));
 
@@ -114,7 +113,8 @@ class ThrottleAspectTest {
   void anExhaustedClientBucketIsThrottledBeforeTheAccountBucketIsEvenTouched() {
     when(rateLimiter.tryConsume("login:" + CLIENT_IP, IP_LIMIT))
         .thenReturn(ThrottleDecision.refused(Duration.ofSeconds(30)));
-    when(joinPoint.getArgs()).thenReturn(new Object[] {new LoginBody("bob@example.com")});
+    when(joinPoint.getArgs())
+        .thenReturn(new Object[] {new LoginBody("bob@example.com", "hunter2")});
 
     assertThatThrownBy(() -> aspect.enforce(joinPoint, throttled("withAccountBucket")))
         .isInstanceOf(ApiException.class)
@@ -130,7 +130,8 @@ class ThrottleAspectTest {
         .thenReturn(ThrottleDecision.permitted());
     when(rateLimiter.tryConsume("login:acct:bob@example.com", ACCOUNT_LIMIT))
         .thenReturn(ThrottleDecision.refused(Duration.ofSeconds(30)));
-    when(joinPoint.getArgs()).thenReturn(new Object[] {new LoginBody("bob@example.com")});
+    when(joinPoint.getArgs())
+        .thenReturn(new Object[] {new LoginBody("bob@example.com", "hunter2")});
 
     assertThatThrownBy(() -> aspect.enforce(joinPoint, throttled("withAccountBucket")))
         .isInstanceOf(ApiException.class);
@@ -191,8 +192,8 @@ class ThrottleAspectTest {
   private static Throttled throttled(String handlerName) {
     try {
       return AnnotatedHandlers.class.getDeclaredMethod(handlerName).getAnnotation(Throttled.class);
-    } catch (NoSuchMethodException e) {
-      throw new IllegalStateException(e);
+    } catch (NoSuchMethodException exception) {
+      throw new IllegalStateException(exception);
     }
   }
 }

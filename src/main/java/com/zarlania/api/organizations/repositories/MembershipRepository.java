@@ -1,15 +1,15 @@
 package com.zarlania.api.organizations.repositories;
 
-import com.zarlania.api.organizations.entities.Membership;
+import com.zarlania.api.organizations.entities.MembershipEntity;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-/** Persistence for {@link Membership}, keyed on the member rather than the organization. */
-public interface MembershipRepository extends JpaRepository<Membership, UUID> {
+/** Persistence for {@link MembershipEntity}, keyed on the member rather than the organization. */
+public interface MembershipRepository extends JpaRepository<MembershipEntity, UUID> {
 
   /** Every organization one account belongs to, owned or not. Empty for an account with none. */
-  List<Membership> findByUserId(UUID userId);
+  List<MembershipEntity> findByUserId(UUID userId);
 
   /** Whether an account belongs to an organization at all, ownership aside. */
   boolean existsByUserIdAndOrganizationId(UUID userId, UUID organizationId);

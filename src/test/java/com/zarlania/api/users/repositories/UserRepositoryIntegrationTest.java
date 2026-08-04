@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.time.Clock;
 import java.time.Duration;
@@ -60,10 +60,10 @@ class UserRepositoryIntegrationTest extends IntegrationTestBase {
 
   @Test
   void findByEmailVerifiedAtIsNullAndCreatedAtBeforeListsOnlyStaleUnverifiedAccounts() {
-    UserDto stale = accounts.user("repo-stale-unverified");
+    User stale = accounts.user("repo-stale-unverified");
     accounts.backdateCreatedAt(stale.id(), EXPIRED_AGE);
-    UserDto fresh = accounts.user("repo-fresh-unverified");
-    UserDto staleButVerified = accounts.user("repo-stale-verified");
+    User fresh = accounts.user("repo-fresh-unverified");
+    User staleButVerified = accounts.user("repo-stale-verified");
     accounts.backdateCreatedAt(staleButVerified.id(), EXPIRED_AGE);
     userService.markEmailVerified(staleButVerified.id());
 
@@ -79,7 +79,7 @@ class UserRepositoryIntegrationTest extends IntegrationTestBase {
 
   @Test
   void deleteByIdAndEmailVerifiedAtIsNullDeletesAnUnverifiedAccountAndReportsTheRow() {
-    UserDto user = accounts.user("repo-conditional-delete");
+    User user = accounts.user("repo-conditional-delete");
 
     assertThat(users.deleteByIdAndEmailVerifiedAtIsNull(user.id())).isEqualTo(1);
     assertThat(users.findById(user.id())).isEmpty();
@@ -89,7 +89,7 @@ class UserRepositoryIntegrationTest extends IntegrationTestBase {
   // has to be able to tell that it deleted nothing, rather than assuming it succeeded.
   @Test
   void deleteByIdAndEmailVerifiedAtIsNullLeavesAVerifiedAccountAloneAndReportsNoRow() {
-    UserDto user = accounts.user("repo-conditional-keep");
+    User user = accounts.user("repo-conditional-keep");
     userService.markEmailVerified(user.id());
 
     assertThat(users.deleteByIdAndEmailVerifiedAtIsNull(user.id())).isZero();

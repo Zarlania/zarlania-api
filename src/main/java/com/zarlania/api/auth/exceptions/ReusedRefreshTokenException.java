@@ -1,4 +1,4 @@
-package com.zarlania.api.auth.services;
+package com.zarlania.api.auth.exceptions;
 
 /**
  * Thrown when a refresh token that was already redeemed is presented again — treated as evidence

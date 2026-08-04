@@ -3,7 +3,7 @@ package com.zarlania.api.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.testsupport.IntegrationTestBase;
-import com.zarlania.api.users.entities.User;
+import com.zarlania.api.users.entities.UserEntity;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
@@ -22,9 +22,9 @@ class BaseEntityConventionIntegrationTest extends IntegrationTestBase {
   // Hibernate populated in memory, which would pass even against a second-precision column.
   @Test
   void saveAssignsUuidAndMicrosecondTimestamps() {
-    User saved = users.saveAndFlush(new User("conv@example.com", "convention"));
+    UserEntity saved = users.saveAndFlush(new UserEntity("conv@example.com", "convention"));
 
-    User reloaded = users.findById(saved.getId()).orElseThrow();
+    UserEntity reloaded = users.findById(saved.getId()).orElseThrow();
 
     assertThat(reloaded.getId()).isEqualTo(saved.getId());
     assertThat(reloaded.getCreatedAt()).isEqualTo(saved.getCreatedAt());
@@ -39,12 +39,12 @@ class BaseEntityConventionIntegrationTest extends IntegrationTestBase {
   // @UpdateTimestamp never fires again, which is exactly the regression worth catching.
   @Test
   void updateMovesUpdatedAtButNotCreatedAt() {
-    User saved = users.saveAndFlush(new User("conv2@example.com", "convention2"));
+    UserEntity saved = users.saveAndFlush(new UserEntity("conv2@example.com", "convention2"));
     var created = saved.getCreatedAt();
     var updatedAtBefore = saved.getUpdatedAt();
 
     saved.markEmailVerified(created.plus(1, ChronoUnit.SECONDS));
-    User updated = users.saveAndFlush(saved);
+    UserEntity updated = users.saveAndFlush(saved);
 
     assertThat(updated.getCreatedAt()).isEqualTo(created);
     assertThat(updated.getUpdatedAt()).isAfter(updatedAtBefore);
@@ -52,7 +52,7 @@ class BaseEntityConventionIntegrationTest extends IntegrationTestBase {
 
   @Test
   void emailUniquenessIsCaseInsensitive() {
-    users.saveAndFlush(new User("Case@Example.com", "casetest"));
+    users.saveAndFlush(new UserEntity("Case@Example.com", "casetest"));
     assertThat(users.existsByEmail("case@example.com")).isTrue();
   }
 }

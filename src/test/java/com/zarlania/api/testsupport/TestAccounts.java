@@ -2,15 +2,15 @@ package com.zarlania.api.testsupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.zarlania.api.auth.entities.RefreshToken;
+import com.zarlania.api.auth.entities.RefreshTokenEntity;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
-import com.zarlania.api.credentials.entities.EmailVerificationToken;
+import com.zarlania.api.credentials.entities.EmailVerificationTokenEntity;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.credentials.services.CredentialsService;
-import com.zarlania.api.organizations.dtos.OrganizationDto;
+import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.security.TokenHasher;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -58,33 +58,19 @@ public class TestAccounts {
   @PersistenceContext private EntityManager entityManager;
 
   /**
-   * One seeded account and the ids or hashes a test needs to assert on what became of it.
-   *
-   * @param verificationTokenHash the hash of an outstanding verification token
-   * @param refreshTokenHash the hash of a live refresh token, as a logged-in account would have
-   */
-  public record SeededAccount(
-      UUID userId,
-      UUID organizationId,
-      String email,
-      String username,
-      String verificationTokenHash,
-      String refreshTokenHash) {}
-
-  /**
    * An account with nothing hanging off it: no password, no organization, no tokens. For tests
    * about the users domain alone.
    *
    * @param slug becomes both the username and the local part of the address, so one call cannot
    *     collide with another
    */
-  public UserDto user(String slug) {
+  public User user(String slug) {
     return users.createUnverified(slug + "@example.com", slug);
   }
 
   /** An account with a password and its personal organization, as registration would leave it. */
-  public UserDto userWithPassword(String slug) {
-    UserDto user = user(slug);
+  public User userWithPassword(String slug) {
+    User user = user(slug);
     credentials.createPassword(user.id(), PASSWORD);
     organizations.createPersonalOrganization(user.id(), slug + "'s Space");
     return user;
@@ -98,9 +84,9 @@ public class TestAccounts {
    *     purge
    */
   public SeededAccount fullAccount(String slug, boolean verified) {
-    UserDto user = user(slug);
+    User user = user(slug);
     credentials.createPassword(user.id(), PASSWORD);
-    OrganizationDto organization =
+    Organization organization =
         organizations.createPersonalOrganization(user.id(), slug + "'s Space");
     String verificationHash = verificationToken(user.id(), farFuture(), false);
     String refreshHash = refreshToken(user.id(), organization.id(), farFuture());
@@ -120,7 +106,7 @@ public class TestAccounts {
   public String refreshToken(UUID userId, UUID organizationId, Instant familyExpiresAt) {
     String raw = TokenHasher.newUrlSafeToken();
     refreshTokens.saveAndFlush(
-        new RefreshToken(
+        new RefreshTokenEntity(
             UUID.randomUUID(),
             userId,
             organizationId,
@@ -137,8 +123,8 @@ public class TestAccounts {
    */
   public String verificationToken(UUID userId, Instant expiresAt, boolean consumed) {
     String raw = TokenHasher.newUrlSafeToken();
-    EmailVerificationToken token =
-        new EmailVerificationToken(userId, TokenHasher.sha256Hex(raw), expiresAt);
+    EmailVerificationTokenEntity token =
+        new EmailVerificationTokenEntity(userId, TokenHasher.sha256Hex(raw), expiresAt);
     if (consumed) {
       token.consume(clock.instant());
     }

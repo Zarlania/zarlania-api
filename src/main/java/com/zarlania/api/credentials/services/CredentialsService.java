@@ -1,7 +1,7 @@
 package com.zarlania.api.credentials.services;
 
 import com.zarlania.api.credentials.CredentialsProperties;
-import com.zarlania.api.credentials.entities.PasswordCredential;
+import com.zarlania.api.credentials.entities.PasswordCredentialEntity;
 import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepository;
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -37,7 +37,7 @@ public class CredentialsService {
   // requests.
   private static final AtomicReference<String> DECOY_HASH_SINK = new AtomicReference<>();
 
-  private final PasswordCredentialRepository credentials;
+  private final PasswordCredentialRepository passwordCredentialRepository;
   private final EmailVerificationTokenRepository verificationTokens;
   private final PasswordEncoder passwordEncoder;
   private final Semaphore hashingPermits;
@@ -67,7 +67,7 @@ public class CredentialsService {
       EmailVerificationTokenRepository verificationTokens,
       PasswordEncoder passwordEncoder,
       CredentialsProperties properties) {
-    this.credentials = credentials;
+    this.passwordCredentialRepository = credentials;
     this.verificationTokens = verificationTokens;
     this.passwordEncoder = passwordEncoder;
     this.hashingPermits = new Semaphore(properties.maxConcurrentHashes());
@@ -77,7 +77,7 @@ public class CredentialsService {
   @Transactional
   public void createPassword(UUID userId, String rawPassword) {
     String passwordHash = hash(() -> passwordEncoder.encode(rawPassword));
-    credentials.save(new PasswordCredential(userId, passwordHash));
+    passwordCredentialRepository.save(new PasswordCredentialEntity(userId, passwordHash));
   }
 
   /**
@@ -87,10 +87,10 @@ public class CredentialsService {
    * <p>Deliberately not {@code @Transactional}: the comparison can wait on the concurrency gate,
    * and holding a pooled connection for the whole of that wait would trade an out-of-memory risk
    * for a connection-pool exhaustion one. The repository call opens and closes its own transaction,
-   * and {@code PasswordCredential} has no lazy state, so reading its hash afterwards is safe.
+   * and {@code PasswordCredentialEntity} has no lazy state, so reading its hash afterwards is safe.
    */
   public boolean passwordMatches(UUID userId, String rawPassword) {
-    return credentials
+    return passwordCredentialRepository
         .findByUserId(userId)
         .map(c -> hash(() -> passwordEncoder.matches(rawPassword, c.getPasswordHash())))
         .orElse(false);
@@ -121,7 +121,7 @@ public class CredentialsService {
   @Transactional
   public void deleteAllForUser(UUID userId) {
     verificationTokens.deleteByUserId(userId);
-    credentials.deleteByUserId(userId);
+    passwordCredentialRepository.deleteByUserId(userId);
   }
 
   /**
@@ -141,9 +141,9 @@ public class CredentialsService {
   private <T> T hash(Supplier<T> hashing) {
     try {
       hashingPermits.acquire();
-    } catch (InterruptedException e) {
+    } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
-      throw new IllegalStateException("Interrupted while waiting to hash a password", e);
+      throw new IllegalStateException("Interrupted while waiting to hash a password", exception);
     }
     try {
       return hashing.get();

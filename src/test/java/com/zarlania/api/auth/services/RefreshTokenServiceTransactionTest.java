@@ -4,13 +4,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
-import com.zarlania.api.auth.entities.RefreshToken;
+import com.zarlania.api.auth.entities.RefreshTokenEntity;
+import com.zarlania.api.auth.exceptions.InvalidRefreshTokenException;
+import com.zarlania.api.auth.exceptions.ReusedRefreshTokenException;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
-import com.zarlania.api.organizations.dtos.OrganizationDto;
+import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.testsupport.TransactionTestBase;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.util.List;
 import java.util.UUID;
@@ -37,8 +39,8 @@ class RefreshTokenServiceTransactionTest extends TransactionTestBase {
   @Test
   void concurrentRotationOfTheSameTokenSucceedsExactlyOnce() throws Exception {
     UUID userId = seedUserId("rotate-race");
-    OrganizationDto org = seedPersonalOrganization(userId, "rotate-race");
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    Organization organization = seedPersonalOrganization(userId, "rotate-race");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
     UUID familyId = findStoredToken(issued.raw()).getFamilyId();
 
     List<Boolean> outcomes =
@@ -46,7 +48,7 @@ class RefreshTokenServiceTransactionTest extends TransactionTestBase {
 
     assertThat(outcomes).filteredOn(succeeded -> succeeded).hasSize(1);
     assertThat(outcomes).filteredOn(succeeded -> !succeeded).hasSize(1);
-    List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+    List<RefreshTokenEntity> family = refreshTokens.findByFamilyId(familyId);
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
   }
 
@@ -60,14 +62,14 @@ class RefreshTokenServiceTransactionTest extends TransactionTestBase {
   @Test
   void concurrentRevocationOfDifferentTokensInTheSameFamilyDoesNotDeadlock() throws Exception {
     UUID userId = seedUserId("revoke-race");
-    OrganizationDto org = seedPersonalOrganization(userId, "revoke-race");
-    IssuedRefreshToken first = refreshTokenService.startFamily(userId, org.id());
+    Organization organization = seedPersonalOrganization(userId, "revoke-race");
+    IssuedRefreshToken first = refreshTokenService.startFamily(userId, organization.id());
     RefreshRotation second = refreshTokenService.rotate(first.raw());
     UUID familyId = findStoredToken(second.newRaw()).getFamilyId();
 
     raceTwo(() -> revoke(first.raw()), () -> revoke(second.newRaw()));
 
-    List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+    List<RefreshTokenEntity> family = refreshTokens.findByFamilyId(familyId);
     assertThat(family).hasSize(2);
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
   }
@@ -86,13 +88,13 @@ class RefreshTokenServiceTransactionTest extends TransactionTestBase {
   @Test
   void concurrentRevocationAndRotationOfTheSameTokenLeavesNoRowUnrevoked() throws Exception {
     UUID userId = seedUserId("revoke-rotate-race");
-    OrganizationDto org = seedPersonalOrganization(userId, "revoke-rotate-race");
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    Organization organization = seedPersonalOrganization(userId, "revoke-rotate-race");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
     UUID familyId = findStoredToken(issued.raw()).getFamilyId();
 
     raceTwo(() -> rotateTolerantOfLosingTheRace(issued.raw()), () -> revoke(issued.raw()));
 
-    List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+    List<RefreshTokenEntity> family = refreshTokens.findByFamilyId(familyId);
     assertThat(family).isNotEmpty();
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
   }
@@ -106,7 +108,7 @@ class RefreshTokenServiceTransactionTest extends TransactionTestBase {
     try {
       refreshTokenService.rotate(raw);
       return true;
-    } catch (ReusedRefreshTokenException e) {
+    } catch (ReusedRefreshTokenException exception) {
       return false;
     }
   }
@@ -119,22 +121,22 @@ class RefreshTokenServiceTransactionTest extends TransactionTestBase {
   private Void rotateTolerantOfLosingTheRace(String raw) {
     try {
       refreshTokenService.rotate(raw);
-    } catch (ReusedRefreshTokenException | InvalidRefreshTokenException e) {
+    } catch (ReusedRefreshTokenException | InvalidRefreshTokenException exception) {
       // Expected under either race ordering; see the caller's test comment.
     }
     return null;
   }
 
   private UUID seedUserId(String slug) {
-    UserDto user = userService.createUnverified(slug + "@example.com", slug);
+    User user = userService.createUnverified(slug + "@example.com", slug);
     return user.id();
   }
 
-  private OrganizationDto seedPersonalOrganization(UUID userId, String slug) {
+  private Organization seedPersonalOrganization(UUID userId, String slug) {
     return organizationService.createPersonalOrganization(userId, slug + "'s Space");
   }
 
-  private RefreshToken findStoredToken(String raw) {
+  private RefreshTokenEntity findStoredToken(String raw) {
     return refreshTokens.findByTokenHash(TokenHasher.sha256Hex(raw)).orElseThrow();
   }
 }

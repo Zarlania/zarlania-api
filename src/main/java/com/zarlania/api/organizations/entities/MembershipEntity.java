@@ -17,13 +17,13 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "organization_memberships")
-public class Membership extends BaseEntity {
+public class MembershipEntity extends BaseEntity {
 
   // Same domain as Organization: a mapped relation is fine here. userId below stays a
   // plain FK column because users is a foreign domain (see CLAUDE.md domain boundary rules).
   @ManyToOne(fetch = FetchType.LAZY, optional = false)
   @JoinColumn(name = "organization_id")
-  private Organization organization;
+  private OrganizationEntity organization;
 
   @Column(name = "user_id", nullable = false)
   private UUID userId;
@@ -31,21 +31,21 @@ public class Membership extends BaseEntity {
   @Column(name = "is_owner", nullable = false)
   private boolean owner;
 
-  protected Membership() {}
+  protected MembershipEntity() {}
 
   /**
    * @param organization the organization joined; an in-domain relation, unlike {@code userId}
    * @param userId a plain foreign-key id, because users is a different domain
    * @param owner whether this member owns the organization rather than merely belonging to it
    */
-  public Membership(Organization organization, UUID userId, boolean owner) {
+  public MembershipEntity(OrganizationEntity organization, UUID userId, boolean owner) {
     this.organization = organization;
     this.userId = userId;
     this.owner = owner;
   }
 
   /** The organization joined. Lazily loaded, so touching it needs an open session. */
-  public Organization getOrganization() {
+  public OrganizationEntity getOrganization() {
     return organization;
   }
 

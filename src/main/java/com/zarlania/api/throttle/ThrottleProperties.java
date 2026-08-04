@@ -3,7 +3,6 @@ package com.zarlania.api.throttle;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -30,22 +29,6 @@ public record ThrottleProperties(
    */
   public ThrottleProperties {
     endpoints = Map.copyOf(Objects.requireNonNull(endpoints, "zarlania.throttle.endpoints"));
-  }
-
-  /**
-   * One endpoint's two limits, both counted over {@link ThrottleProperties#window()}.
-   *
-   * @param limit requests allowed per client IP
-   * @param accountLimit requests allowed per account named in the request, across every IP; absent
-   *     for endpoints that name no account, such as refresh (which carries only a cookie) and the
-   *     CSRF token endpoint (which carries nothing)
-   */
-  public record EndpointLimits(int limit, Integer accountLimit) {
-
-    /** The per-account limit, empty when this endpoint has no account bucket. */
-    public Optional<Integer> accountLimitIfPresent() {
-      return Optional.ofNullable(accountLimit);
-    }
   }
 
   /**

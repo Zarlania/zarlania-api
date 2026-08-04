@@ -1,10 +1,9 @@
 package com.zarlania.api.auth.services;
 
+import com.zarlania.api.auth.exceptions.UsernameTakenException;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
-import com.zarlania.api.errors.ApiException;
-import com.zarlania.api.errors.ErrorCode;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,13 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RegistrationService {
 
-  private static final String USERNAME_TAKEN_MESSAGE = "That username is taken";
-
   private final UserService userService;
   private final CredentialsService credentialsService;
   private final EmailVerificationService emailVerificationService;
   private final AccountCreator accountCreator;
-  private final ApplicationEventPublisher events;
+  private final ApplicationEventPublisher applicationEventPublisher;
 
   /**
    * Registers an account and starts email verification.
@@ -47,14 +44,13 @@ public class RegistrationService {
    * users} table's own unique constraints are the real enforcement, and losing to one of them has
    * to be handled from outside the rolled-back transaction.
    *
-   * @throws com.zarlania.api.errors.ApiException with {@code USERNAME_TAKEN} if the username is
-   *     already in use. An address already in use is <em>not</em> an error: the caller gets the
-   *     same answer either way, and the existing owner is emailed instead, so the response cannot
-   *     be used to enumerate accounts.
+   * @throws UsernameTakenException if the username is already in use. An address already in use is
+   *     <em>not</em> an error: the caller gets the same answer either way, and the existing owner
+   *     is emailed instead, so the response cannot be used to enumerate accounts.
    */
   public void register(String email, String username, String rawPassword) {
     if (userService.usernameExists(username)) {
-      throw new ApiException(ErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
+      throw new UsernameTakenException();
     }
     if (userService.emailExists(email)) {
       credentialsService.hashDecoyPassword();
@@ -63,24 +59,11 @@ public class RegistrationService {
     }
     try {
       accountCreator.createAccount(email, username, rawPassword);
-    } catch (DataIntegrityViolationException e) {
-      resolveRegistrationConflict(email, username, e);
+    } catch (DataIntegrityViolationException exception) {
+      resolveRegistrationConflict(email, username, exception);
     }
   }
 
-  /**
-   * Reached only by the loser of two concurrent registrations, whose transaction has already rolled
-   * back. Without this the constraint violation would escape as a generic 500 — which is not just
-   * an ugly failure but an enumeration channel, since a caller who fires two requests at once gets
-   * a 500 for an email that is free and two indistinguishable 202s for one that is taken.
-   *
-   * <p>Which constraint lost is re-derived by asking the same questions register() asked, rather
-   * than by parsing the constraint name out of the exception: the answers are now unambiguous,
-   * because the winning transaction has committed. Username is checked first so that the outcome
-   * matches the order of the checks in register() exactly, and the reminder path afterwards is the
-   * very same method the sequential "email already registered" case uses — so the two are identical
-   * in status, body and the email that follows, which is the whole point.
-   */
   /**
    * Redeems a verification token and marks the account's address proved.
    *
@@ -118,10 +101,23 @@ public class RegistrationService {
         .ifPresent(user -> issueVerification(email, user.id()));
   }
 
+  /**
+   * Reached only by the loser of two concurrent registrations, whose transaction has already rolled
+   * back. Without this the constraint violation would escape as a generic 500 — which is not just
+   * an ugly failure but an enumeration channel, since a caller who fires two requests at once gets
+   * a 500 for an email that is free and two indistinguishable 202s for one that is taken.
+   *
+   * <p>Which constraint lost is re-derived by asking the same questions register() asked, rather
+   * than by parsing the constraint name out of the exception: the answers are now unambiguous,
+   * because the winning transaction has committed. Username is checked first so that the outcome
+   * matches the order of the checks in register() exactly, and the reminder path afterwards is the
+   * very same method the sequential "email already registered" case uses — so the two are identical
+   * in status, body and the email that follows, which is the whole point.
+   */
   private void resolveRegistrationConflict(
       String email, String username, DataIntegrityViolationException cause) {
     if (userService.usernameExists(username)) {
-      throw new ApiException(ErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
+      throw new UsernameTakenException();
     }
     if (!userService.emailExists(email)) {
       // Some other integrity rule broke — not the race this handler exists for. Rethrowing keeps a
@@ -132,11 +128,11 @@ public class RegistrationService {
   }
 
   /**
-   * Which reminder depends on whether the existing account was ever verified. The spec is explicit:
-   * "Re-registering an unverified email before then re-sends verification; it never alters
-   * credentials." Someone whose first verification mail landed in spam registers again and needs
-   * another link — sending them the duplicate-attempt notice instead would be untrue, would carry
-   * no link, and would strand them on a 403 the moment they followed its advice to sign in.
+   * Which reminder depends on whether the existing account was ever verified. Re-registering an
+   * unverified email re-sends verification and never alters credentials. Someone whose first
+   * verification mail landed in spam registers again and needs another link — sending them the
+   * duplicate-attempt notice instead would be untrue, would carry no link, and would strand them on
+   * a 403 the moment they followed its advice to sign in.
    *
    * <p>Credentials are deliberately left alone on both paths: re-registering must never let a
    * caller who does not control the mailbox overwrite the password on an account someone else
@@ -149,16 +145,16 @@ public class RegistrationService {
    * invisible next to the hash.
    */
   private void remindExistingOwner(String email) {
-    Optional<UserDto> existing = userService.findByIdentifier(email);
+    Optional<User> existing = userService.findByIdentifier(email);
     if (existing.isPresent() && !existing.get().emailVerified()) {
       issueVerification(email, existing.get().id());
       return;
     }
-    events.publishEvent(new DuplicateRegistrationAttempted(email));
+    applicationEventPublisher.publishEvent(new DuplicateRegistrationAttempted(email));
   }
 
   private void issueVerification(String email, UUID userId) {
     String rawToken = emailVerificationService.issue(userId);
-    events.publishEvent(new VerificationEmailRequested(email, rawToken));
+    applicationEventPublisher.publishEvent(new VerificationEmailRequested(email, rawToken));
   }
 }

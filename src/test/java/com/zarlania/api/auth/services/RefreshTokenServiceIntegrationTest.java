@@ -10,13 +10,15 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
-import com.zarlania.api.auth.entities.RefreshToken;
+import com.zarlania.api.auth.entities.RefreshTokenEntity;
+import com.zarlania.api.auth.exceptions.InvalidRefreshTokenException;
+import com.zarlania.api.auth.exceptions.ReusedRefreshTokenException;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
-import com.zarlania.api.organizations.dtos.OrganizationDto;
+import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.testsupport.IntegrationTestBase;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.time.Clock;
 import java.time.Duration;
@@ -40,29 +42,29 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
   private final Clock clock;
 
   private UUID seedUserId(String slug) {
-    UserDto user = userService.createUnverified(slug + "@example.com", slug);
+    User user = userService.createUnverified(slug + "@example.com", slug);
     return user.id();
   }
 
-  private OrganizationDto seedPersonalOrganization(UUID userId, String slug) {
+  private Organization seedPersonalOrganization(UUID userId, String slug) {
     return organizationService.createPersonalOrganization(userId, slug + "'s Space");
   }
 
-  private RefreshToken findStoredToken(String raw) {
+  private RefreshTokenEntity findStoredToken(String raw) {
     return refreshTokens.findByTokenHash(TokenHasher.sha256Hex(raw)).orElseThrow();
   }
 
   @Test
   void startFamilyPersistsAHashedTokenWithAThirtyDayExpiry() {
     UUID userId = seedUserId("family-start");
-    OrganizationDto org = seedPersonalOrganization(userId, "family-start");
+    Organization organization = seedPersonalOrganization(userId, "family-start");
 
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
 
-    RefreshToken stored = findStoredToken(issued.raw());
+    RefreshTokenEntity stored = findStoredToken(issued.raw());
     assertThat(stored.getTokenHash()).isNotEqualTo(issued.raw());
     assertThat(stored.getUserId()).isEqualTo(userId);
-    assertThat(stored.getOrganizationId()).isEqualTo(org.id());
+    assertThat(stored.getOrganizationId()).isEqualTo(organization.id());
     assertThat(stored.getFamilyExpiresAt())
         .isCloseTo(clock.instant().plus(FAMILY_LIFETIME), within(CLOCK_TOLERANCE));
     assertThat(issued.familyExpiresAt()).isEqualTo(stored.getFamilyExpiresAt());
@@ -71,21 +73,21 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
   @Test
   void rotateReturnsANewRawMarksTheOldRowUsedAndSharesFamilyMetadata() {
     UUID userId = seedUserId("rotate-happy");
-    OrganizationDto org = seedPersonalOrganization(userId, "rotate-happy");
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
-    RefreshToken original = findStoredToken(issued.raw());
+    Organization organization = seedPersonalOrganization(userId, "rotate-happy");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
+    RefreshTokenEntity original = findStoredToken(issued.raw());
 
     RefreshRotation rotation = refreshTokenService.rotate(issued.raw());
 
     assertThat(rotation.newRaw()).isNotEqualTo(issued.raw());
     assertThat(rotation.userId()).isEqualTo(userId);
-    assertThat(rotation.organizationId()).isEqualTo(org.id());
+    assertThat(rotation.organizationId()).isEqualTo(organization.id());
     assertThat(rotation.familyExpiresAt()).isEqualTo(original.getFamilyExpiresAt());
 
-    RefreshToken oldRow = refreshTokens.findById(original.getId()).orElseThrow();
+    RefreshTokenEntity oldRow = refreshTokens.findById(original.getId()).orElseThrow();
     assertThat(oldRow.getUsedAt()).isNotNull();
 
-    RefreshToken newRow = findStoredToken(rotation.newRaw());
+    RefreshTokenEntity newRow = findStoredToken(rotation.newRaw());
     assertThat(newRow.getFamilyId()).isEqualTo(original.getFamilyId());
     assertThat(newRow.getFamilyExpiresAt()).isEqualTo(original.getFamilyExpiresAt());
     assertThat(newRow.getUsedAt()).isNull();
@@ -95,18 +97,18 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
   @Test
   void rotatingAnAlreadyUsedTokenRevokesEveryRowInTheFamilyAndThrows() {
     UUID userId = seedUserId("rotate-reuse");
-    OrganizationDto org = seedPersonalOrganization(userId, "rotate-reuse");
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    Organization organization = seedPersonalOrganization(userId, "rotate-reuse");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
     RefreshRotation firstRotation = refreshTokenService.rotate(issued.raw());
     UUID familyId = findStoredToken(issued.raw()).getFamilyId();
 
     assertThatThrownBy(() -> refreshTokenService.rotate(issued.raw()))
         .isInstanceOf(ReusedRefreshTokenException.class);
 
-    List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+    List<RefreshTokenEntity> family = refreshTokens.findByFamilyId(familyId);
     assertThat(family).hasSize(2);
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
-    RefreshToken newestRow = findStoredToken(firstRotation.newRaw());
+    RefreshTokenEntity newestRow = findStoredToken(firstRotation.newRaw());
     assertThat(newestRow.getRevokedAt()).isNotNull();
   }
 
@@ -117,8 +119,8 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
   @Test
   void rotatingAnAlreadyUsedTokenLogsATheftSignalNamingTheUserAndFamily() {
     UUID userId = seedUserId("rotate-reuse-log");
-    OrganizationDto org = seedPersonalOrganization(userId, "rotate-reuse-log");
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    Organization organization = seedPersonalOrganization(userId, "rotate-reuse-log");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
     refreshTokenService.rotate(issued.raw());
     UUID familyId = findStoredToken(issued.raw()).getFamilyId();
 
@@ -154,13 +156,13 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
   @Test
   void rotatingAFamilyPastItsLifetimeThrowsInvalid() {
     UUID userId = seedUserId("rotate-expired");
-    OrganizationDto org = seedPersonalOrganization(userId, "rotate-expired");
+    Organization organization = seedPersonalOrganization(userId, "rotate-expired");
     String raw = TokenHasher.newUrlSafeToken();
-    RefreshToken expired =
-        new RefreshToken(
+    RefreshTokenEntity expired =
+        new RefreshTokenEntity(
             UUID.randomUUID(),
             userId,
-            org.id(),
+            organization.id(),
             TokenHasher.sha256Hex(raw),
             clock.instant().minus(Duration.ofDays(1)));
     refreshTokens.saveAndFlush(expired);
@@ -177,8 +179,8 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
   @Test
   void revokeFamilyOfThenRotateThrowsInvalid() {
     UUID userId = seedUserId("revoke-logout");
-    OrganizationDto org = seedPersonalOrganization(userId, "revoke-logout");
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    Organization organization = seedPersonalOrganization(userId, "revoke-logout");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
 
     refreshTokenService.revokeFamilyOf(issued.raw());
 
@@ -189,14 +191,14 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
   @Test
   void revokeFamilyOfRevokesEveryUnrevokedRowInTheFamily() {
     UUID userId = seedUserId("revoke-family");
-    OrganizationDto org = seedPersonalOrganization(userId, "revoke-family");
-    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, org.id());
+    Organization organization = seedPersonalOrganization(userId, "revoke-family");
+    IssuedRefreshToken issued = refreshTokenService.startFamily(userId, organization.id());
     RefreshRotation rotation = refreshTokenService.rotate(issued.raw());
     UUID familyId = findStoredToken(issued.raw()).getFamilyId();
 
     refreshTokenService.revokeFamilyOf(rotation.newRaw());
 
-    List<RefreshToken> family = refreshTokens.findByFamilyId(familyId);
+    List<RefreshTokenEntity> family = refreshTokens.findByFamilyId(familyId);
     assertThat(family).hasSize(2);
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
   }

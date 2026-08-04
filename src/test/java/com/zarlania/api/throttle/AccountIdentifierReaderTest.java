@@ -8,10 +8,6 @@ import org.junit.jupiter.api.Test;
 /** Unit-level: reflection over plain records, no context and no request. */
 class AccountIdentifierReaderTest {
 
-  private record LoginBody(String identifier, String password) {}
-
-  private record RegisterBody(String email, String username) {}
-
   @Test
   void readsTheNamedComponentFromTheOnlyRecordArgument() {
     Object[] arguments = {new LoginBody("bob@example.com", "hunter2")};

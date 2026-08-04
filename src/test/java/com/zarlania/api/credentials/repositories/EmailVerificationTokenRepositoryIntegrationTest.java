@@ -4,7 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,7 +35,7 @@ class EmailVerificationTokenRepositoryIntegrationTest extends IntegrationTestBas
 
   @Test
   void findByTokenHashFindsATokenByItsHashAndNothingByAnUnknownOne() {
-    UserDto user = accounts.user("token-repo-find");
+    User user = accounts.user("token-repo-find");
     String hash = accounts.verificationToken(user.id(), farFuture(), false);
 
     assertThat(verificationTokens.findByTokenHash(hash)).isPresent();
@@ -44,7 +44,7 @@ class EmailVerificationTokenRepositoryIntegrationTest extends IntegrationTestBas
 
   @Test
   void deleteByUserIdAndConsumedAtIsNullClearsOutstandingTokensAndKeepsConsumedOnes() {
-    UserDto user = accounts.user("token-repo-outstanding");
+    User user = accounts.user("token-repo-outstanding");
     String outstanding = accounts.verificationToken(user.id(), farFuture(), false);
     String consumed = accounts.verificationToken(user.id(), farFuture(), true);
 
@@ -58,7 +58,7 @@ class EmailVerificationTokenRepositoryIntegrationTest extends IntegrationTestBas
   // token survives both clauses — which is the whole of what the method name promises.
   @Test
   void deleteConsumedTokensAndThoseExpiredBeforeRemovesOnlyWhatCanNeverBeReadAgain() {
-    UserDto user = accounts.user("token-repo-prune");
+    User user = accounts.user("token-repo-prune");
     String consumedButFresh = accounts.verificationToken(user.id(), farFuture(), true);
     String expired = accounts.verificationToken(user.id(), clock.instant().minusSeconds(1), false);
     String outstanding = accounts.verificationToken(user.id(), farFuture(), false);
@@ -73,7 +73,7 @@ class EmailVerificationTokenRepositoryIntegrationTest extends IntegrationTestBas
 
   @Test
   void deleteByUserIdClearsEveryTokenTheAccountHoldsWhateverItsState() {
-    UserDto user = accounts.user("token-repo-delete-all");
+    User user = accounts.user("token-repo-delete-all");
     String outstanding = accounts.verificationToken(user.id(), farFuture(), false);
     String consumed = accounts.verificationToken(user.id(), farFuture(), true);
 

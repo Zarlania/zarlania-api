@@ -9,14 +9,17 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
+import com.zarlania.api.auth.dtos.MintedSession;
 import com.zarlania.api.auth.dtos.RefreshRotation;
+import com.zarlania.api.auth.exceptions.EmailUnverifiedException;
+import com.zarlania.api.auth.exceptions.InvalidCredentialsException;
+import com.zarlania.api.auth.exceptions.InvalidRefreshTokenException;
+import com.zarlania.api.auth.exceptions.ReusedRefreshTokenException;
 import com.zarlania.api.credentials.services.CredentialsService;
-import com.zarlania.api.errors.ApiException;
-import com.zarlania.api.errors.ErrorCode;
-import com.zarlania.api.organizations.dtos.OrganizationDto;
-import com.zarlania.api.organizations.entities.OrganizationType;
+import com.zarlania.api.organizations.dtos.Organization;
+import com.zarlania.api.organizations.dtos.OrganizationType;
 import com.zarlania.api.organizations.services.OrganizationService;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import java.time.Instant;
 import java.util.Optional;
@@ -62,11 +65,7 @@ class AuthTokenServiceTest {
     when(userService.findByIdentifier(IDENTIFIER)).thenReturn(Optional.empty());
 
     assertThatThrownBy(() -> service.login(IDENTIFIER, PASSWORD))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+        .isInstanceOf(InvalidCredentialsException.class);
 
     verify(credentialsService).hashDecoyPassword();
     verify(credentialsService, never()).passwordMatches(any(UUID.class), any(String.class));
@@ -76,16 +75,12 @@ class AuthTokenServiceTest {
   @Test
   void loginWithAWrongPasswordThrowsInvalidCredentialsWithoutHashingADecoy() {
     UUID userId = UUID.randomUUID();
-    UserDto user = new UserDto(userId, "person@example.com", IDENTIFIER, true);
+    User user = new User(userId, "person@example.com", IDENTIFIER, true);
     when(userService.findByIdentifier(IDENTIFIER)).thenReturn(Optional.of(user));
     when(credentialsService.passwordMatches(userId, PASSWORD)).thenReturn(false);
 
     assertThatThrownBy(() -> service.login(IDENTIFIER, PASSWORD))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+        .isInstanceOf(InvalidCredentialsException.class);
 
     // passwordMatches already runs Argon2id on a real credential row, so a decoy hash here
     // would just double-pay a cost that is already parity with the happy path.
@@ -95,16 +90,12 @@ class AuthTokenServiceTest {
   @Test
   void loginWithACorrectPasswordButAnUnverifiedEmailThrowsEmailUnverified() {
     UUID userId = UUID.randomUUID();
-    UserDto user = new UserDto(userId, "person@example.com", IDENTIFIER, false);
+    User user = new User(userId, "person@example.com", IDENTIFIER, false);
     when(userService.findByIdentifier(IDENTIFIER)).thenReturn(Optional.of(user));
     when(credentialsService.passwordMatches(userId, PASSWORD)).thenReturn(true);
 
     assertThatThrownBy(() -> service.login(IDENTIFIER, PASSWORD))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode())
-                    .isEqualTo(ErrorCode.EMAIL_UNVERIFIED));
+        .isInstanceOf(EmailUnverifiedException.class);
 
     verifyNoInteractions(organizationService, refreshTokenService, jwtService);
   }
@@ -113,43 +104,36 @@ class AuthTokenServiceTest {
   void loginHappyPathMintsAnAccessTokenScopedToThePersonalOrganizationAndStartsAFamily() {
     UUID userId = UUID.randomUUID();
     UUID orgId = UUID.randomUUID();
-    UserDto user = new UserDto(userId, "person@example.com", IDENTIFIER, true);
-    OrganizationDto org = new OrganizationDto(orgId, "person's Space", OrganizationType.PERSONAL);
+    User user = new User(userId, "person@example.com", IDENTIFIER, true);
+    Organization organization =
+        new Organization(orgId, "person's Space", OrganizationType.PERSONAL);
     IssuedRefreshToken issued = new IssuedRefreshToken("raw-refresh", Instant.now());
     when(userService.findByIdentifier(IDENTIFIER)).thenReturn(Optional.of(user));
     when(credentialsService.passwordMatches(userId, PASSWORD)).thenReturn(true);
-    when(organizationService.personalOrganizationOf(userId)).thenReturn(Optional.of(org));
+    when(organizationService.personalOrganizationOf(userId)).thenReturn(Optional.of(organization));
     when(refreshTokenService.startFamily(userId, orgId)).thenReturn(issued);
     when(jwtService.mint(userId, orgId, TokenKinds.USER)).thenReturn(ACCESS_TOKEN);
 
-    AuthTokenService.MintedSession session = service.login(IDENTIFIER, PASSWORD);
+    MintedSession session = service.login(IDENTIFIER, PASSWORD);
 
     assertThat(session.accessToken()).isEqualTo(ACCESS_TOKEN);
     assertThat(session.refresh()).isEqualTo(issued);
   }
 
   @Test
-  void refreshMapsAnInvalidRefreshTokenExceptionToInvalidCredentials() {
+  void refreshLetsAnInvalidRefreshTokenReachTheHandlerUnchanged() {
     when(refreshTokenService.rotate("raw")).thenThrow(new InvalidRefreshTokenException());
 
     assertThatThrownBy(() -> service.refresh("raw"))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+        .isInstanceOf(InvalidRefreshTokenException.class);
   }
 
   @Test
-  void refreshMapsAReusedRefreshTokenExceptionToInvalidCredentials() {
+  void refreshLetsAReusedRefreshTokenReachTheHandlerAsItsOwnType() {
     when(refreshTokenService.rotate("raw")).thenThrow(new ReusedRefreshTokenException());
 
     assertThatThrownBy(() -> service.refresh("raw"))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+        .isInstanceOf(ReusedRefreshTokenException.class);
   }
 
   @Test
@@ -160,10 +144,10 @@ class AuthTokenServiceTest {
     RefreshRotation rotation = new RefreshRotation(NEW_RAW_REFRESH, userId, orgId, familyExpiresAt);
     when(refreshTokenService.rotate("raw")).thenReturn(rotation);
     when(userService.findById(userId))
-        .thenReturn(Optional.of(new UserDto(userId, "person@example.com", IDENTIFIER, true)));
+        .thenReturn(Optional.of(new User(userId, "person@example.com", IDENTIFIER, true)));
     when(jwtService.mint(userId, orgId, TokenKinds.USER)).thenReturn(ACCESS_TOKEN);
 
-    AuthTokenService.MintedSession session = service.refresh("raw");
+    MintedSession session = service.refresh("raw");
 
     assertThat(session.accessToken()).isEqualTo(ACCESS_TOKEN);
     assertThat(session.refresh())
@@ -179,11 +163,7 @@ class AuthTokenServiceTest {
     when(userService.findById(userId)).thenReturn(Optional.empty());
 
     assertThatThrownBy(() -> service.refresh("raw"))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+        .isInstanceOf(InvalidRefreshTokenException.class);
 
     verify(refreshTokenService).revokeFamilyOf(NEW_RAW_REFRESH);
     verifyNoInteractions(jwtService);
@@ -194,16 +174,12 @@ class AuthTokenServiceTest {
     UUID userId = UUID.randomUUID();
     RefreshRotation rotation =
         new RefreshRotation(NEW_RAW_REFRESH, userId, UUID.randomUUID(), Instant.now());
-    UserDto unverified = new UserDto(userId, "person@example.com", IDENTIFIER, false);
+    User unverified = new User(userId, "person@example.com", IDENTIFIER, false);
     when(refreshTokenService.rotate("raw")).thenReturn(rotation);
     when(userService.findById(userId)).thenReturn(Optional.of(unverified));
 
     assertThatThrownBy(() -> service.refresh("raw"))
-        .isInstanceOf(ApiException.class)
-        .satisfies(
-            ex ->
-                assertThat(((ApiException) ex).getErrorCode())
-                    .isEqualTo(ErrorCode.INVALID_CREDENTIALS));
+        .isInstanceOf(InvalidRefreshTokenException.class);
 
     verify(refreshTokenService).revokeFamilyOf(NEW_RAW_REFRESH);
     verifyNoInteractions(jwtService);

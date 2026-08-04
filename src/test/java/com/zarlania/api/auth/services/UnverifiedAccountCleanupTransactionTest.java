@@ -3,10 +3,11 @@ package com.zarlania.api.auth.services;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 
+import com.zarlania.api.auth.exceptions.AccountVerifiedDuringPurgeException;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.testsupport.AccountAssertions;
+import com.zarlania.api.testsupport.SeededAccount;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.testsupport.TestAccounts.SeededAccount;
 import com.zarlania.api.testsupport.TransactionTestBase;
 import com.zarlania.api.users.services.UserService;
 import java.time.Duration;

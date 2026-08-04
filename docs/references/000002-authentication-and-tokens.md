@@ -46,16 +46,17 @@ service.
 The supporting classes this doc names live beside those four, in the
 topic packages `CLAUDE.md` describes: `email` (the sender port and its
 adapters), `throttle` (`ThrottleAspect`, `RateLimiter`), `http`
-(`ClientIpResolver`), `errors` (`ErrorCode` and the exception handler) and
+(`ClientIpResolver`), `errors` (`ErrorCode`, `ProblemDetails` and the
+framework-level exception handler) and
 `security` (`TokenHasher`). None of them holds an entity or imports a
 domain — the dependency only ever runs from a domain into them.
 
 ```mermaid
 flowchart LR
-  auth["auth\n(endpoints, token minting,\nJWKS, RefreshToken)"]
-  credentials["credentials\n(PasswordCredential,\nEmailVerificationToken)"]
-  users["users\n(User)"]
-  organizations["organizations\n(Organization, Membership)"]
+  auth["auth\n(endpoints, token minting,\nJWKS, RefreshTokenEntity)"]
+  credentials["credentials\n(PasswordCredentialEntity,\nEmailVerificationTokenEntity)"]
+  users["users\n(UserEntity)"]
+  organizations["organizations\n(OrganizationEntity, MembershipEntity)"]
   email["email\n(EmailSender port + adapters)"]
 
   auth --> credentials
@@ -64,23 +65,23 @@ flowchart LR
   auth --> email
 ```
 
-- **`users`** — the `User` entity: `email` and `username` (both unique,
+- **`users`** — `UserEntity`: `email` and `username` (both unique,
   case-insensitive via `citext`), `email_verified_at` (`null` until
   verified). Holds no password material and no tokens.
-- **`organizations`** — `Organization` (`name`, unique `citext`; `type` —
-  `PERSONAL` or `GENERAL`) and `Membership` (`organization` mapped
+- **`organizations`** — `OrganizationEntity` (`name`, unique `citext`; `type` —
+  `PERSONAL` or `GENERAL`) and `MembershipEntity` (`organization` mapped
   in-domain, `user_id` a plain FK id, `is_owner`). This flow only ever
   creates `PERSONAL` organizations, one per user, named after the username —
   `GENERAL` organizations are modeled but nothing here creates one yet.
-- **`credentials`** — `PasswordCredential` (`user_id` FK id, Argon2id hash)
-  and `EmailVerificationToken` (`user_id` FK id, SHA-256 token hash,
+- **`credentials`** — `PasswordCredentialEntity` (`user_id` FK id, Argon2id hash)
+  and `EmailVerificationTokenEntity` (`user_id` FK id, SHA-256 token hash,
   expiry, consumed-at). Proof-of-identity material, kept out of the `users`
-  domain deliberately so `User` never carries a password hash. It owns its
+  domain deliberately so `UserEntity` never carries a password hash. It owns its
   configuration too (`zarlania.credentials`, bound by
   `CredentialsProperties`): `auth` depends on `credentials`, so a class
   here reading `zarlania.auth.*` would point that dependency backwards.
 - **`auth`** — the `/auth/*` and `/.well-known/jwks.json` endpoints, JWT
-  minting, and `RefreshToken` (family id, `user_id` + `organization_id` FK
+  minting, and `RefreshTokenEntity` (family id, `user_id` + `organization_id` FK
   ids, SHA-256 token hash, expiry, used-at, revoked-at). Registration is
   orchestrated here too: `RegistrationService` decides the outcome and
   `AccountCreator` owns the transaction that writes it, both composing the
@@ -95,7 +96,7 @@ flowchart LR
 `GET /users/me` (in the `users` domain) and the JWKS endpoint (in `auth`) are
 the two read paths that reach across these boundaries the same way every
 other cross-domain read does: `UserController` calls `OrganizationService`
-for the caller's organization DTO rather than touching `Organization`
+for the caller's organization DTO rather than touching `OrganizationEntity`
 directly.
 
 ## Registration and email verification
@@ -107,8 +108,9 @@ directly.
    URL/display-safe); password 12–128 chars with no composition rules —
    length beats forced symbol/case requirements per current NIST guidance.
 2. **One transaction:** `AccountCreator.createAccount` creates the
-   unverified `User`, its `PasswordCredential`, the personal `Organization`,
-   the owning `Membership` and the verification token together. The
+   unverified `UserEntity`, its `PasswordCredentialEntity`, the personal
+   `OrganizationEntity`, the owning `MembershipEntity` and the verification
+   token together. The
    verification email is requested via a Spring application event
    (`VerificationEmailRequested`) that `RegistrationEmailListener` only acts
    on `AFTER_COMMIT` — a failing email provider must never roll back a

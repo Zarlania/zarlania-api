@@ -1,7 +1,8 @@
 package com.zarlania.api.auth.services;
 
 import com.zarlania.api.auth.AuthProperties;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.auth.exceptions.AccountVerifiedDuringPurgeException;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.time.Clock;
@@ -25,7 +26,7 @@ import org.springframework.stereotype.Service;
 public class UnverifiedAccountCleanup {
 
   private final UserService userService;
-  private final UnverifiedAccountPurger purger;
+  private final UnverifiedAccountPurger unverifiedAccountPurger;
   private final AuthProperties authProperties;
   private final Clock clock;
 
@@ -42,7 +43,7 @@ public class UnverifiedAccountCleanup {
     Instant cutoff = clock.instant().minus(authProperties.unverifiedAccountMaxAge());
     // DTOs from the users domain's own service, not User entities from its repository: an entity
     // never leaves the domain that owns it, and only the id is needed here anyway.
-    for (UserDto user : userService.findUnverifiedOlderThan(cutoff)) {
+    for (User user : userService.findUnverifiedOlderThan(cutoff)) {
       purgeSafely(user.id());
     }
   }
@@ -61,15 +62,15 @@ public class UnverifiedAccountCleanup {
   @SuppressWarnings("checkstyle:IllegalCatch")
   private void purgeSafely(UUID userId) {
     try {
-      purger.purgeOneAccount(userId);
-    } catch (AccountVerifiedDuringPurgeException e) {
+      unverifiedAccountPurger.purgeOneAccount(userId);
+    } catch (AccountVerifiedDuringPurgeException exception) {
       // Not a failure: the account was verified between this sweep listing it and the purge
       // reaching it, the purge rolled itself back, and the account is intact. Logged at debug
       // rather than error so a routine, self-correcting race never pages anyone — but logged, so
       // that a sudden run of these is still visible if the cutoff is ever misconfigured.
       log.debug("Skipped purging {}: it was verified mid-sweep", userId);
-    } catch (RuntimeException e) {
-      log.error("Failed to purge unverified account {}", userId, e);
+    } catch (RuntimeException exception) {
+      log.error("Failed to purge unverified account {}", userId, exception);
     }
   }
 }

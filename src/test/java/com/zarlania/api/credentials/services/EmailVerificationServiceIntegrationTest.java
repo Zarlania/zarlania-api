@@ -6,7 +6,7 @@ import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepositor
 import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,7 +28,7 @@ class EmailVerificationServiceIntegrationTest extends IntegrationTestBase {
 
   @Test
   void issuingStoresOnlyTheHashOfTheTokenItHandsBack() {
-    UserDto user = accounts.user("verify-hash");
+    User user = accounts.user("verify-hash");
 
     String raw = emailVerificationService.issue(user.id());
 
@@ -38,7 +38,7 @@ class EmailVerificationServiceIntegrationTest extends IntegrationTestBase {
 
   @Test
   void consumingAUsableTokenReturnsTheAccountItVerifies() {
-    UserDto user = accounts.user("verify-consume");
+    User user = accounts.user("verify-consume");
     String raw = emailVerificationService.issue(user.id());
 
     assertThat(emailVerificationService.consume(raw)).contains(user.id());
@@ -46,7 +46,7 @@ class EmailVerificationServiceIntegrationTest extends IntegrationTestBase {
 
   @Test
   void aTokenCanBeConsumedOnlyOnce() {
-    UserDto user = accounts.user("verify-once");
+    User user = accounts.user("verify-once");
     String raw = emailVerificationService.issue(user.id());
 
     assertThat(emailVerificationService.consume(raw)).isPresent();
@@ -57,7 +57,7 @@ class EmailVerificationServiceIntegrationTest extends IntegrationTestBase {
   // defeats the point of letting someone ask for a fresh link.
   @Test
   void issuingAFreshTokenKillsTheOutstandingOne() {
-    UserDto user = accounts.user("verify-supersede");
+    User user = accounts.user("verify-supersede");
     String first = emailVerificationService.issue(user.id());
 
     String second = emailVerificationService.issue(user.id());
@@ -69,8 +69,8 @@ class EmailVerificationServiceIntegrationTest extends IntegrationTestBase {
   // Only the account's own outstanding tokens: issuing for one account must not disturb another's.
   @Test
   void issuingForOneAccountLeavesAnotherAccountsTokenAlone() {
-    UserDto mine = accounts.user("verify-mine");
-    UserDto theirs = accounts.user("verify-theirs");
+    User mine = accounts.user("verify-mine");
+    User theirs = accounts.user("verify-theirs");
     String theirToken = emailVerificationService.issue(theirs.id());
 
     emailVerificationService.issue(mine.id());
@@ -85,10 +85,10 @@ class EmailVerificationServiceIntegrationTest extends IntegrationTestBase {
 
   @Test
   void pruningRemovesConsumedTokensAndLeavesOutstandingOnes() {
-    UserDto consumedOwner = accounts.user("verify-prune-consumed");
+    User consumedOwner = accounts.user("verify-prune-consumed");
     String consumed = emailVerificationService.issue(consumedOwner.id());
     emailVerificationService.consume(consumed);
-    UserDto outstandingOwner = accounts.user("verify-prune-outstanding");
+    User outstandingOwner = accounts.user("verify-prune-outstanding");
     String outstanding = emailVerificationService.issue(outstandingOwner.id());
 
     emailVerificationService.pruneDeadTokens();

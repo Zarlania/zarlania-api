@@ -32,29 +32,22 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
-  private static final String CODE_PROPERTY = "code";
   private static final String ERRORS_PROPERTY = "errors";
   private static final String UNEXPECTED_ERROR_DETAIL = "Unexpected error";
   private static final String VALIDATION_FAILED_DETAIL = "One or more fields failed validation";
 
   /**
-   * Answers a domain rule violation with its own status and code.
+   * Answers a domain rule violation that already knows its own status and code.
    *
-   * <p>Returns a {@link ResponseEntity} rather than a bare {@link ProblemDetail} so that an
-   * exception carrying response headers keeps them: a 429 without its {@code Retry-After} tells the
-   * client to back off without saying for how long.
+   * <p>This is the fallback for HTTP-aware infrastructure that raises an error directly — the
+   * throttle aspect, a controller rejecting a missing cookie. A domain's <em>services</em> throw
+   * their own exceptions instead, which that domain's own {@code @RestControllerAdvice} maps; see
+   * {@code AuthExceptionHandler}.
    */
   @ExceptionHandler(ApiException.class)
   public ResponseEntity<ProblemDetail> handleApiException(ApiException exception) {
-    ErrorCode errorCode = exception.getErrorCode();
-    ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(
-            HttpStatus.valueOf(errorCode.getStatus()), exception.getMessage());
-    problem.setProperty(CODE_PROPERTY, errorCode.getCode());
-
-    ResponseEntity.BodyBuilder response = ResponseEntity.status(errorCode.getStatus());
-    exception.getResponseHeaders().forEach(response::header);
-    return response.body(problem);
+    return ProblemDetails.of(
+        exception.getErrorCode(), exception.getMessage(), exception.getResponseHeaders());
   }
 
   /**
@@ -86,8 +79,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       HttpStatusCode status,
       WebRequest request) {
     ProblemDetail problem =
-        ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, VALIDATION_FAILED_DETAIL);
-    problem.setProperty(CODE_PROPERTY, ErrorCode.VALIDATION_FAILED.getCode());
+        ProblemDetails.body(ErrorCode.VALIDATION_FAILED, VALIDATION_FAILED_DETAIL);
     problem.setProperty(ERRORS_PROPERTY, fieldErrors(exception));
     return handleExceptionInternal(exception, problem, headers, HttpStatus.BAD_REQUEST, request);
   }

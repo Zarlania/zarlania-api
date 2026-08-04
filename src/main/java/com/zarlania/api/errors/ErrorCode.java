@@ -1,9 +1,13 @@
 package com.zarlania.api.errors;
 
 /**
- * Stable machine-readable codes for {@link ApiException}, exposed to clients as the {@code code}
- * property on the RFC 9457 {@code ProblemDetail} body. The code string is the contract — Tasks 12
- * and 15 assert on it, so it must never change once shipped.
+ * Stable machine-readable codes for every error this API answers with, exposed to clients as the
+ * {@code code} property on the RFC 9457 {@code ProblemDetail} body.
+ *
+ * <p>The code string is the contract clients branch on, and {@code zarlania-app} matches these
+ * exact strings — a shipped one must never change. The status beside it is what makes an error
+ * answerable without the thrower knowing any HTTP: a domain throws its own exception, and its
+ * {@code @RestControllerAdvice} picks the code from here.
  */
 public enum ErrorCode {
   USERNAME_TAKEN("auth.username-taken", 409),

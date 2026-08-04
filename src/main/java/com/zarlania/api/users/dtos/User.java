@@ -8,4 +8,4 @@ import java.util.UUID;
  *
  * @param emailVerified whether the address has been proved; false is what blocks login
  */
-public record UserDto(UUID id, String email, String username, boolean emailVerified) {}
+public record User(UUID id, String email, String username, boolean emailVerified) {}

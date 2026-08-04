@@ -4,12 +4,12 @@ import com.zarlania.api.auth.AuthProperties;
 import com.zarlania.api.auth.dtos.CsrfTokenResponse;
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.LoginRequest;
+import com.zarlania.api.auth.dtos.MintedSession;
 import com.zarlania.api.auth.dtos.RegisterRequest;
 import com.zarlania.api.auth.dtos.ResendRequest;
 import com.zarlania.api.auth.dtos.TokenResponse;
 import com.zarlania.api.auth.dtos.VerifyRequest;
 import com.zarlania.api.auth.services.AuthTokenService;
-import com.zarlania.api.auth.services.AuthTokenService.MintedSession;
 import com.zarlania.api.auth.services.RegistrationService;
 import com.zarlania.api.errors.ApiException;
 import com.zarlania.api.errors.ErrorCode;
@@ -126,9 +126,10 @@ public class AuthController {
    * Exchanges an email-or-username and password for a session: an access token in the body and a
    * refresh token in an HttpOnly cookie.
    *
-   * @throws ApiException with {@link ErrorCode#INVALID_CREDENTIALS} for a wrong password and for an
-   *     unknown identifier alike, or {@link ErrorCode#EMAIL_UNVERIFIED} when the password was right
-   *     but the address was never verified
+   * <p>Answers {@link ErrorCode#INVALID_CREDENTIALS} for a wrong password and for an unknown
+   * identifier alike, and {@link ErrorCode#EMAIL_UNVERIFIED} when the password was right but the
+   * address was never verified. Both come from the exceptions {@code AuthTokenService} throws, by
+   * way of {@link AuthExceptionHandler} — this method raises neither itself.
    */
   @PostMapping("/login")
   @Throttled(endpoint = "login", accountFrom = "identifier")
@@ -142,8 +143,11 @@ public class AuthController {
    * <p>Authenticates with the {@code zarlania_refresh} cookie rather than a bearer token, which is
    * why it is one of the two routes {@code SecurityConfig} guards with a CSRF token.
    *
-   * @throws ApiException with {@link ErrorCode#INVALID_CREDENTIALS} if no cookie was sent, or the
-   *     one sent is expired, revoked or already redeemed
+   * @throws ApiException with {@link ErrorCode#INVALID_CREDENTIALS} if no cookie was sent at all —
+   *     the one failure this method decides for itself, since a missing cookie is an HTTP fact
+   *     rather than anything the service could be asked about. A cookie that is expired, revoked or
+   *     already redeemed is refused by {@code AuthTokenService} and answered with the same code by
+   *     {@link AuthExceptionHandler}, so the client cannot tell the cases apart.
    */
   @PostMapping("/refresh")
   @Throttled(endpoint = "refresh")

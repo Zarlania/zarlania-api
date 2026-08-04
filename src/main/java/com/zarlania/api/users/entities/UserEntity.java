@@ -15,7 +15,7 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "users")
-public class User extends BaseEntity {
+public class UserEntity extends BaseEntity {
 
   @Column(nullable = false, unique = true, columnDefinition = "citext")
   private String email;
@@ -26,13 +26,13 @@ public class User extends BaseEntity {
   @Column(name = "email_verified_at")
   private Instant emailVerifiedAt;
 
-  protected User() {}
+  protected UserEntity() {}
 
   /**
    * Creates an unverified account. Verification is a later, separate step — {@link
    * #markEmailVerified} — because an address nobody has proved they own must not be able to log in.
    */
-  public User(String email, String username) {
+  public UserEntity(String email, String username) {
     this.email = email;
     this.username = username;
   }

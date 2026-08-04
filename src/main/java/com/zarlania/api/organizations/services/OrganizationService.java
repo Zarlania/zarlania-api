@@ -1,9 +1,9 @@
 package com.zarlania.api.organizations.services;
 
-import com.zarlania.api.organizations.dtos.OrganizationDto;
-import com.zarlania.api.organizations.entities.Membership;
-import com.zarlania.api.organizations.entities.Organization;
-import com.zarlania.api.organizations.entities.OrganizationType;
+import com.zarlania.api.organizations.dtos.Organization;
+import com.zarlania.api.organizations.dtos.OrganizationType;
+import com.zarlania.api.organizations.entities.MembershipEntity;
+import com.zarlania.api.organizations.entities.OrganizationEntity;
 import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.repositories.OrganizationRepository;
 import java.util.Optional;
@@ -15,15 +15,15 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * The organizations domain's whole surface to the rest of the application.
  *
- * <p>Everything here returns {@link OrganizationDto}, never an entity, so no caller in another
- * domain can traverse {@code Membership}'s lazy relation or write a row behind this service.
+ * <p>Everything here returns {@link Organization}, never an entity, so no caller in another domain
+ * can traverse {@code MembershipEntity}'s lazy relation or write a row behind this service.
  */
 @Service
 @RequiredArgsConstructor
 public class OrganizationService {
 
-  private final OrganizationRepository organizations;
-  private final MembershipRepository memberships;
+  private final OrganizationRepository organizationRepository;
+  private final MembershipRepository membershipRepository;
 
   /**
    * Creates an account's own organization and the owning membership that goes with it, as one
@@ -32,37 +32,38 @@ public class OrganizationService {
    * @param name unique across all organizations, case-insensitively; the username, in practice
    */
   @Transactional
-  public OrganizationDto createPersonalOrganization(UUID ownerUserId, String name) {
-    Organization org = organizations.save(new Organization(name, OrganizationType.PERSONAL));
-    memberships.save(new Membership(org, ownerUserId, true));
-    return toDto(org);
+  public Organization createPersonalOrganization(UUID ownerUserId, String name) {
+    OrganizationEntity organization =
+        organizationRepository.save(new OrganizationEntity(name, OrganizationType.PERSONAL));
+    membershipRepository.save(new MembershipEntity(organization, ownerUserId, true));
+    return toOrganization(organization);
   }
 
   /**
    * Finds the organization an account owns for itself, which is the one a session is scoped to.
    *
-   * <p>{@code readOnly} so the lazy relation on {@code Membership} can be traversed inside this
-   * transaction; {@code open-in-view} is false, so that traversal would fail outside one.
+   * <p>{@code readOnly} so the lazy relation on {@code MembershipEntity} can be traversed inside
+   * this transaction; {@code open-in-view} is false, so that traversal would fail outside one.
    */
   @Transactional(readOnly = true)
-  public Optional<OrganizationDto> personalOrganizationOf(UUID userId) {
-    return memberships.findByUserId(userId).stream()
-        .map(Membership::getOrganization)
-        .filter(org -> org.getType() == OrganizationType.PERSONAL)
+  public Optional<Organization> personalOrganizationOf(UUID userId) {
+    return membershipRepository.findByUserId(userId).stream()
+        .map(MembershipEntity::getOrganization)
+        .filter(organization -> organization.getType() == OrganizationType.PERSONAL)
         .findFirst()
-        .map(this::toDto);
+        .map(this::toOrganization);
   }
 
   /** Finds an organization by id, or empty if no such row exists. */
   @Transactional(readOnly = true)
-  public Optional<OrganizationDto> findById(UUID id) {
-    return organizations.findById(id).map(this::toDto);
+  public Optional<Organization> findById(UUID id) {
+    return organizationRepository.findById(id).map(this::toOrganization);
   }
 
   /** Whether an account belongs to an organization at all, ownership aside. */
   @Transactional(readOnly = true)
   public boolean isMember(UUID userId, UUID organizationId) {
-    return memberships.existsByUserIdAndOrganizationId(userId, organizationId);
+    return membershipRepository.existsByUserIdAndOrganizationId(userId, organizationId);
   }
 
   /**
@@ -83,17 +84,18 @@ public class OrganizationService {
    */
   @Transactional
   public void deletePersonalOrganizationOf(UUID userId) {
-    Optional<Organization> ownedPersonalOrg =
-        memberships.findByUserId(userId).stream()
-            .filter(Membership::isOwner)
-            .map(Membership::getOrganization)
-            .filter(org -> org.getType() == OrganizationType.PERSONAL)
+    Optional<OrganizationEntity> ownedPersonalOrganization =
+        membershipRepository.findByUserId(userId).stream()
+            .filter(MembershipEntity::isOwner)
+            .map(MembershipEntity::getOrganization)
+            .filter(organization -> organization.getType() == OrganizationType.PERSONAL)
             .findFirst();
-    memberships.deleteByUserId(userId);
-    ownedPersonalOrg.ifPresent(org -> organizations.deleteById(org.getId()));
+    membershipRepository.deleteByUserId(userId);
+    ownedPersonalOrganization.ifPresent(
+        organization -> organizationRepository.deleteById(organization.getId()));
   }
 
-  private OrganizationDto toDto(Organization org) {
-    return new OrganizationDto(org.getId(), org.getName(), org.getType());
+  private Organization toOrganization(OrganizationEntity organization) {
+    return new Organization(organization.getId(), organization.getName(), organization.getType());
   }
 }

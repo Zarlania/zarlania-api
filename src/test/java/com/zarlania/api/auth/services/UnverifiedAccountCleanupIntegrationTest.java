@@ -6,17 +6,17 @@ import com.zarlania.api.credentials.repositories.EmailVerificationTokenRepositor
 import com.zarlania.api.credentials.repositories.PasswordCredentialRepository;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
-import com.zarlania.api.organizations.entities.Membership;
-import com.zarlania.api.organizations.entities.Organization;
-import com.zarlania.api.organizations.entities.OrganizationType;
+import com.zarlania.api.organizations.dtos.OrganizationType;
+import com.zarlania.api.organizations.entities.MembershipEntity;
+import com.zarlania.api.organizations.entities.OrganizationEntity;
 import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.repositories.OrganizationRepository;
 import com.zarlania.api.security.TokenHasher;
 import com.zarlania.api.testsupport.AccountAssertions;
 import com.zarlania.api.testsupport.IntegrationTestBase;
+import com.zarlania.api.testsupport.SeededAccount;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.testsupport.TestAccounts.SeededAccount;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.repositories.UserRepository;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;
@@ -75,13 +75,13 @@ class UnverifiedAccountCleanupIntegrationTest extends IntegrationTestBase {
   // deleting it would destroy a space other members still use.
   @Test
   void purgesAnAccountThatBelongsToButDoesNotOwnAGeneralOrganization() {
-    UserDto user = accounts.user("non-owning-member");
+    User user = accounts.user("non-owning-member");
     credentialsService.createPassword(user.id(), TestAccounts.PASSWORD);
     String rawVerificationToken = emailVerificationService.issue(user.id());
-    Organization sharedOrg =
+    OrganizationEntity sharedOrg =
         organizations.saveAndFlush(
-            new Organization("Someone Else's Space", OrganizationType.GENERAL));
-    memberships.saveAndFlush(new Membership(sharedOrg, user.id(), false));
+            new OrganizationEntity("Someone Else's Space", OrganizationType.GENERAL));
+    memberships.saveAndFlush(new MembershipEntity(sharedOrg, user.id(), false));
     accounts.backdateCreatedAt(user.id(), EXPIRED_AGE);
 
     cleanup.purgeExpiredUnverifiedAccounts();

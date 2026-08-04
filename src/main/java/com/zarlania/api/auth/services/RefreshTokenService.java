@@ -3,7 +3,9 @@ package com.zarlania.api.auth.services;
 import com.zarlania.api.auth.AuthProperties;
 import com.zarlania.api.auth.dtos.IssuedRefreshToken;
 import com.zarlania.api.auth.dtos.RefreshRotation;
-import com.zarlania.api.auth.entities.RefreshToken;
+import com.zarlania.api.auth.entities.RefreshTokenEntity;
+import com.zarlania.api.auth.exceptions.InvalidRefreshTokenException;
+import com.zarlania.api.auth.exceptions.ReusedRefreshTokenException;
 import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.security.TokenHasher;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
@@ -45,7 +47,7 @@ public class RefreshTokenService {
   // contribution rather than just discarding its top bits.
   private static final int LONG_HALF_WIDTH_BITS = 32;
 
-  private final RefreshTokenRepository tokens;
+  private final RefreshTokenRepository refreshTokenRepository;
   private final AuthProperties authProperties;
   private final Clock clock;
 
@@ -60,8 +62,8 @@ public class RefreshTokenService {
   public IssuedRefreshToken startFamily(UUID userId, UUID organizationId) {
     String raw = TokenHasher.newUrlSafeToken();
     Instant familyExpiresAt = clock.instant().plus(authProperties.refreshFamilyLifetime());
-    tokens.save(
-        new RefreshToken(
+    refreshTokenRepository.save(
+        new RefreshTokenEntity(
             UUID.randomUUID(),
             userId,
             organizationId,
@@ -94,11 +96,14 @@ public class RefreshTokenService {
   public RefreshRotation rotate(String raw) {
     String tokenHash = TokenHasher.sha256Hex(raw);
     UUID familyId =
-        tokens.findFamilyIdByTokenHash(tokenHash).orElseThrow(InvalidRefreshTokenException::new);
+        refreshTokenRepository
+            .findFamilyIdByTokenHash(tokenHash)
+            .orElseThrow(InvalidRefreshTokenException::new);
     // Serializes every rotate()/revokeFamilyOf() call on this family before touching a single
     // row — see acquireFamilyLock for why the row lock below is not enough on its own.
     lockFamily(familyId);
-    RefreshToken current = findByHash(tokens.findByFamilyIdOrderById(familyId), tokenHash);
+    RefreshTokenEntity current =
+        findByHash(refreshTokenRepository.findByFamilyIdOrderById(familyId), tokenHash);
     Instant now = clock.instant();
     if (current.getUsedAt() != null) {
       // Both ids are java.util.UUIDs, so the line is CRLF-safe by construction; the raw token and
@@ -116,8 +121,8 @@ public class RefreshTokenService {
     }
     current.markUsed(now);
     String newRaw = TokenHasher.newUrlSafeToken();
-    tokens.save(
-        new RefreshToken(
+    refreshTokenRepository.save(
+        new RefreshTokenEntity(
             current.getFamilyId(),
             current.getUserId(),
             current.getOrganizationId(),
@@ -133,7 +138,7 @@ public class RefreshTokenService {
    */
   @Transactional
   public void revokeFamilyOf(String raw) {
-    tokens
+    refreshTokenRepository
         .findFamilyIdByTokenHash(TokenHasher.sha256Hex(raw))
         .ifPresent(
             familyId -> {
@@ -152,7 +157,7 @@ public class RefreshTokenService {
     long msb = familyId.getMostSignificantBits();
     long lsb = familyId.getLeastSignificantBits();
     int key = (int) (msb ^ (msb >>> LONG_HALF_WIDTH_BITS) ^ lsb ^ (lsb >>> LONG_HALF_WIDTH_BITS));
-    tokens.acquireFamilyLock(FAMILY_LOCK_CLASSIFIER, key);
+    refreshTokenRepository.acquireFamilyLock(FAMILY_LOCK_CLASSIFIER, key);
   }
 
   /**
@@ -160,7 +165,7 @@ public class RefreshTokenService {
    * the caller-supplied raw token, and a short-circuiting equals() leaks how many leading bytes
    * matched through response timing (FindSecBugs UNSAFE_HASH_EQUALS).
    */
-  private RefreshToken findByHash(List<RefreshToken> family, String tokenHash) {
+  private RefreshTokenEntity findByHash(List<RefreshTokenEntity> family, String tokenHash) {
     byte[] target = tokenHash.getBytes(StandardCharsets.UTF_8);
     return family.stream()
         .filter(
@@ -172,7 +177,7 @@ public class RefreshTokenService {
   }
 
   private void revokeFamily(UUID familyId, Instant now) {
-    tokens.findByFamilyIdOrderById(familyId).stream()
+    refreshTokenRepository.findByFamilyIdOrderById(familyId).stream()
         .filter(token -> token.getRevokedAt() == null)
         .forEach(token -> token.revoke(now));
   }

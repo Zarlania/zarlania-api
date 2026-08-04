@@ -50,8 +50,8 @@ public class JwtService {
               claims);
       jwt.sign(new RSASSASigner(jwtKeys.signingKey()));
       return jwt.serialize();
-    } catch (JOSEException e) {
-      throw new IllegalStateException("JWT signing failed", e);
+    } catch (JOSEException exception) {
+      throw new IllegalStateException("JWT signing failed", exception);
     }
   }
 }

@@ -1,10 +1,10 @@
 package com.zarlania.api.users.controllers;
 
 import com.zarlania.api.auth.AuthPrincipal;
-import com.zarlania.api.organizations.dtos.OrganizationDto;
+import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.users.dtos.MeResponse;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,8 +31,8 @@ public class UserController {
     // happens, orElseThrow's bare NoSuchElementException surfaces as a 500 — the same trade-off
     // AuthTokenService.login makes for the same impossible case, rather than inventing an ErrorCode
     // for a state that cannot occur.
-    UserDto user = userService.findById(principal.userId()).orElseThrow();
-    OrganizationDto organization =
+    User user = userService.findById(principal.userId()).orElseThrow();
+    Organization organization =
         organizationService.findById(principal.organizationId()).orElseThrow();
     return new MeResponse(user, organization);
   }

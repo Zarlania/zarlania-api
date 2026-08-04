@@ -2,14 +2,14 @@ package com.zarlania.api.organizations.repositories;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.zarlania.api.organizations.dtos.OrganizationDto;
-import com.zarlania.api.organizations.entities.Membership;
-import com.zarlania.api.organizations.entities.Organization;
-import com.zarlania.api.organizations.entities.OrganizationType;
+import com.zarlania.api.organizations.dtos.Organization;
+import com.zarlania.api.organizations.dtos.OrganizationType;
+import com.zarlania.api.organizations.entities.MembershipEntity;
+import com.zarlania.api.organizations.entities.OrganizationEntity;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.testsupport.TestAccounts;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
@@ -40,7 +40,7 @@ class MembershipRepositoryIntegrationTest extends IntegrationTestBase {
 
   @Test
   void findByUserIdReturnsEveryOrganizationTheAccountBelongsTo() {
-    UserDto user = accounts.user("membership-repo-find");
+    User user = accounts.user("membership-repo-find");
     organizationService.createPersonalOrganization(user.id(), "membership-repo-find");
     joinSharedOrganization(user.id(), "Shared For Find");
 
@@ -49,16 +49,16 @@ class MembershipRepositoryIntegrationTest extends IntegrationTestBase {
 
   @Test
   void findByUserIdIsEmptyForAnAccountThatBelongsToNothing() {
-    UserDto user = accounts.user("membership-repo-none");
+    User user = accounts.user("membership-repo-none");
 
     assertThat(memberships.findByUserId(user.id())).isEmpty();
   }
 
   @Test
   void existsByUserIdAndOrganizationIdIgnoresOwnershipAndOtherAccounts() {
-    UserDto member = accounts.user("membership-repo-member");
-    UserDto stranger = accounts.user("membership-repo-stranger");
-    OrganizationDto own =
+    User member = accounts.user("membership-repo-member");
+    User stranger = accounts.user("membership-repo-stranger");
+    Organization own =
         organizationService.createPersonalOrganization(member.id(), "membership-repo-member");
 
     assertThat(memberships.existsByUserIdAndOrganizationId(member.id(), own.id())).isTrue();
@@ -69,12 +69,12 @@ class MembershipRepositoryIntegrationTest extends IntegrationTestBase {
   // touching anyone else's membership of the same organization.
   @Test
   void deleteByUserIdClearsOwnedAndNonOwnedMembershipsAndLeavesOtherMembersAlone() {
-    UserDto leaving = accounts.user("membership-repo-leaving");
-    UserDto staying = accounts.user("membership-repo-staying");
+    User leaving = accounts.user("membership-repo-leaving");
+    User staying = accounts.user("membership-repo-staying");
     organizationService.createPersonalOrganization(leaving.id(), "membership-repo-leaving");
     UUID sharedId = joinSharedOrganization(leaving.id(), "Shared For Delete");
     memberships.saveAndFlush(
-        new Membership(organizations.findById(sharedId).orElseThrow(), staying.id(), false));
+        new MembershipEntity(organizations.findById(sharedId).orElseThrow(), staying.id(), false));
 
     memberships.deleteByUserId(leaving.id());
 
@@ -84,9 +84,9 @@ class MembershipRepositoryIntegrationTest extends IntegrationTestBase {
   }
 
   private UUID joinSharedOrganization(UUID userId, String name) {
-    Organization shared =
-        organizations.saveAndFlush(new Organization(name, OrganizationType.GENERAL));
-    memberships.saveAndFlush(new Membership(shared, userId, false));
+    OrganizationEntity shared =
+        organizations.saveAndFlush(new OrganizationEntity(name, OrganizationType.GENERAL));
+    memberships.saveAndFlush(new MembershipEntity(shared, userId, false));
     return shared.getId();
   }
 }

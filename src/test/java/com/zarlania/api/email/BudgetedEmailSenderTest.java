@@ -3,6 +3,7 @@ package com.zarlania.api.email;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.zarlania.api.email.exceptions.EmailBudgetExhaustedException;
 import com.zarlania.api.testsupport.MutableClock;
 import com.zarlania.api.throttle.InMemoryRateLimiter;
 import com.zarlania.api.throttle.ThrottleProperties;

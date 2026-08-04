@@ -3,7 +3,7 @@ package com.zarlania.api.auth.services;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
 import com.zarlania.api.organizations.services.OrganizationService;
-import com.zarlania.api.users.dtos.UserDto;
+import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -34,7 +34,7 @@ class AccountCreator {
   private final CredentialsService credentialsService;
   private final OrganizationService organizationService;
   private final EmailVerificationService emailVerificationService;
-  private final ApplicationEventPublisher events;
+  private final ApplicationEventPublisher applicationEventPublisher;
 
   /**
    * Writes all four rows and publishes the event that sends the verification email.
@@ -53,10 +53,10 @@ class AccountCreator {
    */
   @Transactional
   void createAccount(String email, String username, String rawPassword) {
-    UserDto user = userService.createUnverified(email, username);
+    User user = userService.createUnverified(email, username);
     credentialsService.createPassword(user.id(), rawPassword);
     organizationService.createPersonalOrganization(user.id(), username);
     String rawToken = emailVerificationService.issue(user.id());
-    events.publishEvent(new VerificationEmailRequested(email, rawToken));
+    applicationEventPublisher.publishEvent(new VerificationEmailRequested(email, rawToken));
   }
 }

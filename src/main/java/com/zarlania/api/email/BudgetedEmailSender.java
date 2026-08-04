@@ -1,5 +1,6 @@
 package com.zarlania.api.email;
 
+import com.zarlania.api.email.exceptions.EmailBudgetExhaustedException;
 import com.zarlania.api.throttle.RateLimiter;
 import java.time.Duration;
 import lombok.RequiredArgsConstructor;

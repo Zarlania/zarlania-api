@@ -1,6 +1,6 @@
 package com.zarlania.api.users.repositories;
 
-import com.zarlania.api.users.entities.User;
+import com.zarlania.api.users.entities.UserEntity;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -11,16 +11,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 /**
- * Persistence for {@link User}. Lookups on {@code email} and {@code username} are case-insensitive,
- * because both are {@code citext} columns.
+ * Persistence for {@link UserEntity}. Lookups on {@code email} and {@code username} are
+ * case-insensitive, because both are {@code citext} columns.
  */
-public interface UserRepository extends JpaRepository<User, UUID> {
+public interface UserRepository extends JpaRepository<UserEntity, UUID> {
 
   /** Finds an account by address, case-insensitively. */
-  Optional<User> findByEmail(String email);
+  Optional<UserEntity> findByEmail(String email);
 
   /** Finds an account by username, case-insensitively. */
-  Optional<User> findByUsername(String username);
+  Optional<UserEntity> findByUsername(String username);
 
   /** Whether an address is taken, case-insensitively. */
   boolean existsByEmail(String email);
@@ -32,7 +32,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
    * Accounts registered before {@code cutoff} that never verified their address — the candidates
    * for purging. A verified account is never returned however old it is.
    */
-  List<User> findByEmailVerifiedAtIsNullAndCreatedAtBefore(Instant cutoff);
+  List<UserEntity> findByEmailVerifiedAtIsNullAndCreatedAtBefore(Instant cutoff);
 
   /**
    * Deletes an account, but only if it is still unverified, as one statement.
@@ -49,14 +49,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
    * still queued when this runs. Without the flush they reach the database <em>after</em> it, and
    * Postgres rejects the delete on the foreign key from {@code organization_memberships} that they
    * were meant to have cleared. {@code clearAutomatically} for the mirror-image reason — a bulk
-   * delete leaves any already-loaded {@code User} sitting in the persistence context, describing a
-   * row that no longer exists.
+   * delete leaves any already-loaded {@code UserEntity} sitting in the persistence context,
+   * describing a row that no longer exists.
    *
    * @return the number of rows deleted: 1 normally, 0 if the account verified itself first. That
    *     count is the caller's signal, which is why this returns {@code int} rather than {@code
    *     void}.
    */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
-  @Query("delete from User u where u.id = :id and u.emailVerifiedAt is null")
+  @Query("delete from UserEntity u where u.id = :id and u.emailVerifiedAt is null")
   int deleteByIdAndEmailVerifiedAtIsNull(@Param("id") UUID id);
 }
