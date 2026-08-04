@@ -30,11 +30,13 @@ LABEL org.opencontainers.image.title="zarlania-api" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${APP_VERSION}"
 
-# Run as an unprivileged user.
-RUN addgroup -S zarlania && adduser -S zarlania -G zarlania
+# Run as an unprivileged user. The uid and gid are pinned numerically because
+# a host or orchestrator that enforces a non-root user cannot resolve a name
+# without reading the image's /etc/passwd, and hadolint's DL3066 flags it.
+RUN addgroup -S -g 10001 zarlania && adduser -S -u 10001 -G zarlania zarlania
 WORKDIR /app
 COPY --from=build --chown=zarlania:zarlania /workspace/app.jar app.jar
-USER zarlania
+USER 10001:10001
 
 # Render overrides PORT at runtime; 8080 is the local default.
 ENV PORT=8080
