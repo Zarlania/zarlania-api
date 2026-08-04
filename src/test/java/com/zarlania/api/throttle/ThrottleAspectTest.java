@@ -11,7 +11,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zarlania.api.errors.ApiException;
-import com.zarlania.api.errors.ErrorCode;
 import java.time.Duration;
 import java.util.Map;
 import org.aspectj.lang.JoinPoint;
@@ -119,7 +118,7 @@ class ThrottleAspectTest {
     assertThatThrownBy(() -> aspect.enforce(joinPoint, throttled("withAccountBucket")))
         .isInstanceOf(ApiException.class)
         .extracting(exception -> ((ApiException) exception).getErrorCode())
-        .isEqualTo(ErrorCode.THROTTLED);
+        .isEqualTo(ThrottleErrorCode.THROTTLED);
 
     verify(rateLimiter, never()).tryConsume("login:acct:bob@example.com", ACCOUNT_LIMIT);
   }

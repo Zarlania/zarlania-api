@@ -46,8 +46,8 @@ service.
 The supporting classes this doc names live beside those four, in the
 topic packages `CLAUDE.md` describes: `email` (the sender port and its
 adapters), `throttle` (`ThrottleAspect`, `RateLimiter`), `http`
-(`ClientIpResolver`), `errors` (`ErrorCode`, `ProblemDetails` and the
-framework-level exception handler) and
+(`ClientIpResolver`), `errors` (the `ErrorCode` interface, `ProblemDetails`
+and the framework-level exception handler) and
 `security` (`TokenHasher`). None of them holds an entity or imports a
 domain — the dependency only ever runs from a domain into them.
 

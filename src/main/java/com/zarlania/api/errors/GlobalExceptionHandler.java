@@ -79,7 +79,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
       HttpStatusCode status,
       WebRequest request) {
     ProblemDetail problem =
-        ProblemDetails.body(ErrorCode.VALIDATION_FAILED, VALIDATION_FAILED_DETAIL);
+        ProblemDetails.body(ValidationErrorCode.FAILED, VALIDATION_FAILED_DETAIL);
     problem.setProperty(ERRORS_PROPERTY, fieldErrors(exception));
     return handleExceptionInternal(exception, problem, headers, HttpStatus.BAD_REQUEST, request);
   }

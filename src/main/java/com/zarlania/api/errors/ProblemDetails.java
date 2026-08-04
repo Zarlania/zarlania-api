@@ -9,9 +9,9 @@ import org.springframework.http.ResponseEntity;
  * Builds the one RFC 9457 error response shape this API answers with, so that a domain's own
  * exception handler and {@link GlobalExceptionHandler} cannot drift into producing two.
  *
- * <p>This is the only part of error handling a domain's controller layer needs; the mapping from a
- * domain exception to an {@link ErrorCode} stays in that domain, next to the controller it answers
- * for.
+ * <p>Rendering is all this package owns. Which exception becomes which code, and what the code's
+ * string and status are, both stay in the domain that raises it — this method takes any {@link
+ * ErrorCode} implementation and never needs to know them.
  */
 public final class ProblemDetails {
 

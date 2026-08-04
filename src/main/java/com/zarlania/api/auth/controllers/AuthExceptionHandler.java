@@ -5,7 +5,6 @@ import com.zarlania.api.auth.exceptions.InvalidCredentialsException;
 import com.zarlania.api.auth.exceptions.InvalidRefreshTokenException;
 import com.zarlania.api.auth.exceptions.ReusedRefreshTokenException;
 import com.zarlania.api.auth.exceptions.UsernameTakenException;
-import com.zarlania.api.errors.ErrorCode;
 import com.zarlania.api.errors.ProblemDetails;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -13,10 +12,19 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 /**
- * Turns the auth domain's exceptions into HTTP answers. This is the only place in the domain that
- * knows a status code or a client-facing message: the services throw exceptions that name what went
- * wrong and nothing about how it is reported, which is what lets them be read — and reused —
- * without reference to a transport.
+ * Turns the auth domain's exceptions into HTTP answers. The services throw exceptions that name
+ * what went wrong and nothing about how it is reported, which is what lets them be read — and
+ * reused — without reference to a transport; this class decides what a client is told.
+ *
+ * <p>It is not the only place in the domain that answers with a status. {@link AuthController}
+ * raises {@link com.zarlania.api.errors.ApiException} directly for the two failures it decides for
+ * itself — an unredeemable verification token, a missing refresh cookie — which is legitimate,
+ * because a controller is already the HTTP layer and neither failure is something a service could
+ * be asked about. Those take the same route to the wire: {@code GlobalExceptionHandler} renders an
+ * {@code ApiException} through {@link com.zarlania.api.errors.ProblemDetails}, exactly as the
+ * methods below do, so status, {@code code} and body shape are identical whichever path a failure
+ * takes. What must stay true is that both draw their codes from {@link AuthErrorCode}; a status
+ * invented at either site is the thing that would break the contract.
  *
  * <p>Scoped to this package rather than registered globally, so the mapping travels with the domain
  * if it is ever lifted out of the monolith, and so no other domain inherits auth's answers by
@@ -41,13 +49,13 @@ public class AuthExceptionHandler {
   @ExceptionHandler(InvalidCredentialsException.class)
   public ResponseEntity<ProblemDetail> handleInvalidCredentials(
       InvalidCredentialsException exception) {
-    return ProblemDetails.of(ErrorCode.INVALID_CREDENTIALS, INVALID_CREDENTIALS_MESSAGE);
+    return ProblemDetails.of(AuthErrorCode.INVALID_CREDENTIALS, INVALID_CREDENTIALS_MESSAGE);
   }
 
   /** The password was right but the address was never proved: 403, saying so. */
   @ExceptionHandler(EmailUnverifiedException.class)
   public ResponseEntity<ProblemDetail> handleEmailUnverified(EmailUnverifiedException exception) {
-    return ProblemDetails.of(ErrorCode.EMAIL_UNVERIFIED, EMAIL_UNVERIFIED_MESSAGE);
+    return ProblemDetails.of(AuthErrorCode.EMAIL_UNVERIFIED, EMAIL_UNVERIFIED_MESSAGE);
   }
 
   /**
@@ -60,12 +68,12 @@ public class AuthExceptionHandler {
    */
   @ExceptionHandler({InvalidRefreshTokenException.class, ReusedRefreshTokenException.class})
   public ResponseEntity<ProblemDetail> handleRefreshRejected(RuntimeException exception) {
-    return ProblemDetails.of(ErrorCode.INVALID_CREDENTIALS, REFRESH_REJECTED_MESSAGE);
+    return ProblemDetails.of(AuthErrorCode.INVALID_CREDENTIALS, REFRESH_REJECTED_MESSAGE);
   }
 
   /** The one registration failure a caller is told about: 409. */
   @ExceptionHandler(UsernameTakenException.class)
   public ResponseEntity<ProblemDetail> handleUsernameTaken(UsernameTakenException exception) {
-    return ProblemDetails.of(ErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
+    return ProblemDetails.of(AuthErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
   }
 }

@@ -1,7 +1,6 @@
 package com.zarlania.api.throttle;
 
 import com.zarlania.api.errors.ApiException;
-import com.zarlania.api.errors.ErrorCode;
 import com.zarlania.api.http.ClientIpResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.Duration;
@@ -47,7 +46,7 @@ public class ThrottleAspect {
    * <p>Advises the handler method rather than filtering the request because the per-account bucket
    * keys on a field of the parsed body; see {@link Throttled}.
    *
-   * @throws ApiException with {@link ErrorCode#THROTTLED} if either bucket is exhausted
+   * @throws ApiException with {@link ThrottleErrorCode#THROTTLED} if either bucket is exhausted
    */
   @Before("@annotation(throttled)")
   public void enforce(JoinPoint joinPoint, Throttled throttled) {
@@ -73,7 +72,8 @@ public class ThrottleAspect {
   private void consumeOrThrow(String key, int limit) {
     ThrottleDecision decision = rateLimiter.tryConsume(key, limit);
     if (!decision.allowed()) {
-      throw new ApiException(ErrorCode.THROTTLED, THROTTLED_MESSAGE, retryAfterHeader(decision));
+      throw new ApiException(
+          ThrottleErrorCode.THROTTLED, THROTTLED_MESSAGE, retryAfterHeader(decision));
     }
   }
 

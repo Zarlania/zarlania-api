@@ -12,7 +12,6 @@ import com.zarlania.api.auth.dtos.VerifyRequest;
 import com.zarlania.api.auth.services.AuthTokenService;
 import com.zarlania.api.auth.services.RegistrationService;
 import com.zarlania.api.errors.ApiException;
-import com.zarlania.api.errors.ErrorCode;
 import com.zarlania.api.throttle.Throttled;
 import jakarta.validation.Valid;
 import java.time.Clock;
@@ -99,13 +98,13 @@ public class AuthController {
   /**
    * Completes registration by consuming an emailed verification token.
    *
-   * @throws ApiException with {@link ErrorCode#INVALID_TOKEN} if the token is unknown, expired or
-   *     already consumed — the three are indistinguishable to the caller on purpose
+   * @throws ApiException with {@link AuthErrorCode#INVALID_TOKEN} if the token is unknown, expired
+   *     or already consumed — the three are indistinguishable to the caller on purpose
    */
   @PostMapping("/verify")
   public void verify(@Valid @RequestBody VerifyRequest request) {
     if (!registrationService.verify(request.token())) {
-      throw new ApiException(ErrorCode.INVALID_TOKEN, INVALID_TOKEN_MESSAGE);
+      throw new ApiException(AuthErrorCode.INVALID_TOKEN, INVALID_TOKEN_MESSAGE);
     }
   }
 
@@ -126,10 +125,10 @@ public class AuthController {
    * Exchanges an email-or-username and password for a session: an access token in the body and a
    * refresh token in an HttpOnly cookie.
    *
-   * <p>Answers {@link ErrorCode#INVALID_CREDENTIALS} for a wrong password and for an unknown
-   * identifier alike, and {@link ErrorCode#EMAIL_UNVERIFIED} when the password was right but the
-   * address was never verified. Both come from the exceptions {@code AuthTokenService} throws, by
-   * way of {@link AuthExceptionHandler} — this method raises neither itself.
+   * <p>Answers {@link AuthErrorCode#INVALID_CREDENTIALS} for a wrong password and for an unknown
+   * identifier alike, and {@link AuthErrorCode#EMAIL_UNVERIFIED} when the password was right but
+   * the address was never verified. Both come from the exceptions {@code AuthTokenService} throws,
+   * by way of {@link AuthExceptionHandler} — this method raises neither itself.
    */
   @PostMapping("/login")
   @Throttled(endpoint = "login", accountFrom = "identifier")
@@ -143,18 +142,18 @@ public class AuthController {
    * <p>Authenticates with the {@code zarlania_refresh} cookie rather than a bearer token, which is
    * why it is one of the two routes {@code SecurityConfig} guards with a CSRF token.
    *
-   * @throws ApiException with {@link ErrorCode#INVALID_CREDENTIALS} if no cookie was sent at all —
-   *     the one failure this method decides for itself, since a missing cookie is an HTTP fact
-   *     rather than anything the service could be asked about. A cookie that is expired, revoked or
-   *     already redeemed is refused by {@code AuthTokenService} and answered with the same code by
-   *     {@link AuthExceptionHandler}, so the client cannot tell the cases apart.
+   * @throws ApiException with {@link AuthErrorCode#INVALID_CREDENTIALS} if no cookie was sent at
+   *     all — the one failure this method decides for itself, since a missing cookie is an HTTP
+   *     fact rather than anything the service could be asked about. A cookie that is expired,
+   *     revoked or already redeemed is refused by {@code AuthTokenService} and answered with the
+   *     same code by {@link AuthExceptionHandler}, so the client cannot tell the cases apart.
    */
   @PostMapping("/refresh")
   @Throttled(endpoint = "refresh")
   public ResponseEntity<TokenResponse> refresh(
       @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
     if (cookie == null) {
-      throw new ApiException(ErrorCode.INVALID_CREDENTIALS, NO_REFRESH_TOKEN_MESSAGE);
+      throw new ApiException(AuthErrorCode.INVALID_CREDENTIALS, NO_REFRESH_TOKEN_MESSAGE);
     }
     return withSession(authTokenService.refresh(cookie));
   }

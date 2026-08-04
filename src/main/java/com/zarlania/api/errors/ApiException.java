@@ -3,9 +3,16 @@ package com.zarlania.api.errors;
 import java.util.Map;
 
 /**
- * A domain rule violation that should surface to the client as a specific {@link ErrorCode} and
- * HTTP status, rather than a generic 500. {@link GlobalExceptionHandler} translates every instance
- * into a {@code ProblemDetail}.
+ * A failure that already knows the {@link ErrorCode} it should surface to the client as, rather
+ * than a generic 500. {@link GlobalExceptionHandler} renders every instance through {@link
+ * ProblemDetails}.
+ *
+ * <p>For code that is <em>already</em> an HTTP concern and has nothing to defer to a handler: a
+ * controller rejecting a malformed request of its own accord, or infrastructure in the request path
+ * such as {@code ThrottleAspect}. A service must not throw this — it would put a status code in the
+ * business layer and tie the domain to this package. Services throw their own exceptions, which the
+ * domain's own {@code @RestControllerAdvice} maps to a code from that domain's {@link ErrorCode}
+ * enum.
  */
 public class ApiException extends RuntimeException {
 

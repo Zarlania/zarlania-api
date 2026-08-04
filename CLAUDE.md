@@ -221,13 +221,26 @@ without reading the rest of the codebase.
   domain exception, naming what went wrong and nothing about how it is reported.
   Each domain's `controllers/` package holds a `@RestControllerAdvice` — scoped
   with `basePackageClasses` to that package, so the mapping travels with the
-  domain — that turns those exceptions into a status and an `ErrorCode`. Build
-  the body with `ProblemDetails`, so every error keeps one shape. `ApiException`
-  is reserved for code that is already an HTTP concern: a controller, or
-  infrastructure sitting in the request path like `ThrottleAspect`. Client-facing
-  messages live in the handler, not on the exception — several are deliberately
+  domain — that turns those exceptions into a status and an error code. Build the
+  body with `ProblemDetails`, so every error keeps one shape. Client-facing
+  messages live in the handler, not on the exception: several are deliberately
   identical across different causes, and side by side is the only way that stays
   checkable.
+- **`ErrorCode` is an interface; each domain owns an enum of its own codes.**
+  `AuthErrorCode`, `ThrottleErrorCode`, `ValidationErrorCode` — a domain's whole
+  error vocabulary in one readable place, that leaves with the domain when it is
+  extracted. The enum lives beside the handler that uses it, since a status is an
+  HTTP fact rather than a domain one. `ProblemDetails` renders any implementation
+  and knows none of them. **A code string is published contract** — `zarlania-app`
+  matches these exact strings, so adding one is safe and renaming a shipped one
+  is not.
+- **`ApiException` is for code that is already an HTTP concern**, never a
+  service: a controller rejecting a request it can judge itself, or
+  infrastructure in the request path like `ThrottleAspect`.
+  `GlobalExceptionHandler` renders it through the same `ProblemDetails`, so a
+  controller-raised failure and a handler-mapped one are identical on the wire.
+  A controller doing this must still take its code from its domain's `ErrorCode`
+  enum; a status invented at the call site is what would break the contract.
 - **Write names out in full.** `applicationEventPublisher`, not `events`;
   `organization`, not `org`; `exception`, not `e`, including in a `catch`. A
   field holding a collaborator is named for that collaborator —
