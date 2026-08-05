@@ -241,6 +241,58 @@ without reading the rest of the codebase.
   controller-raised failure and a handler-mapped one are identical on the wire.
   A controller doing this must still take its code from its domain's `ErrorCode`
   enum; a status invented at the call site is what would break the contract.
+- **An exception is built by a named static factory, never by `new`.** The
+  constructor is private; the class offers `UsernameTakenException.forUsername(…)`,
+  `AccountVerifiedDuringPurgeException.forUser(…)`. The message is composed inside
+  the exception, so every throw site of one failure produces the identical string
+  and a reader finds a class's whole failure vocabulary by reading its factories.
+  A factory taking a pre-composed `String message` defeats the point — take the
+  values and build the sentence. The name says what the caller knows, not what
+  went wrong: the class name already carries that.
+  - **One factory per meaning, not per call site.** Where two causes must stay
+    indistinguishable — `InvalidCredentialsException` for a wrong password and
+    for an unknown identifier — they get one factory, so the distinction cannot
+    be reintroduced later by a handler branching on which was used.
+  - **A factory may not take a live credential.** No raw token, no password, no
+    token hash. An exception message is the one string guaranteed to reach a log.
+- **Log so a request can be followed afterwards, and never log who it was
+  about.** Prefer a `UUID` id over anything human-readable: user id, not email or
+  username; organization id, not organization name. Never log a password, a raw
+  or hashed token, a verification link, an API key, or a message body that could
+  contain one. Where a component genuinely has no id — outbound email is
+  infrastructure and cannot depend on a domain — the caller passes an opaque
+  reference for it to log instead (see `EmailMessage#reference`). Anything
+  interpolated into a log line that reached the process as request input gets its
+  line breaks stripped first, or a crafted value forges log entries. Log at the
+  decision points a retrospective actually needs — a sweep's outcome, a rejected
+  token family, a dropped email — not on every branch; a log nobody can read
+  through is the same as no log.
+- **Every third-party dependency sits behind an interface this repository
+  owns.** Email, caches, the client-IP source, anything reached over a network:
+  the port is ours, the vendor lives in an implementation named for it
+  (`ResendEmailSender`, `CloudflareClientIpResolver`), and swapping providers is
+  a new class plus a bean rather than an edit to callers. Endpoints, base URLs
+  and credentials are configuration, never constants. **Postgres is the one
+  accepted exception** — the JPA/Flyway coupling runs too deep to abstract
+  usefully, and the _provider_ stays pluggable through the five `DB_*`
+  variables; see `docs/references/000001-persistence-foundation.md`. Where an
+  abstraction genuinely is not worth it, say so in the type's own Javadoc and
+  name what would have to change to move, so the swap is a search rather than an
+  audit.
+- **Nothing exists in production code because a test needed it.** No
+  package-private method opened up for a same-package test, no accessor whose
+  Javadoc explains which test calls it, no parameter a test supplies and nothing
+  else does. If a test cannot reach something, that is a design signal: give the
+  behaviour a real collaborator with a public contract (`EmailSenderFactory`), or
+  publish the value the test wants as something production genuinely uses — a
+  metric, say (`InMemoryRateLimiter#trackedKeyCount` backs a Micrometer gauge).
+  Constructor injection means a test can substitute any collaborator without the
+  class knowing.
+- **Only where grouping is real, `services/` may hold sub-packages.** A flat
+  directory of thirty services tells a reader nothing, so once a domain's
+  services fall into genuine groups, put them in named sub-packages. Until they
+  do, leave them flat — inventing a grouping to avoid a flat list produces
+  packages named for nothing, which is worse than the list.
 - **Write names out in full.** `applicationEventPublisher`, not `events`;
   `organization`, not `org`; `exception`, not `e`, including in a `catch`. A
   field holding a collaborator is named for that collaborator —

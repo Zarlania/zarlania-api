@@ -8,7 +8,7 @@ tags:
 - configuration
 - security
 created: '2026-08-03'
-updated: '2026-08-03'
+updated: '2026-08-05'
 related:
 - '000002'
 ---
@@ -23,7 +23,7 @@ related:
 | Description | How the EmailSender port, its Resend and logging adapters, the service-wide send budget, and off-request-thread dispatch work. |
 | Tags | architecture, configuration, security |
 | Created | 2026-08-03 |
-| Updated | 2026-08-03 |
+| Updated | 2026-08-05 |
 | Related | [000002](000002-authentication-and-tokens.md) |
 <!-- reference-table:end -->
 
@@ -52,28 +52,38 @@ flowchart LR
 ## The port and its adapters
 
 `EmailSender` is a one-method port: `send(EmailMessage)`, where `EmailMessage`
-is `to`, `subject` and `textBody`. It is synchronous and blocking by contract,
-and it throws rather than returning a status. Nothing in the application calls
-it directly — `EmailDispatcher` is what absorbs both of those properties, so no
-caller has to.
+is `to`, `subject`, `textBody` and `reference`. It is synchronous and blocking
+by contract, and it throws rather than returning a status. Nothing in the
+application calls it directly — `EmailDispatcher` is what absorbs both of those
+properties, so no caller has to.
 
-`EmailConfig` chooses the adapter from whether `zarlania.email.resend-api-key`
-is set:
+`EmailSenderFactory` chooses the adapter from whether
+`zarlania.email.resend-api-key` is set. It is a class of its own rather than a
+method on `EmailConfig` because the choice is not wiring: it encodes a rule
+about how this service is allowed to run at all (below), and it is the piece
+that changes when the provider does. `EmailConfig` is left holding bean
+declarations only.
 
-- **`ResendEmailSender`** posts to Resend's `/emails` over a `RestClient`.
-  Anything outside `2xx` throws, carrying the status and nothing else —
-  Resend's error bodies hold no detail worth surfacing, and the failure ends up
-  in a log line rather than in a response (see [Failures are logged, never
+- **`ResendEmailSender`** posts to Resend's `/emails` over a `RestClient` aimed
+  at `zarlania.email.resend-base-url`, which is configuration rather than a
+  constant so a test can point the adapter at a stub and a different
+  Resend-compatible endpoint needs no code change. Anything outside `2xx`
+  throws, carrying the status and nothing else — Resend's error bodies hold no
+  detail worth surfacing, and the failure ends up in a log line rather than in
+  a response (see [Failures are logged, never
   returned](#failures-are-logged-never-returned)).
 - **`LoggingEmailSender`** logs the message instead of sending it. This is what
   makes local development work with no provider account: the verification link
-  is in the application log, so the flow can be completed by hand. Recipient,
-  subject and body all originate from registration input, so each is stripped
-  of line breaks before it reaches the logger — a crafted value could otherwise
-  forge extra log lines.
+  is in the application log, so the flow can be completed by hand. It is the
+  one place recipient and body reach a log at all, and it is selected only
+  where no provider key is configured — see [What a failure line may
+  contain](#what-a-failure-line-may-contain) for what the rest of the channel
+  is allowed to record. Recipient, subject and body all originate from
+  registration input, so each is stripped of line breaks before it reaches the
+  logger — a crafted value could otherwise forge extra log lines.
 
 **A missing key is a startup failure in production, not a fall back to
-logging.** `EmailConfig` throws if `resend-api-key` is blank while the
+logging.** `EmailSenderFactory` throws if `resend-api-key` is blank while the
 `production` profile is active. A deployment that silently stops sending real
 verification emails — every new account stranded, no error anywhere — is worse
 than one that refuses to start.
@@ -98,9 +108,8 @@ from "the provider broke".
 
 It decorates the port rather than the one call site that sends mail today, so
 the cap is a property of the channel. `EmailConfig`'s `emailSender` bean is
-always the budgeted wrapper, and no bean exposes the adapter underneath it: the
-method that builds one is package-private, reachable only from the `email`
-package's own tests.
+always the budgeted wrapper, and no bean exposes the adapter underneath it —
+the only way to obtain a bare one is to call `EmailSenderFactory` directly.
 
 The counting is done by the same `RateLimiter` the request throttles use
 (described under [Throttling](000002-authentication-and-tokens.md#throttling)),
@@ -136,9 +145,12 @@ happened. That argument belongs to registration and is made in full under
 safety](000002-authentication-and-tokens.md#enumeration-safety-status-body-and-timing-all-have-to-match);
 what this doc owns is the executor it produced.
 
-One thread, because the budget already caps the service at 80 messages a day:
-there is no volume worth parallelising, and a second thread would only add heap
-pressure on a 512 MB instance.
+One thread (`zarlania.email.dispatch-threads`, default 1), because the budget
+already caps the service at 80 messages a day: there is no volume worth
+parallelising, and each extra thread is heap a 512 MB instance has to find. It
+is configuration rather than a constant because both halves of that reasoning
+are sizing decisions — raise it with the instance size and the budget, not on
+its own.
 
 The queue is bounded at `zarlania.email.dispatch-queue-capacity` (200), so a
 provider outage cannot grow it until the instance is OOM-killed. Submitting to
@@ -170,9 +182,28 @@ they call for different actions:
 | `EMAIL_SEND_FAILED` | The provider refused or was unreachable | Check the provider's status and the API key |
 | `EMAIL_QUEUE_FULL` | The message never reached the sender at all | The dispatch thread is stuck or the provider is timing out |
 
-None of the three logs the message body: the verification mail carries the raw
-token in it. Recipient and subject are enough to identify a dropped message and
-resend it by hand.
+### What a failure line may contain
+
+None of the three logs the message body — the verification mail carries the raw
+token in it — and **none logs the recipient address either**, per `CLAUDE.md`'s
+rule that a log records what happened and never who it was about.
+
+What is logged instead is `EmailMessage.reference`: an opaque handle the
+*caller* supplies. `RegistrationEmailListener` passes the account's id, so an
+operator who needs the address can resolve it against the `users` table and
+anyone else gets a UUID that means nothing. Same information, reachable only by
+someone already entitled to it.
+
+The reference has to come from the caller rather than be derived here, because
+this package cannot ask who a message is for: `email` is topic infrastructure
+with no dependency on `users`, and giving it one to satisfy a log line would
+point that dependency backwards. So the constraint is stated on the record
+instead — a reference must identify the *message* without identifying the
+person, and an address or a name there puts back precisely what the field exists
+to keep out.
+
+Reference and subject are stripped of line breaks before they reach the logger,
+since both are supplied by a calling domain and either could carry request input.
 
 ## Configuration
 
@@ -180,15 +211,17 @@ resend it by hand.
 | --- | ------- | ---------------- |
 | `zarlania.email.from` | `no-reply@zarlania.com` | The `From` address on every message |
 | `zarlania.email.resend-api-key` | empty | Provider key; empty selects the logging adapter, and is a startup failure in production |
+| `zarlania.email.resend-base-url` | `https://api.resend.com` | The provider's API root |
+| `zarlania.email.dispatch-threads` | `1` | How many sends may be in flight at once |
 | `zarlania.email.dispatch-queue-capacity` | `200` | How many sends may queue before new ones are rejected |
 | `zarlania.throttle.email-budget-limit` | `80` | Total sends allowed per window, service-wide |
 | `zarlania.throttle.email-budget-window` | `P1D` | The budget's period |
 
-`EMAIL_FROM` and `RESEND_API_KEY` are the environment overrides for the first
-two; the rest are fixed in `application.yml`. The two budget keys sit under
-`zarlania.throttle` rather than `zarlania.email` because `ThrottleProperties`
-binds them, which is where they belong given the budget is spent through the
-same `RateLimiter` the request throttles use.
+`EMAIL_FROM`, `RESEND_API_KEY` and `RESEND_BASE_URL` are the environment
+overrides for the first three; the rest are fixed in `application.yml`. The two
+budget keys sit under `zarlania.throttle` rather than `zarlania.email` because
+`ThrottleProperties` binds them, which is where they belong given the budget is
+spent through the same `RateLimiter` the request throttles use.
 
 ## Manual setup
 
@@ -211,10 +244,13 @@ log.
 
 - [`ResendEmailSenderTest`](../../src/test/java/com/zarlania/api/email/ResendEmailSenderTest.java)
   — the request shape sent to Resend, and that any non-`2xx` throws.
+- [`EmailSenderFactoryTest`](../../src/test/java/com/zarlania/api/email/EmailSenderFactoryTest.java)
+  — which adapter is chosen for a given key and profile, that a key of only
+  whitespace counts as unconfigured, and that a blank key in production fails
+  startup rather than falling back to logging.
 - [`EmailConfigTest`](../../src/test/java/com/zarlania/api/email/EmailConfigTest.java)
-  — which adapter is chosen for a given key and profile, that a blank key in
-  production fails startup rather than falling back to logging, and that
-  whichever adapter is chosen is wrapped in the budget.
+  — that whichever adapter is chosen is wrapped in the budget, and that the
+  dispatch pool is bounded.
 - [`LoggingEmailSenderTest`](../../src/test/java/com/zarlania/api/email/LoggingEmailSenderTest.java)
   — that the verification link is findable in the log, and that line breaks in
   crafted input cannot forge extra log lines.

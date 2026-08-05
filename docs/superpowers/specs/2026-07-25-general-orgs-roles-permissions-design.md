@@ -191,6 +191,22 @@ into implementation rather than the wording above:
   route is rate-limited per client IP (`ClientIpResolver`, keyed on
   `CF-Connecting-IP`); `POST /auth/token` needs its own limit in
   `ThrottleProperties` like the rest.
+- **This spec is where the per-organization throttle bucket lands.** Core auth
+  shipped two bucket kinds — per client IP, and per account identifier named in
+  the request body — because every endpoint it throttled was public and had no
+  better identity available. This spec introduces both authenticated throttled
+  endpoints and shared organizations, so it should add:
+  - a **per-user** bucket keyed on the access token's `sub` claim, which bounds
+    one account across every address it calls from without trusting anything the
+    caller typed;
+  - a **per-organization** bucket keyed on the `org` claim, so a general org gets
+    one budget rather than one budget per member — which is the whole reason it
+    only becomes meaningful here.
+
+  `EndpointLimits` currently exposes exactly one optional bucket
+  (`accountLimitIfPresent()`); adding these means that stops being the general
+  test for "is there a second bucket", and `ThrottleAspect` gains the claim reads.
+  See `EndpointLimits`' own Javadoc, which records the same plan next to the code.
 - **`/auth/**` is `permitAll` by path.** A new route under `/auth` is public
   as far as the resource server is concerned; `POST /auth/token`'s only
   authentication is the refresh-cookie rotation itself, exactly as with

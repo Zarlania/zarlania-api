@@ -9,7 +9,7 @@ tags:
 - http
 - security
 created: '2026-07-27'
-updated: '2026-08-03'
+updated: '2026-08-05'
 related:
 - '000001'
 - '000003'
@@ -25,7 +25,7 @@ related:
 | Description | How registration, email verification, login, JWT access tokens, refresh-token families, and the abuse defenses around them work end to end. |
 | Tags | architecture, configuration, http, security |
 | Created | 2026-07-27 |
-| Updated | 2026-08-03 |
+| Updated | 2026-08-05 |
 | Related | [000001](000001-persistence-foundation.md), [000003](000003-outbound-email.md) |
 <!-- reference-table:end -->
 
@@ -236,7 +236,7 @@ storage that survives a page reload.
 | `iss` | Issuer — `zarlania.auth.issuer` (`https://api.zarlania.com` in production). Checked on the way in: `SecurityConfig`'s decoder uses `JwtValidators.createDefaultWithIssuer`, because the default validator checks expiry only. |
 | `sub` | The user's UUID. |
 | `org` | The organization's UUID the token is scoped to. |
-| `kind` | Discriminator, currently always `"user"` (`TokenKinds.USER`) — reserved for a later `IMPERSONATION`/`SERVICE` kind, not yet minted or checked anywhere. |
+| `kind` | What the token proves, currently always `"user"` (`TokenKind.USER`) — a later `IMPERSONATION`/`SERVICE` kind is reserved but nothing mints one, and no authorization decision reads this claim yet. See below for how it is written and checked. |
 | `jti` | A random UUID, unique per token. |
 | `iat` / `exp` | Issued-at / expiry — 15-minute TTL (`zarlania.auth.access-token-ttl`). |
 
@@ -244,6 +244,14 @@ Signed RS256 by `JwtService`, with the header's `kid` set to the signing
 key's RFC 7638 thumbprint. Deliberately minimal: display data comes from
 `GET /users/me`, not the token, and a roles/permissions claim is out of
 scope for now.
+
+`TokenKind` carries each kind's wire string explicitly instead of deriving it
+from `name()`, because the claim value is published contract — renaming a
+constant here must not be able to change what appears in a token. On the way in,
+`SecurityConfig`'s authentication converter resolves the claim through
+`TokenKind.fromValue`, so a token naming a kind this service does not know is
+rejected with the same `401` a malformed `sub` or `org` gets rather than being
+folded onto `USER`.
 
 ### Refresh tokens and families
 
@@ -415,6 +423,24 @@ per spelling. The key is length-capped as well, since `LoginRequest.identifier`
 is only `@NotBlank` and could otherwise mint arbitrarily long keys in the
 limiter's map.
 
+**Two further buckets belong here and are deliberately not built.** Every
+throttled endpoint today is public, so the only identities available are the
+caller's address and whatever account the request body names — and the second
+only approximates an account, since it keys on a string the caller typed rather
+than on a row that exists. An authenticated endpoint carries better identities,
+already proved: the access token's `sub` is the user and its `org` is the
+organization. So the first throttled authenticated endpoint should bring a
+**per-user** bucket keyed on `sub`, bounding one account across every address it
+calls from, and a **per-organization** bucket keyed on `org`, so a shared
+organization gets one budget rather than one per member — which only starts to
+matter once general organizations exist.
+
+Neither is added in advance, because a limit no endpoint consumes is a number
+nobody can tell is wrong. What would have to give when they arrive is the
+assumption that `accountLimit` is the *only* optional bucket, which is what lets
+`EndpointLimits.accountLimitIfPresent()` serve today as the general test for
+"does this endpoint have a second bucket".
+
 Limits live in `zarlania.throttle.endpoints`, keyed by the name in the
 annotation, and are all counted over `zarlania.throttle.window` (1 minute).
 They are a map rather than one field per endpoint, so throttling a new route is
@@ -471,11 +497,11 @@ refresh. The endpoint does no database work and no hashing — it returns a
 random token — so the limit is there for uniformity across public `/auth`
 routes rather than to protect anything expensive.
 
-The client IP comes from `ClientIpResolver`, which reads
-`CF-Connecting-IP` — not `X-Forwarded-For`, and not `getRemoteAddr()`.
-Reading the wrong one silently disables every limit above, in one of two
-directions: forgeable, or one bucket for the entire service. See [Which
-header carries the real client
+The client IP comes from the `ClientIpResolver` port, whose one implementation
+`CloudflareClientIpResolver` reads `CF-Connecting-IP` — not `X-Forwarded-For`,
+and not `getRemoteAddr()`. Reading the wrong one silently disables every limit
+above, in one of two directions: forgeable, or one bucket for the entire
+service. See [Which header carries the real client
 IP](#which-header-carries-the-real-client-ip).
 
 The limiter is in-memory rather than Redis-backed because Render's free
@@ -643,8 +669,18 @@ edge, so there is nothing to strip, count hops through, or trust
 conditionally. When the header is absent — local development, tests, any
 path that never crossed the edge — the fallback is `getRemoteAddr()`,
 which no client can set. That is a shared bucket: degraded, never
-forgeable. **Every fallback in `ClientIpResolver` is to that same address
-for that reason.**
+forgeable. **Every fallback in `CloudflareClientIpResolver` is to that same
+address for that reason.**
+
+The class sits behind the `ClientIpResolver` port and is named for the platform,
+per `CLAUDE.md`'s rule that a third-party dependency lives behind an interface
+this repository owns. Which header to trust is a fact about the deployment
+rather than about this application — behind a different CDN, a different load
+balancer, or nothing at all, the current one becomes forgeable — so moving is a
+new class and a bean rather than an edit to logic other code depends on being
+right. What the port adds beyond the usual seam is a contract that is a security
+property: **the value an implementation returns must never be one the client
+could have chosen.**
 
 Two details keep that promise, and each closes half of the same hole — a
 client's value surviving alongside the edge's:
@@ -682,13 +718,12 @@ address and the shared bucket returns with nothing raised. A header
 Cloudflare guarantees to overwrite has no list to go stale.
 
 Two earlier revisions of this document, of `application.yml`, and of the
-throttling code (then still inside `AuthController`, now in
-`ThrottleAspect` and `ClientIpResolver`) got this wrong in two different
-ways: first by claiming
-that transiting a proxy prevents forgery (it does not — only replacement
-at the proxy would), then by assuming a single trusted hop and keying on
-the rightmost entry, which is Render's shared load balancer.
-[`ClientIpResolverTest`](../../src/test/java/com/zarlania/api/http/ClientIpResolverTest.java)
+throttling code (then still inside `AuthController`, now in `ThrottleAspect`
+and `CloudflareClientIpResolver`) got this wrong in two different ways: first
+by claiming that transiting a proxy prevents forgery (it does not — only
+replacement at the proxy would), then by assuming a single trusted hop and
+keying on the rightmost entry, which is Render's shared load balancer.
+[`CloudflareClientIpResolverTest`](../../src/test/java/com/zarlania/api/http/CloudflareClientIpResolverTest.java)
 and
 [`ClientIpThrottleEndToEndTest`](../../src/test/java/com/zarlania/api/auth/controllers/ClientIpThrottleEndToEndTest.java)
 now build every case from the real three-entry header rather than a

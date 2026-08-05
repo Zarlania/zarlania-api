@@ -216,3 +216,12 @@ depends on:
   `ClientIpResolver`. No decoy-hash timing parity is needed on the uniform
   401 — every failure branch costs the same cheap hash, unlike Argon2 on
   login.
+- **A service token needs a per-service throttle bucket, not just per IP.**
+  Machine callers are exactly the case per-IP throttling handles worst: many
+  services can share one egress address, and one service can call from many.
+  `POST /auth/token/service` names the service id in its body, so it can key an
+  account-style bucket on that id the way login keys one on the identifier —
+  and once a service token exists, requests carrying it can be bucketed on its
+  `sub` claim, which by then holds the service id. If spec 3 has already added
+  the per-user and per-organization buckets described there, this is the same
+  mechanism with the service id in the subject and needs no new machinery.
