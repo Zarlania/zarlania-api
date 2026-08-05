@@ -3,16 +3,22 @@ package com.zarlania.api.email;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.zarlania.api.email.exceptions.EmailBudgetExhaustedException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
 
 /**
  * The two guarantees the dispatcher makes to every caller: nothing is sent on the calling thread,
@@ -25,10 +31,28 @@ import org.junit.jupiter.params.provider.MethodSource;
  */
 class EmailDispatcherTest {
 
+  private static final String RECIPIENT = "person@example.com";
+  private static final String REFERENCE = "3f1b8c9e-0000-4444-8888-aaaabbbbcccc";
+
   private static final EmailMessage MESSAGE =
-      new EmailMessage("person@example.com", "a subject", "a body");
+      new EmailMessage(RECIPIENT, "a subject", "a body", REFERENCE);
 
   private final List<EmailMessage> sent = new ArrayList<>();
+  private final ListAppender<ILoggingEvent> captured = new ListAppender<>();
+  private Logger logger;
+
+  @BeforeEach
+  void attachAppender() {
+    logger = (Logger) LoggerFactory.getLogger(EmailDispatcher.class);
+    captured.start();
+    logger.addAppender(captured);
+  }
+
+  @AfterEach
+  void detachAppender() {
+    logger.detachAppender(captured);
+    captured.stop();
+  }
 
   // Every way a send can fail, from the caller's point of view: identical, and silent. The three
   // are
@@ -53,7 +77,8 @@ class EmailDispatcherTest {
             "an exhausted budget",
             (EmailSender)
                 message -> {
-                  throw new EmailBudgetExhaustedException("budget spent");
+                  throw EmailBudgetExhaustedException.forExhaustedBudget(
+                      80, java.time.Duration.ofDays(1));
                 }));
   }
 
@@ -86,5 +111,33 @@ class EmailDispatcherTest {
 
     submitted.getFirst().run();
     assertThat(sent).containsExactly(MESSAGE);
+  }
+
+  // The failure log is the only trace a dropped email leaves, and it is read by whoever is on
+  // call — so it has to be enough to act on without being a place a person's address accumulates.
+  // The reference resolves to an account for anyone with database access, and to nothing for
+  // anyone without it.
+  @ParameterizedTest(name = "{0} is logged against the reference, not the recipient")
+  @MethodSource("failures")
+  void aFailedSendLogsTheReferenceAndNeverTheRecipient(String description, EmailSender sender) {
+    new EmailDispatcher(sender, Runnable::run).dispatch(MESSAGE);
+
+    assertThat(captured.list).hasSize(1);
+    String line = captured.list.getFirst().getFormattedMessage();
+    assertThat(line).contains(REFERENCE).doesNotContain(RECIPIENT);
+  }
+
+  @Test
+  void aRejectedSubmissionIsLoggedAgainstTheReferenceToo() {
+    Executor rejecting =
+        task -> {
+          throw new RejectedExecutionException("queue full");
+        };
+
+    new EmailDispatcher(sent::add, rejecting).dispatch(MESSAGE);
+
+    assertThat(captured.list).hasSize(1);
+    String line = captured.list.getFirst().getFormattedMessage();
+    assertThat(line).contains(REFERENCE).doesNotContain(RECIPIENT);
   }
 }

@@ -35,7 +35,6 @@ class JwtServiceTest {
   private static final Duration ACCESS_TOKEN_TTL = Duration.ofMinutes(15);
   private static final Instant ISSUED_AT = Instant.parse("2026-07-26T00:00:00Z");
   private static final Clock FIXED_CLOCK = Clock.fixed(ISSUED_AT, ZoneOffset.UTC);
-  private static final String TOKEN_KIND = "access";
   private static final String PRODUCTION_PROFILE = "production";
   private static final int TEST_KEY_SIZE_BITS = 2048;
   private static final List<String> PRIVATE_JWK_MEMBER_NAMES =
@@ -48,7 +47,7 @@ class JwtServiceTest {
     JwtService jwtService = new JwtService(authProperties, jwtKeys, FIXED_CLOCK);
 
     SignedJWT signedJwt =
-        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TOKEN_KIND));
+        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TokenKind.USER));
 
     assertThat(signedJwt.getHeader().getAlgorithm()).isEqualTo(JWSAlgorithm.RS256);
     assertThat(signedJwt.getHeader().getKeyID()).isEqualTo(jwtKeys.signingKey().getKeyID());
@@ -62,13 +61,13 @@ class JwtServiceTest {
     UUID userId = UUID.randomUUID();
     UUID organizationId = UUID.randomUUID();
 
-    SignedJWT signedJwt = SignedJWT.parse(jwtService.mint(userId, organizationId, TOKEN_KIND));
+    SignedJWT signedJwt = SignedJWT.parse(jwtService.mint(userId, organizationId, TokenKind.USER));
     JWTClaimsSet claims = signedJwt.getJWTClaimsSet();
 
     assertThat(claims.getIssuer()).isEqualTo(ISSUER);
     assertThat(claims.getSubject()).isEqualTo(userId.toString());
     assertThat(claims.getStringClaim("org")).isEqualTo(organizationId.toString());
-    assertThat(claims.getStringClaim("kind")).isEqualTo(TOKEN_KIND);
+    assertThat(claims.getStringClaim("kind")).isEqualTo(TokenKind.USER.value());
   }
 
   @Test
@@ -78,7 +77,7 @@ class JwtServiceTest {
     JwtService jwtService = new JwtService(authProperties, jwtKeys, FIXED_CLOCK);
 
     SignedJWT signedJwt =
-        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TOKEN_KIND));
+        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TokenKind.USER));
     JWTClaimsSet claims = signedJwt.getJWTClaimsSet();
 
     Duration lifetime =
@@ -93,7 +92,7 @@ class JwtServiceTest {
     JwtService jwtService = new JwtService(authProperties, jwtKeys, FIXED_CLOCK);
 
     SignedJWT signedJwt =
-        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TOKEN_KIND));
+        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TokenKind.USER));
     RSAKey publicKey = publicKeyFromJwkSet(jwtKeys, signedJwt.getHeader().getKeyID());
 
     assertThat(signedJwt.verify(new RSASSAVerifier(publicKey))).isTrue();
@@ -143,7 +142,7 @@ class JwtServiceTest {
     JwtService jwtService = new JwtService(authProperties, jwtKeys, FIXED_CLOCK);
 
     SignedJWT signedJwt =
-        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TOKEN_KIND));
+        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TokenKind.USER));
     RSAKey publicKey = publicKeyFromJwkSet(jwtKeys, signedJwt.getHeader().getKeyID());
 
     assertThat(signedJwt.verify(new RSASSAVerifier(publicKey))).isTrue();
@@ -179,7 +178,7 @@ class JwtServiceTest {
     JwtService jwtService = new JwtService(authProperties, jwtKeys, FIXED_CLOCK);
 
     SignedJWT signedJwt =
-        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TOKEN_KIND));
+        SignedJWT.parse(jwtService.mint(UUID.randomUUID(), UUID.randomUUID(), TokenKind.USER));
     assertThat(signedJwt.verify(new RSASSAVerifier(jwtKeys.signingKey().toRSAPublicKey())))
         .isTrue();
   }

@@ -40,7 +40,8 @@ class LoggingEmailSenderTest {
         new EmailMessage(
             "person@example.com",
             "Verify your Zarlania account",
-            "Click here: https://zarlania.com/verify-email?token=abc123"));
+            "Click here: https://zarlania.com/verify-email?token=abc123",
+            "a-reference"));
 
     assertThat(captured.list).hasSize(1);
     assertThat(captured.list.getFirst().getFormattedMessage())
@@ -57,7 +58,8 @@ class LoggingEmailSenderTest {
         new EmailMessage(
             "victim@example.com\r\nERROR: forged recipient line",
             "subject\nwith a break",
-            "body\r\nwith breaks"));
+            "body\r\nwith breaks",
+            "reference\r\nwith breaks"));
 
     assertThat(captured.list).hasSize(1);
     String line = captured.list.getFirst().getFormattedMessage();

@@ -12,9 +12,11 @@ import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 /**
@@ -25,9 +27,18 @@ import org.springframework.stereotype.Service;
  * What a client is told about each one — and which of them are deliberately indistinguishable — is
  * decided by {@code AuthExceptionHandler}.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuthTokenService {
+
+  // Greppable markers on the events a retrospective actually starts from. Rejected logins are the
+  // signal that matters most — a run of them against many accounts is credential stuffing, and a
+  // run against one is a targeted attempt — so the two rejection causes are logged apart even
+  // though the client is told the same thing either way. The log is not the response: keeping the
+  // distinction here is what makes it answerable later, and the caller still cannot observe it.
+  private static final String LOGIN_REJECTED_MARKER = "LOGIN_REJECTED";
+  private static final String SESSION_STARTED_MARKER = "SESSION_STARTED";
 
   private final UserService userService;
   private final CredentialsService credentialsService;
@@ -43,16 +54,30 @@ public class AuthTokenService {
    * @throws InvalidCredentialsException for a wrong password and an unknown identifier alike
    * @throws EmailUnverifiedException when the password was right but the address was never proved
    */
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "Every value interpolated into a log line here is a java.util.UUID, whose"
+              + " toString() is lowercase hex digits and hyphens by RFC 4122, so there is"
+              + " no injectable character to strip. FindSecBugs marks them tainted because"
+              + " they were reached through a lookup by caller-supplied identifier, not"
+              + " because the logged value itself is caller-supplied.")
   public MintedSession login(String identifier, String rawPassword) {
     User user = authenticate(identifier, rawPassword);
     if (!user.emailVerified()) {
-      throw new EmailUnverifiedException();
+      log.warn("{}: user {} has not verified its email", LOGIN_REJECTED_MARKER, user.id());
+      throw EmailUnverifiedException.forUser(user.id());
     }
     // personalOrganizationOf's absence is unreachable for a real user: RegistrationService
     // creates the personal organization in the same transaction as the user row, and nothing
     // ever deletes either. orElseThrow's bare NoSuchElementException surfacing as a 500 in that
     // impossible case is an acceptable trade-off against inventing an exception for it.
     Organization personal = organizationService.personalOrganizationOf(user.id()).orElseThrow();
+    log.info(
+        "{}: user {} signed in to organization {}",
+        SESSION_STARTED_MARKER,
+        user.id(),
+        personal.id());
     return mint(user.id(), personal.id());
   }
 
@@ -73,7 +98,7 @@ public class AuthTokenService {
     RefreshRotation rotation = refreshTokenService.rotate(rawRefreshToken);
     requireLiveVerifiedUser(rotation);
     return new MintedSession(
-        jwtService.mint(rotation.userId(), rotation.organizationId(), TokenKinds.USER),
+        jwtService.mint(rotation.userId(), rotation.organizationId(), TokenKind.USER),
         new IssuedRefreshToken(rotation.newRaw(), rotation.familyExpiresAt()));
   }
 
@@ -96,14 +121,25 @@ public class AuthTokenService {
    * holding a live session for the rest of its 30-day family. The rotation that just committed is
    * revoked before rejecting, so the failed refresh cannot itself leave a fresh live token behind.
    */
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "Every value interpolated into a log line here is a java.util.UUID, whose"
+              + " toString() is lowercase hex digits and hyphens by RFC 4122, so there is"
+              + " no injectable character to strip. FindSecBugs marks them tainted because"
+              + " they were reached through a lookup by caller-supplied identifier, not"
+              + " because the logged value itself is caller-supplied.")
   private void requireLiveVerifiedUser(RefreshRotation rotation) {
     boolean verified =
         userService.findById(rotation.userId()).map(User::emailVerified).orElse(false);
     if (verified) {
       return;
     }
+    log.warn(
+        "Refresh refused: user {} is gone or unverified — revoking the family just rotated",
+        rotation.userId());
     refreshTokenService.revokeFamilyOf(rotation.newRaw());
-    throw new InvalidRefreshTokenException();
+    throw InvalidRefreshTokenException.forRejectedToken();
   }
 
   /**
@@ -114,20 +150,32 @@ public class AuthTokenService {
    * alone lets a caller enumerate valid identifiers purely by timing — the same channel {@link
    * RegistrationService} closes for register and resend, closed here the same way.
    */
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "Every value interpolated into a log line here is a java.util.UUID, whose"
+              + " toString() is lowercase hex digits and hyphens by RFC 4122, so there is"
+              + " no injectable character to strip. FindSecBugs marks them tainted because"
+              + " they were reached through a lookup by caller-supplied identifier, not"
+              + " because the logged value itself is caller-supplied.")
   private User authenticate(String identifier, String rawPassword) {
     Optional<User> user = userService.findByIdentifier(identifier);
     if (user.isEmpty()) {
       credentialsService.hashDecoyPassword();
-      throw new InvalidCredentialsException();
+      // No identifier in the line: it is whatever the caller typed, and an address there would put
+      // a person — possibly one with no account here at all — into the logs.
+      log.warn("{}: no account matched the identifier supplied", LOGIN_REJECTED_MARKER);
+      throw InvalidCredentialsException.forRejectedLogin();
     }
     if (!credentialsService.passwordMatches(user.get().id(), rawPassword)) {
-      throw new InvalidCredentialsException();
+      log.warn("{}: wrong password for user {}", LOGIN_REJECTED_MARKER, user.get().id());
+      throw InvalidCredentialsException.forRejectedLogin();
     }
     return user.get();
   }
 
   private MintedSession mint(UUID userId, UUID organizationId) {
     IssuedRefreshToken refresh = refreshTokenService.startFamily(userId, organizationId);
-    return new MintedSession(jwtService.mint(userId, organizationId, TokenKinds.USER), refresh);
+    return new MintedSession(jwtService.mint(userId, organizationId, TokenKind.USER), refresh);
   }
 }

@@ -3,11 +3,14 @@ package com.zarlania.api.auth.services;
 import com.zarlania.api.auth.exceptions.UsernameTakenException;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
+import com.zarlania.api.logging.LogSanitizer;
 import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -25,9 +28,16 @@ import org.springframework.transaction.annotation.Transactional;
  * would trivially distinguish the branches over a network. Which email actually goes out is decided
  * entirely after commit, by {@link RegistrationEmailListener}.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RegistrationService {
+
+  // The registration events worth reconstructing afterwards. None of these lines may carry the
+  // address: it is the one field a caller can put anybody's data into, and this class's whole
+  // purpose is that the outside cannot learn which branch ran — a log holding the address next to
+  // the branch name would answer that for anyone who reaches the logs.
+  private static final String REGISTRATION_REFUSED_MARKER = "REGISTRATION_REFUSED";
 
   private final UserService userService;
   private final CredentialsService credentialsService;
@@ -50,7 +60,13 @@ public class RegistrationService {
    */
   public void register(String email, String username, String rawPassword) {
     if (userService.usernameExists(username)) {
-      throw new UsernameTakenException();
+      // The username is safe to log where the address is not: it is public by nature, which is the
+      // same reason this is the one registration failure the caller is told about.
+      log.info(
+          "{}: username {} is already taken",
+          REGISTRATION_REFUSED_MARKER,
+          LogSanitizer.singleLine(username));
+      throw UsernameTakenException.forUsername(username);
     }
     if (userService.emailExists(email)) {
       credentialsService.hashDecoyPassword();
@@ -71,10 +87,27 @@ public class RegistrationService {
    *     alike, which the caller is expected to answer identically
    */
   @Transactional
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "Every value interpolated into a log line here is a java.util.UUID, whose"
+              + " toString() is lowercase hex digits and hyphens by RFC 4122, so there is"
+              + " no injectable character to strip. FindSecBugs marks them tainted because"
+              + " they were reached through a lookup by caller-supplied identifier, not"
+              + " because the logged value itself is caller-supplied.")
   public boolean verify(String rawToken) {
     Optional<UUID> userId = emailVerificationService.consume(rawToken);
-    userId.ifPresent(userService::markEmailVerified);
-    return userId.isPresent();
+    // Logged with if/else rather than ifPresentOrElse: SpotBugs attributes a lambda body to a
+    // synthetic method, which a suppression on this one does not reach.
+    if (userId.isEmpty()) {
+      // The token is in neither branch's line. It is a live credential right up until consume()
+      // redeems it, and this is exactly the branch where an unredeemed one is still usable.
+      log.info("Verification refused: token unknown, expired, or already used");
+      return false;
+    }
+    userService.markEmailVerified(userId.get());
+    log.info("Email verified for user {}", userId.get());
+    return true;
   }
 
   /**
@@ -117,7 +150,7 @@ public class RegistrationService {
   private void resolveRegistrationConflict(
       String email, String username, DataIntegrityViolationException cause) {
     if (userService.usernameExists(username)) {
-      throw new UsernameTakenException();
+      throw UsernameTakenException.forUsername(username);
     }
     if (!userService.emailExists(email)) {
       // Some other integrity rule broke — not the race this handler exists for. Rethrowing keeps a
@@ -150,11 +183,23 @@ public class RegistrationService {
       issueVerification(email, existing.get().id());
       return;
     }
-    applicationEventPublisher.publishEvent(new DuplicateRegistrationAttempted(email));
+    applicationEventPublisher.publishEvent(
+        new DuplicateRegistrationAttempted(email, existing.get().id()));
   }
 
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "Every value interpolated into a log line here is a java.util.UUID, whose"
+              + " toString() is lowercase hex digits and hyphens by RFC 4122, so there is"
+              + " no injectable character to strip. FindSecBugs marks them tainted because"
+              + " they were reached through a lookup by caller-supplied identifier, not"
+              + " because the logged value itself is caller-supplied.")
   private void issueVerification(String email, UUID userId) {
+    // The token is never logged, here or anywhere: only its hash is stored, so a log line holding
+    // the raw value is a usable credential for as long as the log is retained.
     String rawToken = emailVerificationService.issue(userId);
-    applicationEventPublisher.publishEvent(new VerificationEmailRequested(email, rawToken));
+    log.info("Verification issued for user {}", userId);
+    applicationEventPublisher.publishEvent(new VerificationEmailRequested(email, rawToken, userId));
   }
 }

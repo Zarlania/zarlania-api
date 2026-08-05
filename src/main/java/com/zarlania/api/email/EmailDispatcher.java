@@ -1,6 +1,7 @@
 package com.zarlania.api.email;
 
 import com.zarlania.api.email.exceptions.EmailBudgetExhaustedException;
+import com.zarlania.api.logging.LogSanitizer;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -84,34 +85,32 @@ public class EmailDispatcher {
     }
   }
 
-  // Never logs the message body: a verification email's body carries the raw token, and CLAUDE.md
-  // forbids logging that. The recipient and subject are enough to find and manually resend the
-  // specific message a provider outage dropped. Both are stripped of line breaks first — the
-  // recipient is ultimately caller-supplied, so a crafted value containing "\r\n" could otherwise
-  // forge extra log lines.
-  //
-  // CRLF_INJECTION_LOGS still fires even so: FindSecBugs's interprocedural taint tracker loses the
-  // sanitizer between stripLineBreaks() and the varargs Logger.error(String, Object..., Throwable)
-  // overload. LoggingEmailSender#send uses the identical replace("\r","").replace("\n"," ") pattern
-  // one hop earlier, straight from the field to log.info, and is not flagged — which is the control
-  // case confirming the sanitizer itself is sound. This is a detector depth limit, not a real hole.
+  /**
+   * Records a send that will never arrive, without recording who it was for.
+   *
+   * <p>Logs {@link EmailMessage#reference()} rather than the recipient. The address identifies a
+   * person and the body carries the raw verification token, so neither may appear in a log an
+   * operator, a log shipper, or a support ticket can end up holding. The reference is the account
+   * id its caller supplied, which an operator with database access can resolve and nobody else can
+   * — the same information, reachable only by someone already entitled to it.
+   *
+   * <p>The reference and subject are folded onto one line first. Both are supplied by the calling
+   * domain rather than by this package, so a value that reached one of them from request input
+   * could otherwise contain {@code \r\n} and forge extra log lines.
+   */
   @SuppressFBWarnings(
       value = "CRLF_INJECTION_LOGS",
       justification =
-          "Recipient and subject are both passed through stripLineBreaks before reaching"
-              + " log.error; FindSecBugs loses the sanitizer across the interprocedural hop, not"
-              + " because the value is actually unsanitized (see LoggingEmailSender#send for the"
-              + " unflagged single-hop control case using the identical pattern).")
+          "Reference and subject are both passed through LogSanitizer.singleLine before"
+              + " reaching log.error; FindSecBugs loses the sanitizer across the interprocedural"
+              + " hop, not because the value is actually unsanitized (see LoggingEmailSender#send"
+              + " for the unflagged single-hop control case using the identical helper).")
   private void logFailure(String marker, EmailMessage message, RuntimeException cause) {
     log.error(
-        "{}: email to {} was not sent (subject: {})",
+        "{}: email for {} was not sent (subject: {})",
         marker,
-        stripLineBreaks(message.to()),
-        stripLineBreaks(message.subject()),
+        LogSanitizer.singleLine(message.reference()),
+        LogSanitizer.singleLine(message.subject()),
         cause);
-  }
-
-  private static String stripLineBreaks(String value) {
-    return value.replace("\r", "").replace("\n", " ");
   }
 }

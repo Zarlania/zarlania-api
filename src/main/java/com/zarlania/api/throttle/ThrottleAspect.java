@@ -39,6 +39,7 @@ public class ThrottleAspect {
 
   private final RateLimiter rateLimiter;
   private final ThrottleProperties throttleProperties;
+  private final ClientIpResolver clientIpResolver;
 
   /**
    * Applies both buckets before the handler runs.
@@ -51,7 +52,7 @@ public class ThrottleAspect {
   @Before("@annotation(throttled)")
   public void enforce(JoinPoint joinPoint, Throttled throttled) {
     EndpointLimits limits = throttleProperties.limitsFor(throttled.endpoint());
-    String clientIp = ClientIpResolver.resolve(currentRequest());
+    String clientIp = clientIpResolver.resolve(currentRequest());
     consumeOrThrow(ThrottleKeys.forClient(throttled.endpoint(), clientIp), limits.limit());
 
     if (throttled.accountFrom().isEmpty()) {

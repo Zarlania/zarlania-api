@@ -5,8 +5,10 @@ import com.zarlania.api.auth.repositories.RefreshTokenRepository;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.users.services.UserService;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
  * call because they belong to this domain.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 class UnverifiedAccountPurger {
 
@@ -33,6 +36,14 @@ class UnverifiedAccountPurger {
   private final OrganizationService organizationService;
   private final UserService userService;
 
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "Every value interpolated into a log line here is a java.util.UUID, whose"
+              + " toString() is lowercase hex digits and hyphens by RFC 4122, so there is"
+              + " no injectable character to strip. FindSecBugs marks them tainted because"
+              + " they were reached through a lookup by caller-supplied identifier, not"
+              + " because the logged value itself is caller-supplied.")
   @Transactional
   void purgeOneAccount(UUID userId) {
     credentialsService.deleteAllForUser(userId);
@@ -54,7 +65,10 @@ class UnverifiedAccountPurger {
     // in the same sequence cannot form an AB-BA cycle, so whichever arrives second simply waits
     // and then sees the other's committed result.
     if (!userService.deleteIfStillUnverified(userId)) {
-      throw new AccountVerifiedDuringPurgeException(userId);
+      throw AccountVerifiedDuringPurgeException.forUser(userId);
     }
+    // A sweep that deletes rows and leaves no record of which is the one failure mode nobody can
+    // investigate afterwards, so the successful case is logged as loudly as the failures are.
+    log.info("Purged unverified account {} and everything hanging off it", userId);
   }
 }

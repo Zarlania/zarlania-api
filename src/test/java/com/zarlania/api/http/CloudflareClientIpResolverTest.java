@@ -13,7 +13,9 @@ import org.springframework.mock.web.MockHttpServletRequest;
  *
  * <p>Real chain: client ──▶ Cloudflare edge ──▶ Render load balancer ──▶ app.
  */
-class ClientIpResolverTest {
+class CloudflareClientIpResolverTest {
+
+  private final CloudflareClientIpResolver resolver = new CloudflareClientIpResolver();
 
   private static final String CLOUDFLARE_CLIENT_IP = "CF-Connecting-IP";
   private static final String FORWARDED_FOR = "X-Forwarded-For";
@@ -30,14 +32,14 @@ class ClientIpResolverTest {
 
   @Test
   void resolvesTheRealClientFromTheDeployedThreeEntryHeaderShape() {
-    assertThat(ClientIpResolver.resolve(deployedRequest(REAL_CLIENT))).isEqualTo(REAL_CLIENT);
+    assertThat(resolver.resolve(deployedRequest(REAL_CLIENT))).isEqualTo(REAL_CLIENT);
   }
 
   // The two entries a hop-counting implementation would land on. Neither is the client: the
   // leftmost is forgeable, and the rightmost is one address shared by the entire service.
   @Test
   void neverResolvesToTheCloudflareEdgeOrTheRenderLoadBalancer() {
-    String resolved = ClientIpResolver.resolve(deployedRequest(REAL_CLIENT));
+    String resolved = resolver.resolve(deployedRequest(REAL_CLIENT));
 
     assertThat(resolved).isNotEqualTo(CLOUDFLARE_EDGE).isNotEqualTo(RENDER_LOAD_BALANCER);
   }
@@ -50,7 +52,7 @@ class ClientIpResolverTest {
     request.addHeader(FORWARDED_FOR, FORGED + ", " + DEPLOYED_FORWARDED_FOR);
     request.addHeader(CLOUDFLARE_CLIENT_IP, REAL_CLIENT);
 
-    assertThat(ClientIpResolver.resolve(request)).isEqualTo(REAL_CLIENT);
+    assertThat(resolver.resolve(request)).isEqualTo(REAL_CLIENT);
   }
 
   // The fallback must never be client-controllable. With no Cloudflare header the request did not
@@ -61,12 +63,12 @@ class ClientIpResolverTest {
     MockHttpServletRequest request = requestFromTcpPeer();
     request.addHeader(FORWARDED_FOR, FORGED);
 
-    assertThat(ClientIpResolver.resolve(request)).isEqualTo(TCP_PEER).isNotEqualTo(FORGED);
+    assertThat(resolver.resolve(request)).isEqualTo(TCP_PEER).isNotEqualTo(FORGED);
   }
 
   @Test
   void withNoHeadersAtAllTheTcpPeerIsUsed() {
-    assertThat(ClientIpResolver.resolve(requestFromTcpPeer())).isEqualTo(TCP_PEER);
+    assertThat(resolver.resolve(requestFromTcpPeer())).isEqualTo(TCP_PEER);
   }
 
   // Repeated header lines rather than one comma-joined value. getHeader() would return the first
@@ -78,7 +80,7 @@ class ClientIpResolverTest {
     request.addHeader(CLOUDFLARE_CLIENT_IP, FORGED);
     request.addHeader(CLOUDFLARE_CLIENT_IP, REAL_CLIENT);
 
-    assertThat(ClientIpResolver.resolve(request)).isEqualTo(REAL_CLIENT).isNotEqualTo(FORGED);
+    assertThat(resolver.resolve(request)).isEqualTo(REAL_CLIENT).isNotEqualTo(FORGED);
   }
 
   // The sibling of the case above, and the one that stayed forgeable after it was fixed: RFC 9110
@@ -91,7 +93,7 @@ class ClientIpResolverTest {
     MockHttpServletRequest request = requestFromTcpPeer();
     request.addHeader(CLOUDFLARE_CLIENT_IP, FORGED + ", " + REAL_CLIENT);
 
-    assertThat(ClientIpResolver.resolve(request))
+    assertThat(resolver.resolve(request))
         .isEqualTo(TCP_PEER)
         .isNotEqualTo(FORGED)
         .isNotEqualTo(REAL_CLIENT);
@@ -133,19 +135,18 @@ class ClientIpResolverTest {
     MockHttpServletRequest request = requestFromTcpPeer();
     request.addHeader(CLOUDFLARE_CLIENT_IP, "   ");
 
-    assertThat(ClientIpResolver.resolve(request)).isEqualTo(TCP_PEER);
+    assertThat(resolver.resolve(request)).isEqualTo(TCP_PEER);
   }
 
   @Test
   void surroundingWhitespaceIsTrimmedSoOneClientKeepsOneBucket() {
-    assertThat(ClientIpResolver.resolve(deployedRequest("  " + REAL_CLIENT + "  ")))
-        .isEqualTo(REAL_CLIENT);
+    assertThat(resolver.resolve(deployedRequest("  " + REAL_CLIENT + "  "))).isEqualTo(REAL_CLIENT);
   }
 
-  private static String resolveWithCloudflareHeader(String value) {
+  private String resolveWithCloudflareHeader(String value) {
     MockHttpServletRequest request = requestFromTcpPeer();
     request.addHeader(CLOUDFLARE_CLIENT_IP, value);
-    return ClientIpResolver.resolve(request);
+    return resolver.resolve(request);
   }
 
   private static MockHttpServletRequest requestFromTcpPeer() {

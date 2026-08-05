@@ -46,7 +46,8 @@ class ResendEmailSenderTest {
         .andRespond(withSuccess("{\"id\":\"abc123\"}", MediaType.APPLICATION_JSON));
 
     sender.send(
-        new EmailMessage("someone@example.com", "Verify your email", "Click the link to verify."));
+        new EmailMessage(
+            "someone@example.com", "Verify your email", "Click the link to verify.", "a-ref"));
 
     server.verify();
   }
@@ -60,7 +61,8 @@ class ResendEmailSenderTest {
     server.expect(requestTo(EMAILS_PATH)).andRespond(withServerError());
 
     EmailMessage message =
-        new EmailMessage("someone@example.com", "Verify your email", "Click the link to verify.");
+        new EmailMessage(
+            "someone@example.com", "Verify your email", "Click the link to verify.", "a-ref");
 
     assertThatThrownBy(() -> sender.send(message))
         .isInstanceOf(IllegalStateException.class)
@@ -81,7 +83,8 @@ class ResendEmailSenderTest {
     server.expect(requestTo(EMAILS_PATH)).andRespond(withStatus(HttpStatus.FOUND));
 
     EmailMessage message =
-        new EmailMessage("someone@example.com", "Verify your email", "Click the link to verify.");
+        new EmailMessage(
+            "someone@example.com", "Verify your email", "Click the link to verify.", "a-ref");
 
     assertThatThrownBy(() -> sender.send(message))
         .isInstanceOf(IllegalStateException.class)

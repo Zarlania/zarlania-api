@@ -14,7 +14,7 @@ import com.nimbusds.jwt.SignedJWT;
 import com.zarlania.api.auth.services.JwtKeys;
 import com.zarlania.api.auth.services.JwtService;
 import com.zarlania.api.auth.services.TokenClaims;
-import com.zarlania.api.auth.services.TokenKinds;
+import com.zarlania.api.auth.services.TokenKind;
 import com.zarlania.api.organizations.dtos.Organization;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.testsupport.EndToEndTestBase;
@@ -58,7 +58,7 @@ class SecurityConfigEndToEndTest extends EndToEndTestBase {
     User user = userService.createUnverified("me@example.com", "meuser");
     Organization organization =
         organizationService.createPersonalOrganization(user.id(), "meuser's Space");
-    String token = jwtService.mint(user.id(), organization.id(), TokenKinds.USER);
+    String token = jwtService.mint(user.id(), organization.id(), TokenKind.USER);
 
     mockMvc
         .perform(get("/users/me").header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + token))
@@ -72,7 +72,7 @@ class SecurityConfigEndToEndTest extends EndToEndTestBase {
     User user = userService.createUnverified("tampered@example.com", "tampereduser");
     Organization organization =
         organizationService.createPersonalOrganization(user.id(), "tampereduser's Space");
-    String token = jwtService.mint(user.id(), organization.id(), TokenKinds.USER);
+    String token = jwtService.mint(user.id(), organization.id(), TokenKind.USER);
 
     mockMvc
         .perform(

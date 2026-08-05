@@ -5,7 +5,9 @@ import com.zarlania.api.credentials.services.EmailVerificationService;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.users.dtos.User;
 import com.zarlania.api.users.services.UserService;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,8 +29,11 @@ import org.springframework.transaction.annotation.Transactional;
  * proxy and open no transaction at all.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 class AccountCreator {
+
+  private static final String REGISTERED_MARKER = "ACCOUNT_REGISTERED";
 
   private final UserService userService;
   private final CredentialsService credentialsService;
@@ -51,12 +56,25 @@ class AccountCreator {
    *     claimed the email or username first. It surfaces at commit, so only a caller outside this
    *     transaction can catch it — see this class's own documentation.
    */
+  @SuppressFBWarnings(
+      value = "CRLF_INJECTION_LOGS",
+      justification =
+          "Every value interpolated into a log line here is a java.util.UUID, whose"
+              + " toString() is lowercase hex digits and hyphens by RFC 4122, so there is"
+              + " no injectable character to strip. FindSecBugs marks them tainted because"
+              + " they were reached through a lookup by caller-supplied identifier, not"
+              + " because the logged value itself is caller-supplied.")
   @Transactional
   void createAccount(String email, String username, String rawPassword) {
     User user = userService.createUnverified(email, username);
     credentialsService.createPassword(user.id(), rawPassword);
     organizationService.createPersonalOrganization(user.id(), username);
     String rawToken = emailVerificationService.issue(user.id());
-    applicationEventPublisher.publishEvent(new VerificationEmailRequested(email, rawToken));
+    // Logged before the event rather than after: this line is the record that all four rows were
+    // written, and it belongs to the transaction that wrote them. The id alone, so that neither
+    // the address, the token, nor the chosen name has to appear.
+    log.info("{}: created account {}", REGISTERED_MARKER, user.id());
+    applicationEventPublisher.publishEvent(
+        new VerificationEmailRequested(email, rawToken, user.id()));
   }
 }

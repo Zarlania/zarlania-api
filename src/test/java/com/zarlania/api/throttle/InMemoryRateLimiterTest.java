@@ -3,6 +3,8 @@ package com.zarlania.api.throttle;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.testsupport.MutableClock;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,9 +22,12 @@ class InMemoryRateLimiterTest {
   private static final int EMAIL_BUDGET_LIMIT = 100;
 
   private final MutableClock clock = new MutableClock(Instant.parse("2026-01-01T00:00:00Z"));
+  private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
   private final InMemoryRateLimiter limiter =
       new InMemoryRateLimiter(
-          new ThrottleProperties(WINDOW, Map.of(), EMAIL_BUDGET_LIMIT, WINDOW), clock);
+          new ThrottleProperties(WINDOW, Map.of(), EMAIL_BUDGET_LIMIT, WINDOW),
+          clock,
+          meterRegistry);
 
   @Test
   void allowsUpToTheLimitThenRejects() {
@@ -77,12 +82,12 @@ class InMemoryRateLimiterTest {
   void evictExpiredWindowsRemovesEntriesOlderThanTheWindowSoMemoryDoesNotGrowForever() {
     limiter.tryConsume("stale", 5);
     limiter.tryConsume("fresh-at-sweep-time", 5);
-    assertThat(limiter.trackedKeyCount()).isEqualTo(2);
+    assertThat(trackedKeysGauge()).isEqualTo(2);
 
     clock.advance(WINDOW.plusSeconds(1));
     limiter.evictExpiredWindows();
 
-    assertThat(limiter.trackedKeyCount()).isZero();
+    assertThat(trackedKeysGauge()).isZero();
   }
 
   @Test
@@ -92,6 +97,13 @@ class InMemoryRateLimiterTest {
     clock.advance(WINDOW.minusSeconds(1));
     limiter.evictExpiredWindows();
 
-    assertThat(limiter.trackedKeyCount()).isEqualTo(1);
+    assertThat(trackedKeysGauge()).isEqualTo(1);
+  }
+
+  // Read through the registry rather than off the limiter, so these tests fail if the gauge stops
+  // being published — the metric is how an operator sees this, and an unpublished one is the same
+  // as no eviction monitoring at all.
+  private double trackedKeysGauge() {
+    return meterRegistry.get(InMemoryRateLimiter.TRACKED_KEYS_METRIC).gauge().value();
   }
 }

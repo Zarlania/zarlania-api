@@ -8,4 +8,17 @@ package com.zarlania.api.auth.exceptions;
  * an account — whereas a username is public by nature, and refusing without saying why would leave
  * the caller retrying a name that can never be granted.
  */
-public class UsernameTakenException extends RuntimeException {}
+public final class UsernameTakenException extends RuntimeException {
+
+  private UsernameTakenException(String message) {
+    super(message);
+  }
+
+  /**
+   * @param username named in the message because a username is public by nature — unlike an address
+   *     — so it is safe to log and is the only thing that makes the line actionable
+   */
+  public static UsernameTakenException forUsername(String username) {
+    return new UsernameTakenException("Username already taken: " + username);
+  }
+}

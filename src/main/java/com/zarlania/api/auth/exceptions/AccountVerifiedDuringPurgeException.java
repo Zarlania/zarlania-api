@@ -13,12 +13,17 @@ import java.util.UUID;
  * of a race the sweep is designed to lose safely, which is why the cleanup catches it separately
  * and logs it below error level.
  */
-public class AccountVerifiedDuringPurgeException extends RuntimeException {
+public final class AccountVerifiedDuringPurgeException extends RuntimeException {
+
+  private AccountVerifiedDuringPurgeException(String message) {
+    super(message);
+  }
 
   /**
    * @param userId names the account in the message, since this is only ever read in logs
    */
-  public AccountVerifiedDuringPurgeException(UUID userId) {
-    super("Account " + userId + " was verified before its purge could complete");
+  public static AccountVerifiedDuringPurgeException forUser(UUID userId) {
+    return new AccountVerifiedDuringPurgeException(
+        "Account " + userId + " was verified before its purge could complete");
   }
 }

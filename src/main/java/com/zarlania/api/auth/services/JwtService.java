@@ -26,17 +26,18 @@ public class JwtService {
   /**
    * Mints a signed access token for one account in one organization.
    *
-   * @param kind distinguishes token purposes; see {@code TokenKinds}
+   * @param kind what the token proves; written to the {@code kind} claim as {@link
+   *     TokenKind#value()}
    * @return a compact-serialized RS256 JWT, verifiable against the published JWK set
    */
-  public String mint(UUID userId, UUID organizationId, String kind) {
+  public String mint(UUID userId, UUID organizationId, TokenKind kind) {
     Instant now = clock.instant();
     JWTClaimsSet claims =
         new JWTClaimsSet.Builder()
             .issuer(authProperties.issuer())
             .subject(userId.toString())
             .claim(TokenClaims.ORGANIZATION, organizationId.toString())
-            .claim(TokenClaims.KIND, kind)
+            .claim(TokenClaims.KIND, kind.value())
             .jwtID(UUID.randomUUID().toString())
             .issueTime(Date.from(now))
             .expirationTime(Date.from(now.plus(authProperties.accessTokenTtl())))

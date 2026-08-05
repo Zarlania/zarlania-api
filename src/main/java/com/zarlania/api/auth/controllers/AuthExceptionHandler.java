@@ -33,6 +33,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * <p>The messages live here, not on the exceptions. Several of them are deliberately identical
  * across different causes, and keeping them side by side is what makes that property checkable by
  * reading one file.
+ *
+ * <p>No handler below declares the exception as a parameter. The {@code @ExceptionHandler}
+ * annotation already names every type it maps, so a parameter would be a second, silently unchecked
+ * statement of the same thing — and none of these answers depends on the instance, since each is a
+ * fixed status, code and message. The exception's own detail is not lost: every one of these is
+ * logged where it is thrown, with the ids that make it actionable, which is the only place that
+ * information still exists.
  */
 @RestControllerAdvice(basePackageClasses = AuthExceptionHandler.class)
 public class AuthExceptionHandler {
@@ -47,14 +54,13 @@ public class AuthExceptionHandler {
 
   /** A wrong password and an unknown identifier alike: 401, with no hint which it was. */
   @ExceptionHandler(InvalidCredentialsException.class)
-  public ResponseEntity<ProblemDetail> handleInvalidCredentials(
-      InvalidCredentialsException exception) {
+  public ResponseEntity<ProblemDetail> handleInvalidCredentials() {
     return ProblemDetails.of(AuthErrorCode.INVALID_CREDENTIALS, INVALID_CREDENTIALS_MESSAGE);
   }
 
   /** The password was right but the address was never proved: 403, saying so. */
   @ExceptionHandler(EmailUnverifiedException.class)
-  public ResponseEntity<ProblemDetail> handleEmailUnverified(EmailUnverifiedException exception) {
+  public ResponseEntity<ProblemDetail> handleEmailUnverified() {
     return ProblemDetails.of(AuthErrorCode.EMAIL_UNVERIFIED, EMAIL_UNVERIFIED_MESSAGE);
   }
 
@@ -67,13 +73,13 @@ public class AuthExceptionHandler {
    * differently would tell an attacker holding a stolen token that they had been detected.
    */
   @ExceptionHandler({InvalidRefreshTokenException.class, ReusedRefreshTokenException.class})
-  public ResponseEntity<ProblemDetail> handleRefreshRejected(RuntimeException exception) {
+  public ResponseEntity<ProblemDetail> handleRefreshRejected() {
     return ProblemDetails.of(AuthErrorCode.INVALID_CREDENTIALS, REFRESH_REJECTED_MESSAGE);
   }
 
   /** The one registration failure a caller is told about: 409. */
   @ExceptionHandler(UsernameTakenException.class)
-  public ResponseEntity<ProblemDetail> handleUsernameTaken(UsernameTakenException exception) {
+  public ResponseEntity<ProblemDetail> handleUsernameTaken() {
     return ProblemDetails.of(AuthErrorCode.USERNAME_TAKEN, USERNAME_TAKEN_MESSAGE);
   }
 }

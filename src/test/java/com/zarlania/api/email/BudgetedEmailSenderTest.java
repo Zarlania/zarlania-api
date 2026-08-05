@@ -7,6 +7,7 @@ import com.zarlania.api.email.exceptions.EmailBudgetExhaustedException;
 import com.zarlania.api.testsupport.MutableClock;
 import com.zarlania.api.throttle.InMemoryRateLimiter;
 import com.zarlania.api.throttle.ThrottleProperties;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -79,10 +80,13 @@ class BudgetedEmailSenderTest {
     ThrottleProperties properties =
         new ThrottleProperties(Duration.ofMinutes(1), Map.of(), BUDGET_LIMIT, BUDGET_WINDOW);
     return new BudgetedEmailSender(
-        delivered::add, new InMemoryRateLimiter(properties, clock), BUDGET_LIMIT, BUDGET_WINDOW);
+        delivered::add,
+        new InMemoryRateLimiter(properties, clock, new SimpleMeterRegistry()),
+        BUDGET_LIMIT,
+        BUDGET_WINDOW);
   }
 
   private static EmailMessage message(String to) {
-    return new EmailMessage(to, "subject", "body");
+    return new EmailMessage(to, "subject", "body", "a-reference");
   }
 }

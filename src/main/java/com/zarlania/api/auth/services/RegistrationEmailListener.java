@@ -55,7 +55,8 @@ public class RegistrationEmailListener {
         new EmailMessage(
             event.email(),
             VERIFICATION_EMAIL_SUBJECT,
-            "Click the link below to verify your Zarlania account:\n\n" + verificationUrl));
+            "Click the link below to verify your Zarlania account:\n\n" + verificationUrl,
+            event.userId().toString()));
   }
 
   /**
@@ -76,6 +77,7 @@ public class RegistrationEmailListener {
             DUPLICATE_ATTEMPT_SUBJECT,
             "Someone tried to register a new Zarlania account with this email address. If this"
                 + " was not you, no action is needed — your existing account is safe. If it was"
-                + " you, sign in with your existing account instead."));
+                + " you, sign in with your existing account instead.",
+            event.userId().toString()));
   }
 }

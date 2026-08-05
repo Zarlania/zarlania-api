@@ -3,6 +3,7 @@ package com.zarlania.api.auth;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.zarlania.api.auth.services.JwtKeys;
 import com.zarlania.api.auth.services.TokenClaims;
+import com.zarlania.api.auth.services.TokenKind;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import java.util.List;
 import java.util.UUID;
@@ -81,13 +82,13 @@ public class SecurityConfig {
   /**
    * The one filter chain: every request needs a valid JWT except {@link #PUBLIC_PATHS}, sessions
    * are never created, and CSRF is scoped to the two cookie-authenticated routes.
+   *
+   * @throws Exception as {@code HttpSecurity#build()} declares it. The broad type is dictated by
+   *     Spring Security's own {@code SecurityBuilder<O>} contract and cannot be narrowed here;
+   *     catching it to remove it would itself violate Checkstyle's {@code IllegalCatch} rule, which
+   *     is why the SpotBugs finding below is suppressed rather than fixed.
    */
   @Bean
-  // THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION: HttpSecurity#build's `throws Exception` is
-  // dictated by Spring Security's own SecurityBuilder<O> contract (see HttpSecurity,
-  // DefaultSecurityFilterChain) — this method cannot narrow it. Catching Exception here to
-  // swallow the checked type would itself be banned by Checkstyle's IllegalCatch rule, so no
-  // code change can satisfy the detector; the signature is fixed, not stylistic.
   @SuppressFBWarnings(
       value = "THROWS_METHOD_THROWS_CLAUSE_BASIC_EXCEPTION",
       justification =
@@ -199,11 +200,12 @@ public class SecurityConfig {
             new AuthPrincipal(
                 UUID.fromString(requireClaim(jwt, JwtClaimNames.SUB)),
                 UUID.fromString(requireClaim(jwt, TokenClaims.ORGANIZATION)),
-                jwt.getClaimAsString(TokenClaims.KIND));
+                TokenKind.fromValue(jwt.getClaimAsString(TokenClaims.KIND)));
         return new UsernamePasswordAuthenticationToken(principal, jwt, List.of());
       } catch (IllegalArgumentException exception) {
         // A token that verifies cryptographically but is missing or has a malformed
-        // subject/org claim cannot become an AuthPrincipal. BearerTokenAuthenticationFilter
+        // subject/org claim, or names a kind this service does not know, cannot become an
+        // AuthPrincipal. BearerTokenAuthenticationFilter
         // only catches AuthenticationException, so throwing that (rather than letting
         // IllegalArgumentException propagate) is what turns this into a 401 instead of an
         // unhandled 500.

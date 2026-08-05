@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.zarlania.api.errors.ApiException;
+import com.zarlania.api.http.CloudflareClientIpResolver;
 import java.time.Duration;
 import java.util.Map;
 import org.aspectj.lang.JoinPoint;
@@ -67,7 +68,8 @@ class ThrottleAspectTest {
                     "login", new EndpointLimits(IP_LIMIT, ACCOUNT_LIMIT),
                     "refresh", new EndpointLimits(IP_LIMIT, null)),
                 80,
-                Duration.ofDays(1)));
+                Duration.ofDays(1)),
+            new CloudflareClientIpResolver());
   }
 
   @AfterEach
@@ -159,7 +161,8 @@ class ThrottleAspectTest {
     ThrottleAspect unconfigured =
         new ThrottleAspect(
             rateLimiter,
-            new ThrottleProperties(Duration.ofMinutes(1), Map.of(), 80, Duration.ofDays(1)));
+            new ThrottleProperties(Duration.ofMinutes(1), Map.of(), 80, Duration.ofDays(1)),
+            new CloudflareClientIpResolver());
 
     assertThatThrownBy(() -> unconfigured.enforce(joinPoint, throttled("withoutAccountBucket")))
         .isInstanceOf(IllegalStateException.class)
@@ -175,7 +178,8 @@ class ThrottleAspectTest {
                 Duration.ofMinutes(1),
                 Map.of("login", new EndpointLimits(IP_LIMIT, null)),
                 80,
-                Duration.ofDays(1)));
+                Duration.ofDays(1)),
+            new CloudflareClientIpResolver());
     when(rateLimiter.tryConsume("login:" + CLIENT_IP, IP_LIMIT))
         .thenReturn(ThrottleDecision.permitted());
 

@@ -112,7 +112,7 @@ class AuthTokenServiceTest {
     when(credentialsService.passwordMatches(userId, PASSWORD)).thenReturn(true);
     when(organizationService.personalOrganizationOf(userId)).thenReturn(Optional.of(organization));
     when(refreshTokenService.startFamily(userId, orgId)).thenReturn(issued);
-    when(jwtService.mint(userId, orgId, TokenKinds.USER)).thenReturn(ACCESS_TOKEN);
+    when(jwtService.mint(userId, orgId, TokenKind.USER)).thenReturn(ACCESS_TOKEN);
 
     MintedSession session = service.login(IDENTIFIER, PASSWORD);
 
@@ -122,7 +122,8 @@ class AuthTokenServiceTest {
 
   @Test
   void refreshLetsAnInvalidRefreshTokenReachTheHandlerUnchanged() {
-    when(refreshTokenService.rotate("raw")).thenThrow(new InvalidRefreshTokenException());
+    when(refreshTokenService.rotate("raw"))
+        .thenThrow(InvalidRefreshTokenException.forRejectedToken());
 
     assertThatThrownBy(() -> service.refresh("raw"))
         .isInstanceOf(InvalidRefreshTokenException.class);
@@ -130,7 +131,8 @@ class AuthTokenServiceTest {
 
   @Test
   void refreshLetsAReusedRefreshTokenReachTheHandlerAsItsOwnType() {
-    when(refreshTokenService.rotate("raw")).thenThrow(new ReusedRefreshTokenException());
+    when(refreshTokenService.rotate("raw"))
+        .thenThrow(ReusedRefreshTokenException.forRevokedFamily(UUID.randomUUID()));
 
     assertThatThrownBy(() -> service.refresh("raw"))
         .isInstanceOf(ReusedRefreshTokenException.class);
@@ -145,7 +147,7 @@ class AuthTokenServiceTest {
     when(refreshTokenService.rotate("raw")).thenReturn(rotation);
     when(userService.findById(userId))
         .thenReturn(Optional.of(new User(userId, "person@example.com", IDENTIFIER, true)));
-    when(jwtService.mint(userId, orgId, TokenKinds.USER)).thenReturn(ACCESS_TOKEN);
+    when(jwtService.mint(userId, orgId, TokenKind.USER)).thenReturn(ACCESS_TOKEN);
 
     MintedSession session = service.refresh("raw");
 

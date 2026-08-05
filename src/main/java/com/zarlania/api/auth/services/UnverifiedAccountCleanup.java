@@ -48,11 +48,18 @@ public class UnverifiedAccountCleanup {
     }
   }
 
-  // One bad row must not abort the sweep: every other expired account still needs purging on this
-  // pass, and whichever user failed is simply picked up again on the next scheduled run. The catch
-  // is deliberately broad because the whole point is resilience against whatever Postgres or
-  // Hibernate throws, not one specific expected failure mode — there is no narrower common
-  // supertype to catch instead.
+  /**
+   * Purges one account, absorbing whatever it fails with.
+   *
+   * <p>One bad row must not abort the sweep: every other expired account still needs purging on
+   * this pass, and whichever user failed is simply picked up again on the next scheduled run. The
+   * catch is deliberately broad because the whole point is resilience against whatever Postgres or
+   * Hibernate throws, not one specific expected failure mode — there is no narrower common
+   * supertype to catch instead.
+   *
+   * @param userId the account to purge; logged, so it is the only thing about the account this
+   *     method may emit — an email or username here would put a person's details in the logs
+   */
   @SuppressFBWarnings(
       value = "CRLF_INJECTION_LOGS",
       justification =

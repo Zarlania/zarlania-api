@@ -98,7 +98,7 @@ public class RefreshTokenService {
     UUID familyId =
         refreshTokenRepository
             .findFamilyIdByTokenHash(tokenHash)
-            .orElseThrow(InvalidRefreshTokenException::new);
+            .orElseThrow(InvalidRefreshTokenException::forRejectedToken);
     // Serializes every rotate()/revokeFamilyOf() call on this family before touching a single
     // row — see acquireFamilyLock for why the row lock below is not enough on its own.
     lockFamily(familyId);
@@ -114,10 +114,10 @@ public class RefreshTokenService {
           current.getUserId(),
           familyId);
       revokeFamily(familyId, now); // reuse = theft signal
-      throw new ReusedRefreshTokenException();
+      throw ReusedRefreshTokenException.forRevokedFamily(familyId);
     }
     if (!current.isActive(now)) {
-      throw new InvalidRefreshTokenException();
+      throw InvalidRefreshTokenException.forRejectedToken();
     }
     current.markUsed(now);
     String newRaw = TokenHasher.newUrlSafeToken();
@@ -173,7 +173,7 @@ public class RefreshTokenService {
                 MessageDigest.isEqual(
                     token.getTokenHash().getBytes(StandardCharsets.UTF_8), target))
         .findFirst()
-        .orElseThrow(InvalidRefreshTokenException::new);
+        .orElseThrow(InvalidRefreshTokenException::forRejectedToken);
   }
 
   private void revokeFamily(UUID familyId, Instant now) {
