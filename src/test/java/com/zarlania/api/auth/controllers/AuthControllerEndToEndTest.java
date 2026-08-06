@@ -19,7 +19,11 @@ import org.springframework.boot.test.context.SpringBootTest;
  * RegistrationFlowTest} or {@link LoginFlowTest}, which is what keeps this class about request and
  * response rather than about behaviour.
  */
-@SpringBootTest(properties = {"zarlania.throttle.endpoints.register.limit=1000"})
+@SpringBootTest(
+    properties = {
+      "zarlania.throttle.endpoints.register.limit=1000",
+      "zarlania.throttle.endpoints.verify.limit=1000"
+    })
 class AuthControllerEndToEndTest extends EndToEndTestBase {
 
   // Every rejection here has to name the offending field, because a client cannot show a person
@@ -49,6 +53,28 @@ class AuthControllerEndToEndTest extends EndToEndTestBase {
         .perform(postJson(path, "{}"))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.code").value("validation.failed"));
+  }
+
+  // Registration caps a password at 128 characters, so nothing longer can ever be the right answer
+  // at login. Without the same cap here, a caller naming a real account makes the service parse and
+  // Argon2-hash a body of any size before it can decide anything — work no legitimate client asks
+  // for. The rejection is a validation failure, decided from the request alone, so it says nothing
+  // about whether the account exists.
+  @Test
+  void loginRejectsAPasswordLongerThanRegistrationCouldEverHaveStored() throws Exception {
+    String overlongPassword = "x".repeat(129);
+
+    mockMvc
+        .perform(
+            postJson(
+                "/auth/login",
+                """
+                {"identifier":"someone","password":"%s"}
+                """
+                    .formatted(overlongPassword)))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.code").value("validation.failed"))
+        .andExpect(jsonPath("$.errors.password").exists());
   }
 
   // GlobalExceptionHandler extends ResponseEntityExceptionHandler specifically so framework

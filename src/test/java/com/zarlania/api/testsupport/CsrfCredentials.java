@@ -53,6 +53,22 @@ public final class CsrfCredentials {
   }
 
   /**
+   * The token value the endpoint handed back, for a test that has to place it somewhere {@link
+   * #applyTo} would not — a form parameter, say.
+   */
+  public String token() {
+    return token;
+  }
+
+  /**
+   * Attaches only the cookie half of the pair. The mirror of {@link #applyHeaderTo}, for asserting
+   * that a caller holding a genuine cookie still gets nowhere without the header.
+   */
+  public MockHttpServletRequestBuilder applyCookieTo(MockHttpServletRequestBuilder request) {
+    return request.cookie(cookie);
+  }
+
+  /**
    * Attaches only the header half of the pair, leaving the caller to decide what cookie (if any)
    * travels with it. For asserting that the server compares the two rather than merely checking
    * that a header is present — {@code applyTo} cannot express that, because MockMvc's {@code

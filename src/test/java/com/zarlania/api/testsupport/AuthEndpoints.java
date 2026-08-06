@@ -6,6 +6,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.Cookie;
+import java.util.Arrays;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.http.HttpHeaders;
@@ -130,6 +131,35 @@ public final class AuthEndpoints {
     return mockMvc.perform(CsrfCredentials.fetch(mockMvc).applyTo(post("/auth/refresh")));
   }
 
+  /**
+   * {@code POST /auth/refresh} carrying an Authorization header as well, for the ordinary case of a
+   * client whose global interceptor attaches an access token that has since expired.
+   */
+  public ResultActions refreshCarryingBearerToken(String cookieValue, String accessToken)
+      throws Exception {
+    return mockMvc.perform(
+        CsrfCredentials.fetch(mockMvc)
+            .applyTo(
+                post("/auth/refresh")
+                    .cookie(new Cookie(REFRESH_COOKIE, cookieValue))
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)));
+  }
+
+  /**
+   * {@code POST /auth/refresh} carrying several cookies of the refresh cookie's name, which is what
+   * a browser sends once a same-site host has set one of its own alongside this service's.
+   */
+  public ResultActions refreshWithCookies(String... cookieValues) throws Exception {
+    return mockMvc.perform(
+        CsrfCredentials.fetch(mockMvc).applyTo(post("/auth/refresh").cookie(named(cookieValues))));
+  }
+
+  /** {@code POST /auth/logout} carrying several cookies of the refresh cookie's name. */
+  public ResultActions logoutWithCookies(String... cookieValues) throws Exception {
+    return mockMvc.perform(
+        CsrfCredentials.fetch(mockMvc).applyTo(post("/auth/logout").cookie(named(cookieValues))));
+  }
+
   /** {@code POST /auth/logout}, carrying both the refresh cookie and a fresh CSRF pair. */
   public ResultActions logout(String cookieValue) throws Exception {
     return mockMvc.perform(
@@ -146,6 +176,12 @@ public final class AuthEndpoints {
   public ResultActions me(String accessToken) throws Exception {
     return mockMvc.perform(
         get("/users/me").header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken));
+  }
+
+  private static Cookie[] named(String... values) {
+    return Arrays.stream(values)
+        .map(value -> new Cookie(REFRESH_COOKIE, value))
+        .toArray(Cookie[]::new);
   }
 
   private static MockHttpServletRequestBuilder json(

@@ -12,6 +12,7 @@ import com.zarlania.api.testsupport.FlowTestBase;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
 
 /**
@@ -26,10 +27,17 @@ import org.springframework.test.web.servlet.MvcResult;
  * <p>Tokens are obtained through the real {@code GET /auth/csrf} rather than Spring Security's
  * {@code csrf()} post-processor, so what is exercised is the contract a client has to implement.
  */
-@SpringBootTest(properties = {"zarlania.throttle.endpoints.register.limit=1000"})
+@SpringBootTest(
+    properties = {
+      "zarlania.throttle.endpoints.register.limit=1000",
+      "zarlania.throttle.endpoints.verify.limit=1000"
+    })
 class CsrfEndToEndTest extends FlowTestBase {
 
   private static final String CSRF_COOKIE = "XSRF-TOKEN";
+  // CsrfTokenRequestAttributeHandler's default parameter name — the one Spring would accept
+  // alongside the header, and the one HeaderOnlyCsrfTokenRequestHandler exists to ignore.
+  private static final String CSRF_PARAMETER = "_csrf";
 
   @Test
   void refreshWithoutACsrfTokenIsRejectedEvenWithAValidRefreshCookie() throws Exception {
@@ -62,6 +70,32 @@ class CsrfEndToEndTest extends FlowTestBase {
                     post("/auth/refresh").cookie(new Cookie(AuthEndpoints.REFRESH_COOKIE, cookie)))
                 .cookie(new Cookie(CSRF_COOKIE, "not-the-token-that-was-issued")))
         .andExpect(status().isForbidden());
+  }
+
+  // Spring's stock handlers accept the token from a _csrf request parameter as well as the header,
+  // which would undo the whole defence here. A page on any other host under the registrable domain
+  // is same-site, so SameSite=Strict still lets it send the refresh cookie; it can also set a
+  // Domain=zarlania.com XSRF-TOKEN cookie of its own choosing and then POST a plain form carrying
+  // the matching _csrf field, needing no preflight and never reading the HttpOnly cookie. The
+  // header is the half a form cannot produce, so it has to be the only half accepted.
+  @Test
+  void refreshWithTheTokenInAFormParameterInsteadOfTheHeaderIsRejected() throws Exception {
+    registerAndVerify("olive@example.com", "olive");
+    MvcResult login = auth.login("olive", PASSWORD).andExpect(status().isOk()).andReturn();
+    String cookie = refreshCookieOf(login);
+    CsrfCredentials csrf = CsrfCredentials.fetch(mockMvc);
+
+    mockMvc
+        .perform(
+            csrf.applyCookieTo(post("/auth/refresh"))
+                .cookie(new Cookie(AuthEndpoints.REFRESH_COOKIE, cookie))
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param(CSRF_PARAMETER, csrf.token()))
+        .andExpect(status().isForbidden());
+
+    // The session itself survives the rejection: a forgery attempt must not cost the real owner
+    // their refresh cookie.
+    auth.refresh(cookie).andExpect(status().isOk());
   }
 
   @Test

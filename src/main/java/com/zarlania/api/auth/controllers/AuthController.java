@@ -13,16 +13,20 @@ import com.zarlania.api.auth.services.AuthTokenService;
 import com.zarlania.api.auth.services.RegistrationService;
 import com.zarlania.api.errors.ApiException;
 import com.zarlania.api.throttle.Throttled;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.web.csrf.CsrfToken;
-import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,10 +37,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * The public entry points to registration, email verification and session issuance.
  *
- * <p>Every route here is reachable without a token — nothing has one yet — so all but {@code
- * /verify} and {@code /logout} are rate limited. The limits are declared with {@link Throttled} and
- * applied by {@code ThrottleAspect}; none of the methods below contains throttling code, and the
- * limits themselves live in {@code zarlania.throttle.endpoints}.
+ * <p>Every route here is reachable without a token — nothing has one yet — so every one of them is
+ * rate limited. The limits are declared with {@link Throttled} and applied by {@code
+ * ThrottleAspect}; none of the methods below contains throttling code, and the limits themselves
+ * live in {@code zarlania.throttle.endpoints}.
  */
 @RestController
 @RequestMapping("/auth")
@@ -45,6 +49,7 @@ public class AuthController {
 
   private static final String INVALID_TOKEN_MESSAGE = "Invalid or expired verification token";
   private static final String NO_REFRESH_TOKEN_MESSAGE = "No refresh token";
+  private static final String AMBIGUOUS_REFRESH_TOKEN_MESSAGE = "Ambiguous refresh token";
 
   private static final String REFRESH_COOKIE = "zarlania_refresh";
   private static final String REFRESH_COOKIE_PATH = "/auth";
@@ -102,6 +107,7 @@ public class AuthController {
    *     or already consumed — the three are indistinguishable to the caller on purpose
    */
   @PostMapping("/verify")
+  @Throttled(endpoint = "verify")
   public void verify(@Valid @RequestBody VerifyRequest request) {
     if (!registrationService.verify(request.token())) {
       throw new ApiException(AuthErrorCode.INVALID_TOKEN, INVALID_TOKEN_MESSAGE);
@@ -143,19 +149,26 @@ public class AuthController {
    * why it is one of the two routes {@code SecurityConfig} guards with a CSRF token.
    *
    * @throws ApiException with {@link AuthErrorCode#INVALID_CREDENTIALS} if no cookie was sent at
-   *     all — the one failure this method decides for itself, since a missing cookie is an HTTP
-   *     fact rather than anything the service could be asked about. A cookie that is expired,
-   *     revoked or already redeemed is refused by {@code AuthTokenService} and answered with the
-   *     same code by {@link AuthExceptionHandler}, so the client cannot tell the cases apart.
+   *     all, or if more than one arrived under that name — both are HTTP facts this method can
+   *     judge for itself rather than anything the service could be asked about. Refusing the
+   *     duplicate case is what stops session fixation by cookie tossing: a compromised host under
+   *     the registrable domain can set a {@code Domain=zarlania.com} cookie of the same name, the
+   *     browser then sends both without the domain or path that would tell them apart, and silently
+   *     picking one hands the caller a session it did not choose. A cookie that is expired, revoked
+   *     or already redeemed is refused by {@code AuthTokenService} and answered with the same code
+   *     by {@link AuthExceptionHandler}, so the client cannot tell those apart.
    */
   @PostMapping("/refresh")
   @Throttled(endpoint = "refresh")
-  public ResponseEntity<TokenResponse> refresh(
-      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
-    if (cookie == null) {
+  public ResponseEntity<TokenResponse> refresh(HttpServletRequest request) {
+    List<String> cookies = refreshCookies(request);
+    if (cookies.isEmpty()) {
       throw new ApiException(AuthErrorCode.INVALID_CREDENTIALS, NO_REFRESH_TOKEN_MESSAGE);
     }
-    return withSession(authTokenService.refresh(cookie));
+    if (cookies.size() > 1) {
+      throw new ApiException(AuthErrorCode.INVALID_CREDENTIALS, AMBIGUOUS_REFRESH_TOKEN_MESSAGE);
+    }
+    return withSession(authTokenService.refresh(cookies.getFirst()));
   }
 
   /**
@@ -163,16 +176,54 @@ public class AuthController {
    *
    * <p>Answers 204 whether or not a cookie was sent: a client asking to be logged out is told it is
    * logged out, and a missing or unknown cookie means it already was.
+   *
+   * <p>Every cookie under the name is revoked, not just the first. {@link #refresh} refuses a
+   * request carrying duplicates because it cannot know which session the caller meant; logout has
+   * no such ambiguity — the caller wants out of all of them, and revoking each is the only answer
+   * that leaves no live family behind when a same-site host has tossed a cookie of its own in.
    */
   @PostMapping("/logout")
-  public ResponseEntity<Void> logout(
-      @CookieValue(name = REFRESH_COOKIE, required = false) String cookie) {
-    if (cookie != null) {
-      authTokenService.logout(cookie);
-    }
+  @Throttled(endpoint = "logout")
+  public ResponseEntity<Void> logout(HttpServletRequest request) {
+    refreshCookies(request).forEach(authTokenService::logout);
     return ResponseEntity.noContent()
         .header(HttpHeaders.SET_COOKIE, clearedRefreshCookie().toString())
         .build();
+  }
+
+  /**
+   * Every value the request carries under {@link #REFRESH_COOKIE}, in the order the browser sent
+   * them.
+   *
+   * <p>Read off the raw request rather than through {@code @CookieValue}, which yields a single
+   * value and so cannot tell one cookie from two of the same name — the distinction {@link
+   * #refresh} turns on.
+   */
+  @SuppressFBWarnings(
+      value = "COOKIE_USAGE",
+      justification =
+          "The detector flags sensitive data held in a cookie; this method only reads the"
+              + " refresh cookie the service itself issued, and that cookie carries a random"
+              + " token whose SHA-256 hash is what the database stores — never a credential or"
+              + " anything about the person. It is written with HttpOnly, Secure and"
+              + " SameSite=Strict by buildRefreshCookie below. Reading through getCookies()"
+              + " rather than @CookieValue is deliberate and is the point of the method: a"
+              + " request carrying two cookies of this name has to be distinguishable from one"
+              + " carrying a single cookie, which the single-valued binding cannot express.")
+  private static List<String> refreshCookies(HttpServletRequest request) {
+    Cookie[] cookies = request.getCookies();
+    if (cookies == null) {
+      return List.of();
+    }
+    // Filtered with a loop rather than a stream: SpotBugs attributes a lambda body to a synthetic
+    // method, which the suppression on this one does not reach.
+    List<String> values = new ArrayList<>();
+    for (Cookie cookie : cookies) {
+      if (REFRESH_COOKIE.equals(cookie.getName())) {
+        values.add(cookie.getValue());
+      }
+    }
+    return List.copyOf(values);
   }
 
   private ResponseEntity<TokenResponse> withSession(MintedSession session) {

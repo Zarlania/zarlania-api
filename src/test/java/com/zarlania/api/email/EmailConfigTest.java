@@ -24,6 +24,9 @@ class EmailConfigTest {
   private static final String BASE_URL = "https://api.resend.com";
   private static final String API_KEY = "re_test_key";
   private static final int BUDGET_LIMIT = 80;
+  private static final Duration TIMEOUT = Duration.ofSeconds(5);
+  private static final int DISPATCH_THREADS = 1;
+  private static final int DISPATCH_QUEUE_CAPACITY = 200;
 
   @Test
   void whicheverAdapterIsChosenIsWrappedInTheServiceWideBudget() {
@@ -33,9 +36,7 @@ class EmailConfigTest {
     EmailSender sender =
         new EmailConfig()
             .emailSender(
-                API_KEY,
-                FROM_ADDRESS,
-                BASE_URL,
+                emailProperties(),
                 new MockEnvironment(),
                 new InMemoryRateLimiter(properties, Clock.systemUTC(), new SimpleMeterRegistry()),
                 properties);
@@ -47,12 +48,24 @@ class EmailConfigTest {
   // outage into an out-of-memory kill on an instance with a few hundred MB to spend.
   @Test
   void theDispatchPoolIsBoundedSoAProviderOutageCannotExhaustMemory() {
-    var executor = new EmailConfig().emailDispatchExecutor(1, 200);
+    var executor = new EmailConfig().emailDispatchExecutor(emailProperties());
     executor.afterPropertiesSet();
 
-    assertThat(executor.getThreadPoolExecutor().getQueue().remainingCapacity()).isEqualTo(200);
-    assertThat(executor.getCorePoolSize()).isEqualTo(1);
+    assertThat(executor.getThreadPoolExecutor().getQueue().remainingCapacity())
+        .isEqualTo(DISPATCH_QUEUE_CAPACITY);
+    assertThat(executor.getCorePoolSize()).isEqualTo(DISPATCH_THREADS);
 
     executor.shutdown();
+  }
+
+  private static EmailProperties emailProperties() {
+    return new EmailProperties(
+        FROM_ADDRESS,
+        API_KEY,
+        BASE_URL,
+        TIMEOUT,
+        TIMEOUT,
+        DISPATCH_THREADS,
+        DISPATCH_QUEUE_CAPACITY);
   }
 }

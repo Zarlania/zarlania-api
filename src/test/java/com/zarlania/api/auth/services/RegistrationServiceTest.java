@@ -19,6 +19,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -227,5 +229,91 @@ class RegistrationServiceTest {
     ArgumentCaptor<Object> published = ArgumentCaptor.forClass(Object.class);
     verify(events).publishEvent(published.capture());
     assertThat(published.getValue()).isInstanceOf(VerificationEmailRequested.class);
+  }
+
+  // users.email is citext, so the lookup matches whatever spelling the caller typed — but an SMTP
+  // local part may be case-sensitive, so the two spellings can be two different mailboxes. Mailing
+  // the caller's would let anyone ask for VICTIM@example.com and have a live verification token for
+  // the victim's account delivered somewhere the victim does not read.
+  @ParameterizedTest(name = "{0} is mailed as the address on record")
+  @ValueSource(strings = {"PERSON@example.com", "Person@Example.COM"})
+  void resendMailsTheAddressOnRecordRatherThanTheSpellingTheCallerTyped(String typedByCaller) {
+    UUID userId = UUID.randomUUID();
+    when(userService.findByIdentifier(typedByCaller))
+        .thenReturn(Optional.of(new User(userId, EMAIL, USERNAME, false)));
+    when(emailVerificationService.issue(userId)).thenReturn("fresh-token");
+
+    service.resend(typedByCaller);
+
+    ArgumentCaptor<VerificationEmailRequested> published =
+        ArgumentCaptor.forClass(VerificationEmailRequested.class);
+    verify(events).publishEvent(published.capture());
+    assertThat(published.getValue().email()).isEqualTo(EMAIL);
+  }
+
+  // Same reasoning on the registration side, where the address travels with the duplicate-attempt
+  // notice instead of a verification token.
+  @Test
+  void registeringAgainstAnExistingAccountMailsTheAddressOnRecordNotTheSpellingTyped() {
+    String typedByCaller = "PERSON@example.com";
+    when(userService.usernameExists(USERNAME)).thenReturn(false);
+    when(userService.emailExists(typedByCaller)).thenReturn(true);
+    when(userService.findByIdentifier(typedByCaller))
+        .thenReturn(Optional.of(new User(UUID.randomUUID(), EMAIL, USERNAME, true)));
+
+    service.register(typedByCaller, USERNAME, PASSWORD);
+
+    ArgumentCaptor<DuplicateRegistrationAttempted> published =
+        ArgumentCaptor.forClass(DuplicateRegistrationAttempted.class);
+    verify(events).publishEvent(published.capture());
+    assertThat(published.getValue().email()).isEqualTo(EMAIL);
+  }
+
+  // The hourly unverified-account sweep can delete the account between emailExists saying yes and
+  // this second lookup running. Dereferencing the empty Optional was a 500 on a path documented to
+  // answer 202 for every input, which would have made the race an enumeration signal in itself.
+  @Test
+  void registeringAgainstAnAccountPurgedMidRequestEndsQuietlyRatherThanFailing() {
+    when(userService.usernameExists(USERNAME)).thenReturn(false);
+    when(userService.emailExists(EMAIL)).thenReturn(true);
+    when(userService.findByIdentifier(EMAIL)).thenReturn(Optional.empty());
+
+    service.register(EMAIL, USERNAME, PASSWORD);
+
+    verify(credentialsService).hashDecoyPassword();
+    verifyNoInteractions(accountCreator, emailVerificationService, events);
+  }
+
+  // The same sweep, one step later: the account survived the lookup and was gone by the time the
+  // token insert ran, so email_verification_tokens' foreign key rejected it. Nobody is left to
+  // email and the caller's answer does not depend on it, so the request completes.
+  @Test
+  void resendForAnAccountPurgedBeforeTheTokenInsertEndsQuietlyRatherThanFailing() {
+    UUID userId = UUID.randomUUID();
+    when(userService.findByIdentifier(EMAIL))
+        .thenReturn(Optional.of(new User(userId, EMAIL, USERNAME, false)));
+    when(emailVerificationService.issue(userId))
+        .thenThrow(new DataIntegrityViolationException("email_verification_tokens_user_id_fkey"));
+    when(userService.findById(userId)).thenReturn(Optional.empty());
+
+    service.resend(EMAIL);
+
+    verifyNoInteractions(events);
+  }
+
+  // But only when the account really is gone. An integrity violation with the user still present is
+  // some other rule breaking, and swallowing it would answer 202 to a resend that never happened.
+  @Test
+  void resendRethrowsAnIntegrityViolationWhenTheAccountIsStillThere() {
+    UUID userId = UUID.randomUUID();
+    DataIntegrityViolationException cause = new DataIntegrityViolationException("some_other_check");
+    User user = new User(userId, EMAIL, USERNAME, false);
+    when(userService.findByIdentifier(EMAIL)).thenReturn(Optional.of(user));
+    when(emailVerificationService.issue(userId)).thenThrow(cause);
+    when(userService.findById(userId)).thenReturn(Optional.of(user));
+
+    assertThatThrownBy(() -> service.resend(EMAIL)).isSameAs(cause);
+
+    verifyNoInteractions(events);
   }
 }

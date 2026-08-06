@@ -18,7 +18,11 @@ import org.springframework.test.web.servlet.MvcResult;
  * with one account could not tell a correct implementation from one that returns the first row it
  * finds.
  */
-@SpringBootTest(properties = {"zarlania.throttle.endpoints.register.limit=1000"})
+@SpringBootTest(
+    properties = {
+      "zarlania.throttle.endpoints.register.limit=1000",
+      "zarlania.throttle.endpoints.verify.limit=1000"
+    })
 class UserControllerEndToEndTest extends FlowTestBase {
 
   @Test

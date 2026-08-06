@@ -36,14 +36,16 @@ import org.springframework.test.web.servlet.MvcResult;
  * <p>Every test seeds its own account under a unique slug. The container and the rate limiter are
  * shared for the run, so nothing here may assume an empty database or an untouched bucket.
  */
-// Both raised limits are about setup, not about what this class asserts: every test method
-// registers, verifies and logs in its own account under one shared InMemoryRateLimiter, which is
-// more calls than 5 registrations and 10 logins per account a minute allow. The throttle itself is
-// covered by ClientIpThrottleEndToEndTest and AccountThrottleEndToEndTest against real limits.
+// Every raised limit is about setup, not about what this class asserts: each test method registers,
+// verifies and logs in its own account under one shared InMemoryRateLimiter and one client address,
+// which is far more calls than the real per-minute caps allow. The throttle itself is covered by
+// ClientIpThrottleEndToEndTest and AccountThrottleEndToEndTest against real limits.
 @SpringBootTest(
     properties = {
       "zarlania.throttle.endpoints.register.limit=1000",
-      "zarlania.throttle.endpoints.login.account-limit=1000"
+      "zarlania.throttle.endpoints.login.limit=1000",
+      "zarlania.throttle.endpoints.login.account-limit=1000",
+      "zarlania.throttle.endpoints.verify.limit=1000"
     })
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
 class LoginFlowTest extends FlowTestBase {
@@ -160,6 +162,56 @@ class LoginFlowTest extends FlowTestBase {
     auth.refresh(newCookie)
         .andExpect(status().isUnauthorized())
         .andExpect(jsonPath("$.code").value("auth.invalid-credentials"));
+  }
+
+  // The recovery path a browser client actually walks. One global Authorization interceptor puts
+  // the access token on every request, so the moment it expires, refresh arrives carrying a dead
+  // bearer token alongside a perfectly good refresh cookie. permitAll does not stop the
+  // resource-server filter from failing that header, so without SecurityConfig's public-path-blind
+  // token resolver the client could never refresh once its token went stale — the one situation
+  // refresh exists for.
+  @Test
+  void refreshSucceedsWhileCarryingAStaleAccessTokenInTheAuthorizationHeader() throws Exception {
+    registerAndVerify("mabel@example.com", "mabel");
+    MvcResult login = auth.login("mabel", PASSWORD).andExpect(status().isOk()).andReturn();
+
+    auth.refreshCarryingBearerToken(refreshCookieOf(login), "expired.or.malformed")
+        .andExpect(status().isOk());
+  }
+
+  // Cookie tossing: a compromised host under the registrable domain can set a Domain=zarlania.com
+  // cookie of this same name, and the browser then sends both with nothing to tell them apart. The
+  // request has to be refused rather than resolved by picking one, because picking the attacker's
+  // hands the caller a session someone else chose.
+  @Test
+  void refreshCarryingTwoCookiesOfTheSameNameIsRefusedRatherThanPickingOne() throws Exception {
+    registerAndVerify("nadia@example.com", "nadia");
+    MvcResult login = auth.login("nadia", PASSWORD).andExpect(status().isOk()).andReturn();
+    String cookie = refreshCookieOf(login);
+
+    auth.refreshWithCookies(cookie, "a-cookie-somebody-else-set")
+        .andExpect(status().isUnauthorized())
+        .andExpect(jsonPath("$.code").value("auth.invalid-credentials"));
+
+    // And the refusal costs the real owner nothing: their own cookie still works on its own.
+    auth.refresh(cookie).andExpect(status().isOk());
+  }
+
+  // Logout resolves the same ambiguity the other way, and must: the caller wants out of every
+  // session the request presents, and revoking only the first would leave a live family behind
+  // precisely when something has gone wrong enough to produce two.
+  @Test
+  void logoutRevokesEveryRefreshCookieTheRequestCarriesNotJustTheFirst() throws Exception {
+    registerAndVerify("otto@example.com", "otto");
+    String first =
+        refreshCookieOf(auth.login("otto", PASSWORD).andExpect(status().isOk()).andReturn());
+    String second =
+        refreshCookieOf(auth.login("otto", PASSWORD).andExpect(status().isOk()).andReturn());
+
+    auth.logoutWithCookies(first, second).andExpect(status().isNoContent());
+
+    auth.refresh(first).andExpect(status().isUnauthorized());
+    auth.refresh(second).andExpect(status().isUnauthorized());
   }
 
   @Test

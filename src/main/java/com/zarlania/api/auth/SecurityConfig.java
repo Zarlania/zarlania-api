@@ -5,6 +5,7 @@ import com.zarlania.api.auth.services.JwtKeys;
 import com.zarlania.api.auth.services.TokenClaims;
 import com.zarlania.api.auth.services.TokenKind;
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -27,10 +29,13 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -51,6 +56,13 @@ public class SecurityConfig {
   private static final String[] PUBLIC_PATHS = {
     "/auth/**", "/.well-known/jwks.json", "/actuator/health"
   };
+
+  private static final RequestMatcher PUBLIC_PATH_MATCHER =
+      new OrRequestMatcher(
+          Arrays.stream(PUBLIC_PATHS)
+              .map(PathPatternRequestMatcher::pathPattern)
+              .map(RequestMatcher.class::cast)
+              .toList());
 
   // The only two routes on this service that authenticate with a cookie instead of a bearer
   // token, and therefore the only two with a CSRF surface at all. See configureCsrf.
@@ -75,6 +87,11 @@ public class SecurityConfig {
 
   private static final List<String> CORS_ALLOWED_HEADERS =
       List.of("Authorization", "Content-Type", CSRF_HEADER);
+  // setAllowedHeaders above governs what the browser may *send*; this governs what script may
+  // *read* off the response. Retry-After is not one of the seven CORS-safelisted response headers,
+  // so without it a cross-origin 429 from ThrottleAspect reaches the client with the header
+  // stripped and the documented back-off contract becomes unimplementable.
+  private static final List<String> CORS_EXPOSED_HEADERS = List.of(HttpHeaders.RETRY_AFTER);
 
   private final JwtKeys jwtKeys;
   private final AuthProperties authProperties;
@@ -101,7 +118,10 @@ public class SecurityConfig {
         .cors(Customizer.withDefaults())
         .authorizeHttpRequests(
             auth -> auth.requestMatchers(PUBLIC_PATHS).permitAll().anyRequest().authenticated())
-        .oauth2ResourceServer(o -> o.jwt(jwt -> jwt.jwtAuthenticationConverter(authConverter())));
+        .oauth2ResourceServer(
+            o ->
+                o.bearerTokenResolver(publicPathBlindBearerTokenResolver())
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(authConverter())));
     return http.build();
   }
 
@@ -135,6 +155,7 @@ public class SecurityConfig {
     configuration.setAllowedOrigins(splitAndTrim(allowedOrigins));
     configuration.setAllowedMethods(CORS_ALLOWED_METHODS);
     configuration.setAllowedHeaders(CORS_ALLOWED_HEADERS);
+    configuration.setExposedHeaders(CORS_EXPOSED_HEADERS);
     // The refresh cookie only reaches the browser if the response can carry
     // Set-Cookie back through CORS, which requires allowCredentials. This is safe only
     // because the origin list above is an explicit allow-list, never a wildcard — Spring
@@ -160,9 +181,13 @@ public class SecurityConfig {
    * allow-list is explicit rather than a wildcard. This closes what those leave open — a same-site-
    * but-untrusted origin (any other host under the registrable domain), and browsers or extensions
    * where SameSite is not honoured as advertised.
+   *
+   * <p>The token is read from the header only — see {@link HeaderOnlyCsrfTokenRequestHandler},
+   * without which that same-site origin could satisfy the check with a plain HTML form.
    */
   private void configureCsrf(CsrfConfigurer<HttpSecurity> csrf) {
     csrf.csrfTokenRepository(csrfTokenRepository())
+        .csrfTokenRequestHandler(new HeaderOnlyCsrfTokenRequestHandler())
         .requireCsrfProtectionMatcher(
             new OrRequestMatcher(
                 PathPatternRequestMatcher.pathPattern(HttpMethod.POST, REFRESH_PATH),
@@ -187,6 +212,28 @@ public class SecurityConfig {
     repository.setCookieCustomizer(
         cookie -> cookie.secure(authProperties.cookieSecure()).sameSite(SAME_SITE_STRICT));
     return repository;
+  }
+
+  /**
+   * Reads a bearer token everywhere except {@link #PUBLIC_PATHS}, where it reports none at all.
+   *
+   * <p>{@code permitAll} exempts a path from the authorization check, not from the filters ahead of
+   * it: {@code BearerTokenAuthenticationFilter} still runs, and an Authorization header that is
+   * expired, malformed, or signed by anyone else fails there — a 401 the handler never sees.
+   * Refresh is where that bites. A browser client with one Authorization interceptor attaches its
+   * access token to every call, so the moment that token expires, {@code POST /auth/refresh} — the
+   * request whose whole purpose is to recover from exactly that — is refused for carrying it, even
+   * though it holds a valid refresh cookie and a matching CSRF token. Returning null here makes the
+   * filter skip the request entirely rather than fail it.
+   *
+   * <p>A <em>valid</em> token on these paths is discarded too, and that is intended: no public
+   * route reads the security context, so there is nothing for an identity to change. The delegate
+   * is consulted only off the public paths, because it is what rejects a malformed header, and on a
+   * public path that rejection is the failure being removed.
+   */
+  private static BearerTokenResolver publicPathBlindBearerTokenResolver() {
+    BearerTokenResolver delegate = new DefaultBearerTokenResolver();
+    return request -> PUBLIC_PATH_MATCHER.matches(request) ? null : delegate.resolve(request);
   }
 
   private static List<String> splitAndTrim(String commaSeparatedValues) {

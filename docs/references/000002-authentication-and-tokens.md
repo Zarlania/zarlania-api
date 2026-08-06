@@ -9,7 +9,7 @@ tags:
 - http
 - security
 created: '2026-07-27'
-updated: '2026-08-05'
+updated: '2026-08-06'
 related:
 - '000001'
 - '000003'
@@ -25,7 +25,7 @@ related:
 | Description | How registration, email verification, login, JWT access tokens, refresh-token families, and the abuse defenses around them work end to end. |
 | Tags | architecture, configuration, http, security |
 | Created | 2026-07-27 |
-| Updated | 2026-08-05 |
+| Updated | 2026-08-06 |
 | Related | [000001](000001-persistence-foundation.md), [000003](000003-outbound-email.md) |
 <!-- reference-table:end -->
 
@@ -107,6 +107,14 @@ directly.
    becomes the personal organization's name, so it has to stay
    URL/display-safe); password 12–128 chars with no composition rules —
    length beats forced symbol/case requirements per current NIST guidance.
+   `POST /auth/login` caps the password at that same 128 characters, so a
+   caller naming a real account cannot make the service Argon2-hash a body no
+   registration could ever have stored. It deliberately does **not** repeat the
+   12-character minimum: rejecting a short password before comparing it would
+   answer a question about the account rather than about the request. The
+   ceiling is written out in both `RegisterRequest` and `LoginRequest`, since an
+   annotation value has to be a compile-time constant — lowering one without the
+   other locks existing accounts out.
 2. **One transaction:** `AccountCreator.createAccount` creates the
    unverified `UserEntity`, its `PasswordCredentialEntity`, the personal
    `OrganizationEntity`, the owning `MembershipEntity` and the verification
@@ -245,6 +253,21 @@ key's RFC 7638 thumbprint. Deliberately minimal: display data comes from
 `GET /users/me`, not the token, and a roles/permissions claim is out of
 scope for now.
 
+On the public paths — `/auth/**`, `/.well-known/jwks.json` and
+`/actuator/health` — the `Authorization` header is not read at all.
+`permitAll` exempts a path from the authorization check, not from the filters
+ahead of it: `BearerTokenAuthenticationFilter` still runs, and a header that
+is expired, malformed, or signed by anyone else fails there, producing a `401`
+no handler ever sees. `POST /auth/refresh` is where that bites. A browser
+client with one global `Authorization` interceptor attaches its access token to
+every call, so the moment that token expires, the request whose whole purpose
+is to recover from that expiry would be refused for carrying it — valid refresh
+cookie and matching CSRF token included. `SecurityConfig` therefore gives the
+resource server a `BearerTokenResolver` that returns `null` on those paths, so
+the filter skips the request instead of failing it. A *valid* token on a public
+path is discarded too, which costs nothing: no public route reads the security
+context.
+
 `TokenKind` carries each kind's wire string explicitly instead of deriving it
 from `name()`, because the claim value is published contract — renaming a
 constant here must not be able to change what appears in a token. On the way in,
@@ -318,6 +341,23 @@ disabled](#csrf-protection-is-scoped-not-disabled) for the client contract.
 Logout builds its cleared cookie through the exact same `buildRefreshCookie`
 helper the live cookie uses, varying only the value and `Max-Age` — so the
 two can never drift apart on `HttpOnly`/`Secure`/`SameSite`/`Path`.
+
+**Two cookies of the same name is a refusal, not a coin toss.** Any other host
+under the registrable domain — anything at `*.zarlania.com` — can set a cookie
+named `zarlania_refresh` with `Domain=zarlania.com`, which the browser then
+sends alongside this service's own, stripped of the domain and path that would
+tell the two apart. That is cookie tossing, and it arrives on the legitimate
+client's own request. `POST /auth/refresh` therefore reads every cookie under
+the name off the raw request rather than through `@CookieValue`, which is
+single-valued and so cannot see the difference, and refuses the request with
+`auth.invalid-credentials` when more than one arrives: silently picking one is
+how a caller ends up holding a session somebody else chose. `POST /auth/logout`
+resolves the same ambiguity the other way and revokes *every* family presented,
+because the caller wants out of all of them and revoking only the first would
+leave one live precisely when something has gone wrong enough to produce two.
+The same trick aimed at the `XSRF-TOKEN` cookie is why the CSRF token is read
+from a header only — see [CSRF protection is scoped, not
+disabled](#csrf-protection-is-scoped-not-disabled).
 
 ## Password hashing
 
@@ -452,8 +492,33 @@ an annotation plus a configuration entry and never a change to
 | `register` | 5/min | 3/min |
 | `login` | 10/min | 10/min |
 | `resend` | 3/min | 3/min |
+| `verify` | 10/min | — (the token *is* the request) |
 | `refresh` | 30/min | — (names no account) |
+| `logout` | 60/min | — (names no account) |
 | `csrf` | 60/min | — (names no account) |
+
+Every `/auth` route carries a limit, including the four that name no account.
+`verify` and `logout` need one precisely because neither demands a credential
+the caller cannot mint for itself: without a limit, `verify` lets an
+unauthenticated caller guess verification tokens at a token-table lookup each,
+and `logout` lets one CSRF pair be reused against any number of invented refresh
+cookies, a refresh-token lookup each. CSRF authenticates neither request and
+imposes no request limit of its own.
+
+`refresh` stays per-IP only at 30/min. It carries an opaque 256-bit cookie
+rather than an identifier, so there is no account to key on and nothing to
+brute force; the limit is a flood cap. A client needs roughly 4 refreshes
+an hour (the 15-minute access TTL), so 30/min still covers several hundred
+users sharing one NAT or CGNAT address.
+
+`logout` and `csrf` sit above `refresh` for the same kind of reason: neither may
+be what refuses a legitimate client. A client may log out on every tab it has
+open, and being throttled out of logging out is the one refusal that leaves a
+session alive against the user's wishes. A client has to fetch a CSRF token
+before it can refresh at all, so that limit must never be what refuses a
+legitimate refresh. `csrf` protects nothing expensive in any case — no database
+work, no hashing, just a random token — so its limit is there for uniformity
+across the public `/auth` routes.
 
 A caller over either limit gets `429` with code `auth.throttled`, carrying a
 `Retry-After` header. The limiter returns the remaining window alongside the
@@ -462,6 +527,12 @@ describes the window that actually rejected the request. The value is whole
 seconds per RFC 9110 §10.2.3, rounded up and never below one, so a client that
 obeys it to the letter arrives after the window has genuinely refilled instead
 of retrying into a second rejection.
+
+`Retry-After` is not one of the CORS-safelisted response headers, so
+`SecurityConfig`'s CORS configuration names it in `setExposedHeaders`. Without
+that, the browser client receives the `429` with the header stripped and cannot
+implement the back-off above. `setAllowedHeaders` does not cover it: that
+governs what a request may *send*, not what script may *read* off a response.
 
 Splitting a limit across an annotation and a configuration entry means either
 half can go missing without anything failing until a request arrives, so
@@ -484,18 +555,6 @@ Two things the per-account limit is deliberately **not**:
 - It is not an **enumeration channel**. The bucket exists for whatever
   string the caller supplied, whether or not an account matches it, so a
   `429` says an identifier has been tried a lot — never that it is real.
-
-`refresh` stays per-IP only at 30/min. It carries an opaque 256-bit cookie
-rather than an identifier, so there is no account to key on and nothing to
-brute force; the limit is a flood cap. A client needs roughly 4 refreshes
-an hour (the 15-minute access TTL), so 30/min still covers several hundred
-users sharing one NAT or CGNAT address.
-
-`csrf` sits above `refresh` on purpose. A client has to fetch a token before
-it can refresh at all, so this limit must never be what refuses a legitimate
-refresh. The endpoint does no database work and no hashing — it returns a
-random token — so the limit is there for uniformity across public `/auth`
-routes rather than to protect anything expensive.
 
 The client IP comes from the `ClientIpResolver` port, whose one implementation
 `CloudflareClientIpResolver` reads `CF-Connecting-IP` — not `X-Forwarded-For`,
@@ -741,9 +800,10 @@ Everything else is exempt because there is nothing there to forge. Every
 endpoint but `/auth/**`, `/.well-known/jwks.json` and `/actuator/health`
 authenticates with an `Authorization: Bearer` header, which a browser never
 attaches on its own — a forged cross-site request arrives with no credential
-at all. The remaining `/auth` routes (`register`, `verify`, `resend`,
-`login`) authenticate with what is in the request body, so forging one gains
-nothing either. CSRF defends the *ambient*-credential case, and those two
+at all. The remaining `/auth` routes authenticate with what is in the
+request body (`register`, `verify`, `resend`, `login`), so forging one gains
+nothing either; `GET /auth/csrf` is a safe method and carries no credential to
+begin with. CSRF defends the *ambient*-credential case, and those two
 routes are the only ones this service has: both read the `zarlania_refresh`
 cookie, which the browser does attach automatically.
 
@@ -751,6 +811,19 @@ The check is a double submit. `CookieCsrfTokenRepository` puts the token in
 an `XSRF-TOKEN` cookie and requires the same value back in an `X-XSRF-TOKEN`
 header; an attacker's page can make the browser send the cookie but cannot
 read it to build the header.
+
+The header is the *only* place the token is read from.
+`HeaderOnlyCsrfTokenRequestHandler` replaces Spring's stock handler, which also
+accepts the token from a `_csrf` request parameter — right for a server-rendered
+form, and a fallback that would undo the whole defense here. The threat this
+section exists for is a compromised host under the registrable domain, which is
+*same-site*, so `SameSite=Strict` still lets it send the refresh cookie. That
+page can toss an `XSRF-TOKEN` cookie of its own choosing — [cookie
+tossing](#refresh-cookie) again — before the client has ever called
+`GET /auth/csrf`, then POST a plain HTML form carrying a matching `_csrf` field:
+no preflight, no reading of the `HttpOnly` cookie, and the two values match. A
+header is the half a form cannot produce, and anything that can set one is doing
+so from script, where CORS applies and the allow-list names one origin.
 
 Where this departs from the usual single-page-app recipe is that the cookie
 stays `HttpOnly`. That recipe has the client read the cookie with

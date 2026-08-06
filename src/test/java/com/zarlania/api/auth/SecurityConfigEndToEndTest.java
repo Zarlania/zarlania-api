@@ -2,6 +2,7 @@ package com.zarlania.api.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -26,6 +27,8 @@ import java.util.Date;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -41,6 +44,8 @@ class SecurityConfigEndToEndTest extends EndToEndTestBase {
 
   private static final String BEARER_PREFIX = "Bearer ";
   private static final Duration HAND_MINTED_TOKEN_TTL = Duration.ofMinutes(15);
+  // application.yml's default for zarlania.cors.allowed-origins, which this test does not override.
+  private static final String ALLOWED_ORIGIN = "http://localhost:5173";
 
   private final UserService userService;
   private final OrganizationService organizationService;
@@ -129,6 +134,33 @@ class SecurityConfigEndToEndTest extends EndToEndTestBase {
   @Test
   void actuatorHealthIsPubliclyReachableWithoutAToken() throws Exception {
     mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+  }
+
+  // permitAll exempts a path from the authorization check, not from the filters ahead of it, so
+  // BearerTokenAuthenticationFilter would otherwise fail a public request purely for carrying a
+  // dead Authorization header. That is the ordinary state of a browser client with one global
+  // interceptor the moment its access token expires — and POST /auth/refresh, the request whose
+  // whole job is to recover from exactly that, is a public path. Every public path is checked
+  // rather than only refresh, because the rule is about the chain, not about one route.
+  @ParameterizedTest(name = "{0} ignores a dead bearer token")
+  @ValueSource(strings = {"/auth/csrf", "/.well-known/jwks.json", "/actuator/health"})
+  void aPublicPathIgnoresAnExpiredOrMalformedBearerTokenInsteadOfRejectingTheRequest(String path)
+      throws Exception {
+    mockMvc
+        .perform(get(path).header(HttpHeaders.AUTHORIZATION, BEARER_PREFIX + "not-a-jwt"))
+        .andExpect(status().isOk());
+  }
+
+  // Retry-After is not CORS-safelisted, so without setExposedHeaders the browser client reads a 429
+  // it cannot act on: ThrottleAspect computes how long the window still needs, and the header is
+  // the only place that number is published.
+  @Test
+  void aCrossOriginResponseExposesRetryAfterSoAThrottledClientCanReadIt() throws Exception {
+    mockMvc
+        .perform(get("/auth/csrf").header(HttpHeaders.ORIGIN, ALLOWED_ORIGIN))
+        .andExpect(status().isOk())
+        .andExpect(
+            header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.RETRY_AFTER));
   }
 
   // Flips the first character of the signature segment so the claims and header stay

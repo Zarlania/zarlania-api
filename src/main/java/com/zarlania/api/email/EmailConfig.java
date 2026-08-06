@@ -2,7 +2,6 @@ package com.zarlania.api.email;
 
 import com.zarlania.api.throttle.RateLimiter;
 import com.zarlania.api.throttle.ThrottleProperties;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
@@ -13,7 +12,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
  * happen on.
  *
  * <p>Wiring only. Which adapter a deployment gets, and when a missing key is fatal, belong to
- * {@link EmailSenderFactory}.
+ * {@link EmailSenderFactory}; the values themselves belong to {@link EmailProperties}.
  */
 @Configuration
 public class EmailConfig {
@@ -37,14 +36,12 @@ public class EmailConfig {
    */
   @Bean
   public EmailSender emailSender(
-      @Value("${zarlania.email.resend-api-key:}") String apiKey,
-      @Value("${zarlania.email.from}") String from,
-      @Value("${zarlania.email.resend-base-url}") String baseUrl,
+      EmailProperties emailProperties,
       Environment environment,
       RateLimiter rateLimiter,
       ThrottleProperties throttleProperties) {
     return new BudgetedEmailSender(
-        new EmailSenderFactory(apiKey, from, baseUrl, environment).create(),
+        new EmailSenderFactory(emailProperties, environment).create(),
         rateLimiter,
         throttleProperties.emailBudgetLimit(),
         throttleProperties.emailBudgetWindow());
@@ -61,23 +58,15 @@ public class EmailConfig {
    * difference alone would re-open the channel the decoy exists to close. Handing every send here
    * makes all three branches cost the same whatever the provider does.
    *
-   * @param threads how many sends may be in flight at once. One is enough while {@link
-   *     BudgetedEmailSender} caps the whole service at {@code zarlania.throttle.email-budget-limit}
-   *     messages per window — there is no volume worth parallelising, and each extra thread is heap
-   *     an instance this size has to find. It is configuration rather than a constant because both
-   *     halves of that reasoning are sizing decisions that change with the plan.
-   * @param queueCapacity bounded for the same reason — an unbounded queue turns a provider outage
-   *     into an out-of-memory kill, while a full one rejects and {@code EmailDispatcher} logs the
-   *     dropped message
+   * <p>Both the pool size and the queue bound are configuration rather than constants, because both
+   * are sizing decisions that change with the instance and the plan; see {@link EmailProperties}.
    */
   @Bean(DISPATCH_EXECUTOR_BEAN)
-  public ThreadPoolTaskExecutor emailDispatchExecutor(
-      @Value("${zarlania.email.dispatch-threads}") int threads,
-      @Value("${zarlania.email.dispatch-queue-capacity}") int queueCapacity) {
+  public ThreadPoolTaskExecutor emailDispatchExecutor(EmailProperties emailProperties) {
     ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-    executor.setCorePoolSize(threads);
-    executor.setMaxPoolSize(threads);
-    executor.setQueueCapacity(queueCapacity);
+    executor.setCorePoolSize(emailProperties.dispatchThreads());
+    executor.setMaxPoolSize(emailProperties.dispatchThreads());
+    executor.setQueueCapacity(emailProperties.dispatchQueueCapacity());
     executor.setThreadNamePrefix(DISPATCH_THREAD_PREFIX);
     // A send already in flight at shutdown has been counted against the email budget and is
     // somebody's verification link; letting it finish costs a few seconds of drain time.

@@ -91,6 +91,13 @@ zarlania:
     # Resend-compatible endpoint can be pointed at without a code change, and so a test can aim
     # the adapter at a stub instead of the internet.
     resend-base-url: ${RESEND_BASE_URL:https://api.resend.com}
+    # How long one send may wait on the provider. The JDK's HTTP client has no default for either,
+    # and dispatch-threads below is 1 — so a provider that accepts the connection and then stops
+    # answering would hold that single thread forever, stalling every queued verification email
+    # until the queue filled and new ones were dropped. Generous enough that a slow-but-working
+    # provider still succeeds; short enough that a hung one costs one message, not all of them.
+    connect-timeout: PT5S
+    read-timeout: PT10S
     # Sends in flight at once. One is enough while email-budget-limit caps the whole service:
     # there is no volume worth parallelising, and each extra thread is heap a 512 MB instance has
     # to find. Raise it with the instance size, not on its own.
@@ -137,6 +144,19 @@ zarlania:
       resend:
         limit: 3
         account-limit: 3
+      verify:
+        # A person follows the emailed link once, or a handful of times if they retry a stale one.
+        # Nothing here names an account — the token is the whole request — so there is no
+        # account-limit to set, and this per-IP cap is what stops a caller guessing tokens by
+        # firing them at the token table without limit.
+        limit: 10
+      logout:
+        # Higher than refresh: a client may log out on every tab it has open, and being throttled
+        # out of logging out is the one failure that leaves a session alive against the user's
+        # wishes. Still bounded, because the endpoint needs no credential a caller cannot mint —
+        # one CSRF pair fetched once can be reused against any number of invented refresh cookies,
+        # each costing a refresh-token lookup.
+        limit: 60
       refresh:
         limit: 30
       csrf:

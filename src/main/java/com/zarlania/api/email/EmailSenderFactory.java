@@ -1,6 +1,8 @@
 package com.zarlania.api.email;
 
+import java.net.http.HttpClient;
 import org.springframework.core.env.Environment;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -15,23 +17,17 @@ import org.springframework.web.client.RestClient;
  */
 public class EmailSenderFactory {
 
-  private final String apiKey;
-  private final String from;
-  private final String baseUrl;
+  private final EmailProperties emailProperties;
   private final Environment environment;
 
   /**
-   * @param apiKey the provider credential, blank when none is configured
-   * @param from the address every message is sent from
-   * @param baseUrl the provider's API root, configurable so a different Resend-compatible endpoint
-   *     — or a stub — can be pointed at without editing this class
+   * @param emailProperties the provider credential, address and timeouts this deployment is
+   *     configured with
    * @param environment consulted only for the active profiles, to decide whether a missing key is
    *     fatal
    */
-  public EmailSenderFactory(String apiKey, String from, String baseUrl, Environment environment) {
-    this.apiKey = apiKey;
-    this.from = from;
-    this.baseUrl = baseUrl;
+  public EmailSenderFactory(EmailProperties emailProperties, Environment environment) {
+    this.emailProperties = emailProperties;
     this.environment = environment;
   }
 
@@ -47,7 +43,7 @@ public class EmailSenderFactory {
    *     stranding every new account, so refusing to start is the milder failure.
    */
   public EmailSender create() {
-    if (apiKey.isBlank()) {
+    if (emailProperties.resendApiKey().isBlank()) {
       if (environment.matchesProfiles(EmailConfig.PRODUCTION_PROFILE)) {
         throw new IllegalStateException("RESEND_API_KEY must be set in production");
       }
@@ -55,9 +51,24 @@ public class EmailSenderFactory {
     }
     RestClient client =
         RestClient.builder()
-            .baseUrl(baseUrl)
-            .defaultHeader("Authorization", "Bearer " + apiKey)
+            .requestFactory(timeoutBoundRequestFactory())
+            .baseUrl(emailProperties.resendBaseUrl())
+            .defaultHeader("Authorization", "Bearer " + emailProperties.resendApiKey())
             .build();
-    return new ResendEmailSender(client, from);
+    return new ResendEmailSender(client, emailProperties.from());
+  }
+
+  /**
+   * A request factory that gives up rather than waiting indefinitely. {@code RestClient.builder()}
+   * would otherwise detect one with no timeouts at all, and because email is dispatched on a very
+   * small pool, one send that waits forever stalls every message queued behind it — a service that
+   * has silently stopped sending verification email while looking healthy.
+   */
+  private JdkClientHttpRequestFactory timeoutBoundRequestFactory() {
+    JdkClientHttpRequestFactory requestFactory =
+        new JdkClientHttpRequestFactory(
+            HttpClient.newBuilder().connectTimeout(emailProperties.connectTimeout()).build());
+    requestFactory.setReadTimeout(emailProperties.readTimeout());
+    return requestFactory;
   }
 }

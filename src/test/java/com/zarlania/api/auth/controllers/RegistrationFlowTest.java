@@ -29,7 +29,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest(
     properties = {
       "zarlania.throttle.endpoints.register.limit=1000",
-      "zarlania.throttle.endpoints.resend.limit=1000"
+      "zarlania.throttle.endpoints.resend.limit=1000",
+      "zarlania.throttle.endpoints.verify.limit=1000"
     })
 class RegistrationFlowTest extends FlowTestBase {
 

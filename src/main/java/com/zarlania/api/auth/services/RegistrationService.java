@@ -131,7 +131,11 @@ public class RegistrationService {
     userService
         .findByIdentifier(email)
         .filter(user -> !user.emailVerified())
-        .ifPresent(user -> issueVerification(email, user.id()));
+        // user.email(), not the address the caller typed: users.email is citext, so the lookup
+        // matched case-insensitively, while an SMTP local part is allowed to be case-sensitive.
+        // Mailing the caller's spelling would let someone ask for VICTIM@example.com and have the
+        // account's live verification token delivered to a mailbox that may not be the owner's.
+        .ifPresent(user -> issueVerification(user.email(), user.id()));
   }
 
   /**
@@ -179,12 +183,22 @@ public class RegistrationService {
    */
   private void remindExistingOwner(String email) {
     Optional<User> existing = userService.findByIdentifier(email);
-    if (existing.isPresent() && !existing.get().emailVerified()) {
-      issueVerification(email, existing.get().id());
+    if (existing.isEmpty()) {
+      // The caller asked about an address that existed a moment ago and does not now: the hourly
+      // unverified-account sweep reached it between that check and this lookup. Nothing is left to
+      // remind, and the caller already gets the same 202 it would have got, so this ends here
+      // rather than dereferencing an empty Optional into a 500.
+      log.info("Registration reminder skipped: the account was purged mid-request");
+      return;
+    }
+    User owner = existing.get();
+    // owner.email(), not the address the caller typed: see the note on resend above.
+    if (!owner.emailVerified()) {
+      issueVerification(owner.email(), owner.id());
       return;
     }
     applicationEventPublisher.publishEvent(
-        new DuplicateRegistrationAttempted(email, existing.get().id()));
+        new DuplicateRegistrationAttempted(owner.email(), owner.id()));
   }
 
   @SuppressFBWarnings(
@@ -196,9 +210,23 @@ public class RegistrationService {
               + " they were reached through a lookup by caller-supplied identifier, not"
               + " because the logged value itself is caller-supplied.")
   private void issueVerification(String email, UUID userId) {
+    String rawToken;
+    try {
+      rawToken = emailVerificationService.issue(userId);
+    } catch (DataIntegrityViolationException exception) {
+      if (userService.findById(userId).isPresent()) {
+        // The account is still there, so this is not the race below — some other integrity rule
+        // broke and the caller should hear about it rather than get a silent 202.
+        throw exception;
+      }
+      // email_verification_tokens.user_id is a real foreign key, and the account it named was
+      // purged by the unverified-account sweep between the lookup that found it and this insert.
+      // There is nobody left to email, and both callers answer 202 regardless, so this ends here.
+      log.info("Verification not issued for user {}: the account was purged mid-request", userId);
+      return;
+    }
     // The token is never logged, here or anywhere: only its hash is stored, so a log line holding
     // the raw value is a usable credential for as long as the log is retained.
-    String rawToken = emailVerificationService.issue(userId);
     log.info("Verification issued for user {}", userId);
     applicationEventPublisher.publishEvent(new VerificationEmailRequested(email, rawToken, userId));
   }
