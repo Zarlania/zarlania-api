@@ -30,7 +30,8 @@ import org.springframework.test.web.servlet.MvcResult;
 @SpringBootTest(
     properties = {
       "zarlania.throttle.endpoints.register.limit=1000",
-      "zarlania.throttle.endpoints.verify.limit=1000"
+      "zarlania.throttle.endpoints.verify.limit=1000",
+      "zarlania.throttle.endpoints.login.limit=1000"
     })
 class CsrfEndToEndTest extends FlowTestBase {
 

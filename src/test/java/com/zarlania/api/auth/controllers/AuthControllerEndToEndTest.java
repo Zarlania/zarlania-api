@@ -22,7 +22,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 @SpringBootTest(
     properties = {
       "zarlania.throttle.endpoints.register.limit=1000",
-      "zarlania.throttle.endpoints.verify.limit=1000"
+      "zarlania.throttle.endpoints.verify.limit=1000",
+      "zarlania.throttle.endpoints.login.limit=1000"
     })
 class AuthControllerEndToEndTest extends EndToEndTestBase {
 
