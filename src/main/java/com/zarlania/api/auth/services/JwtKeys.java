@@ -19,7 +19,9 @@ import java.security.spec.RSAPublicKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -134,7 +136,33 @@ public final class JwtKeys {
     List<JWK> keys = new ArrayList<>();
     keys.add(signingKey.toPublicJWK());
     keys.addAll(retiredPublicKeys(retiredPublicKeysPem));
+    rejectDuplicateKeyIds(keys);
     return new JWKSet(keys);
+  }
+
+  /**
+   * Rejects a JWKS that would publish the same key twice — the current signing key also pasted into
+   * the retired list, or one retired key pasted twice. Verification would still work, since both
+   * entries carry identical material under the identical thumbprint {@code kid}, so this is a
+   * configuration mistake rather than a security one. It is worth failing on because the retired
+   * list is the record an operator reads to decide when a rotation is finished, and a list that
+   * double-counts a key does not say what they think it says.
+   *
+   * @throws IllegalStateException if two of the keys share a {@code kid}
+   */
+  private static void rejectDuplicateKeyIds(List<JWK> keys) {
+    Set<String> seenKeyIds = new HashSet<>();
+    for (JWK key : keys) {
+      if (!seenKeyIds.add(key.getKeyID())) {
+        // A kid is an RFC 7638 thumbprint of the public key and is published in the JWKS itself,
+        // so naming it here tells the operator which block to remove without leaking anything.
+        throw new IllegalStateException(
+            "JWKS would publish two keys with the same kid ("
+                + key.getKeyID()
+                + "); check zarlania.auth.jwt-retired-public-keys-pem (JWT_RETIRED_PUBLIC_KEYS)"
+                + " for a repeated block or for the current signing key's public half");
+      }
+    }
   }
 
   private static List<RSAKey> retiredPublicKeys(String retiredPublicKeysPem) {

@@ -12,6 +12,7 @@ import com.zarlania.api.auth.AuthProperties;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
 import java.security.PublicKey;
 import java.time.Clock;
 import java.time.Duration;
@@ -100,9 +101,9 @@ class JwtServiceTest {
 
   @Test
   void publicJwkSetContainsNoPrivateKeyMaterialForSigningOrRetiredKeys() throws Exception {
-    KeyPair retiredKeyPair = generateTestKeyPair();
     String retiredPem =
-        publicKeyPem(retiredKeyPair.getPublic()) + publicKeyPem(retiredKeyPair.getPublic());
+        publicKeyPem(generateTestKeyPair().getPublic())
+            + publicKeyPem(generateTestKeyPair().getPublic());
     AuthProperties authProperties = authProperties(generateTestPrivateKeyPem(), retiredPem);
 
     JwtKeys jwtKeys = new JwtKeys(authProperties, new MockEnvironment());
@@ -113,6 +114,29 @@ class JwtServiceTest {
     assertThat(keys).hasSize(3);
     keys.forEach(
         key -> assertThat(key.keySet()).doesNotContainAnyElementsOf(PRIVATE_JWK_MEMBER_NAMES));
+  }
+
+  @Test
+  void duplicateRetiredPublicKeyFailsStartup() throws Exception {
+    String retiredPem = publicKeyPem(generateTestKeyPair().getPublic());
+    AuthProperties authProperties =
+        authProperties(generateTestPrivateKeyPem(), retiredPem + retiredPem);
+
+    assertThatThrownBy(() -> new JwtKeys(authProperties, new MockEnvironment()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("same kid");
+  }
+
+  @Test
+  void currentSigningPublicKeyRepeatedInRetiredKeysFailsStartup() throws Exception {
+    KeyPair signingKeyPair = generateTestKeyPair();
+    AuthProperties authProperties =
+        authProperties(
+            privateKeyPem(signingKeyPair.getPrivate()), publicKeyPem(signingKeyPair.getPublic()));
+
+    assertThatThrownBy(() -> new JwtKeys(authProperties, new MockEnvironment()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("same kid");
   }
 
   @Test
@@ -201,8 +225,11 @@ class JwtServiceTest {
   }
 
   private static String generateTestPrivateKeyPem() throws NoSuchAlgorithmException {
-    KeyPair keyPair = generateTestKeyPair();
-    String base64 = Base64.getEncoder().encodeToString(keyPair.getPrivate().getEncoded());
+    return privateKeyPem(generateTestKeyPair().getPrivate());
+  }
+
+  private static String privateKeyPem(PrivateKey privateKey) {
+    String base64 = Base64.getEncoder().encodeToString(privateKey.getEncoded());
     // The PEM header itself, not a secret; gitleaks flags the literal text regardless of context.
     return "-----BEGIN PRIVATE KEY-----\n"
         + base64
