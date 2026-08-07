@@ -35,16 +35,49 @@ public class ExpiredTokenCleanup {
    *
    * <p>Runs on a schedule rather than on each write: neither table is read on the hot path for rows
    * this old, and sweeping periodically keeps the cost off every request.
+   *
+   * <p>The two halves are independent sweeps of unrelated tables, so each runs whether or not the
+   * other succeeded. Sharing a tick is a scheduling convenience and nothing more: letting a failure
+   * against {@code refresh_tokens} also skip the verification-token sweep would mean the table that
+   * grows fastest stops being pruned because of a problem in a different one — and on a 1 GB free
+   * tier, a sweep silently not running is exactly the failure that is only noticed when the disk is
+   * full.
    */
   @Scheduled(fixedDelayString = "${zarlania.auth.cleanup-interval:PT1H}")
   public void pruneDeadTokens() {
-    int refreshTokensDeleted = refreshTokenRepository.deleteFamiliesExpiredBefore(clock.instant());
-    // Through the credentials domain's service, not its repository: that domain decides what one
-    // of its tokens being dead means, and this one only owns the schedule.
-    int verificationTokensDeleted = emailVerificationService.pruneDeadTokens();
-    log.info(
-        "Pruned {} expired refresh tokens and {} dead verification tokens",
-        refreshTokensDeleted,
-        verificationTokensDeleted);
+    pruneExpiredRefreshTokens();
+    pruneDeadVerificationTokens();
+  }
+
+  /**
+   * Sweeps expired refresh-token families, absorbing whatever it fails with.
+   *
+   * <p>Neither half rethrows. Nothing downstream of a scheduled sweep can act on the failure, the
+   * next tick retries the same work unchanged, and the rows this leaves behind are unreadable
+   * either way — so an error log is the whole of the useful response. The catch is deliberately
+   * broad for the same reason {@code UnverifiedAccountCleanup} catches broadly: the point is
+   * resilience against whatever Postgres or Hibernate throws, not one anticipated failure.
+   */
+  @SuppressWarnings("checkstyle:IllegalCatch")
+  private void pruneExpiredRefreshTokens() {
+    try {
+      int deleted = refreshTokenRepository.deleteFamiliesExpiredBefore(clock.instant());
+      log.info("Pruned {} expired refresh tokens", deleted);
+    } catch (RuntimeException exception) {
+      log.error("Failed to prune expired refresh tokens — the next run retries", exception);
+    }
+  }
+
+  /** Sweeps dead verification tokens, absorbing whatever it fails with. */
+  @SuppressWarnings("checkstyle:IllegalCatch")
+  private void pruneDeadVerificationTokens() {
+    try {
+      // Through the credentials domain's service, not its repository: that domain decides what one
+      // of its tokens being dead means, and this one only owns the schedule.
+      int deleted = emailVerificationService.pruneDeadTokens();
+      log.info("Pruned {} dead verification tokens", deleted);
+    } catch (RuntimeException exception) {
+      log.error("Failed to prune dead verification tokens — the next run retries", exception);
+    }
   }
 }
