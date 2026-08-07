@@ -90,13 +90,13 @@ public class AuthTokenService {
    * is the handler's job to answer both identically to the client.
    *
    * @throws InvalidRefreshTokenException if the token is unknown, expired or revoked, or if the
-   *     account behind it is no longer able to hold a session
+   *     account behind it is no longer able to hold a session in the organization it was minted for
    * @throws ReusedRefreshTokenException if the token was already redeemed, which revokes the whole
    *     family before it is thrown, since a replay is the signal that the token was stolen
    */
   public MintedSession refresh(String rawRefreshToken) {
     RefreshRotation rotation = refreshTokenService.rotate(rawRefreshToken);
-    requireLiveVerifiedUser(rotation);
+    requireLiveVerifiedMember(rotation);
     return new MintedSession(
         jwtService.mint(rotation.userId(), rotation.organizationId(), TokenKind.USER),
         new IssuedRefreshToken(rotation.newRaw(), rotation.familyExpiresAt()));
@@ -113,13 +113,26 @@ public class AuthTokenService {
   }
 
   /**
-   * Unreachable today, by invariants rather than by a check: the only user-deletion path
-   * (UnverifiedAccountCleanup) clears refresh tokens in the same transaction as the user row, an
-   * unverified user cannot log in to obtain a family, and nothing un-verifies an email. But every
-   * one of those invariants is implicit, and the first future feature to break one — account
-   * deletion, disablement, email change with re-verification — would otherwise leave a dead account
-   * holding a live session for the rest of its 30-day family. The rotation that just committed is
-   * revoked before rejecting, so the failed refresh cannot itself leave a fresh live token behind.
+   * Re-checks, on every rotation, that the account behind the session is still entitled to it: the
+   * user exists, has a verified address, and still belongs to the organization the session is
+   * scoped to.
+   *
+   * <p>Both conditions are unreachable today by invariants rather than by a check. The only
+   * user-deletion path (UnverifiedAccountCleanup) clears refresh tokens in the same transaction as
+   * the user row, an unverified user cannot log in to obtain a family, nothing un-verifies an
+   * email, and a personal organization is created with its user and outlives it by nothing. But
+   * every one of those invariants is implicit, and the first future feature to break one — account
+   * deletion, disablement, email change with re-verification, or membership in an organization the
+   * account can be removed from — would otherwise leave a dead account holding a live session for
+   * the rest of its 30-day family. Membership is the one most likely to go first: general
+   * organizations are a planned feature, and removing a member is an ordinary administrative act
+   * rather than an exceptional one, so a session outliving the membership it is scoped to would be
+   * a routine occurrence rather than a corner case.
+   *
+   * <p>The two causes are logged apart because they mean different things to whoever reads the log
+   * afterwards — a vanished account against a revoked membership — even though the client is told
+   * the same thing either way. Both revoke the rotation that just committed before rejecting, so a
+   * failed refresh cannot itself leave a fresh live token behind.
    */
   @SuppressFBWarnings(
       value = "CRLF_INJECTION_LOGS",
@@ -129,17 +142,35 @@ public class AuthTokenService {
               + " no injectable character to strip. FindSecBugs marks them tainted because"
               + " they were reached through a lookup by caller-supplied identifier, not"
               + " because the logged value itself is caller-supplied.")
-  private void requireLiveVerifiedUser(RefreshRotation rotation) {
+  private void requireLiveVerifiedMember(RefreshRotation rotation) {
     boolean verified =
         userService.findById(rotation.userId()).map(User::emailVerified).orElse(false);
-    if (verified) {
-      return;
+    if (!verified) {
+      log.warn(
+          "Refresh refused: user {} is gone or unverified — revoking the family just rotated",
+          rotation.userId());
+      throw revokeRotatedFamily(rotation);
     }
-    log.warn(
-        "Refresh refused: user {} is gone or unverified — revoking the family just rotated",
-        rotation.userId());
+    if (!organizationService.isMember(rotation.userId(), rotation.organizationId())) {
+      log.warn(
+          "Refresh refused: user {} no longer belongs to organization {} — revoking the family"
+              + " just rotated",
+          rotation.userId(),
+          rotation.organizationId());
+      throw revokeRotatedFamily(rotation);
+    }
+  }
+
+  /**
+   * Revokes the family the caller has just rotated into and hands back the rejection to throw.
+   *
+   * <p>Returns the exception rather than throwing it so that every rejection above reads as a
+   * {@code throw}, which is what keeps the control flow visible at the guard clause and stops a
+   * later reader from adding a branch after one on the assumption it can be reached.
+   */
+  private InvalidRefreshTokenException revokeRotatedFamily(RefreshRotation rotation) {
     refreshTokenService.revokeFamilyOf(rotation.newRaw());
-    throw InvalidRefreshTokenException.forRejectedToken();
+    return InvalidRefreshTokenException.forRejectedToken();
   }
 
   /**

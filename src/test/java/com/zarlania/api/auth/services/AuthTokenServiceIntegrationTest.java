@@ -11,6 +11,7 @@ import com.zarlania.api.auth.exceptions.InvalidRefreshTokenException;
 import com.zarlania.api.auth.exceptions.ReusedRefreshTokenException;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.organizations.dtos.Organization;
+import com.zarlania.api.organizations.repositories.MembershipRepository;
 import com.zarlania.api.organizations.services.OrganizationService;
 import com.zarlania.api.testsupport.IntegrationTestBase;
 import com.zarlania.api.testsupport.TestAccounts;
@@ -21,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Login and refresh composed over the real domains they orchestrate.
@@ -39,6 +41,8 @@ class AuthTokenServiceIntegrationTest extends IntegrationTestBase {
   private final UserService userService;
   private final CredentialsService credentialsService;
   private final OrganizationService organizationService;
+  private final MembershipRepository membershipRepository;
+  private final TransactionTemplate transactionTemplate;
   private final TestAccounts accounts;
 
   // Each case seeds its own account: the database is shared for the run, so one slug cannot be
@@ -88,6 +92,26 @@ class AuthTokenServiceIntegrationTest extends IntegrationTestBase {
         .isInstanceOf(ReusedRefreshTokenException.class);
     assertThatThrownBy(() -> authTokenService.refresh(refreshed.refresh().raw()))
         .isInstanceOf(InvalidRefreshTokenException.class);
+  }
+
+  // Only the real schema shows this one is reachable at all: the membership is a row of its own,
+  // so it can go while the organization the session is scoped to stays. The unit test can assert
+  // the branch is taken, but not that the two are separable in the first place.
+  @Test
+  void refreshIsRefusedOnceTheAccountNoLongerBelongsToTheSessionsOrganization() {
+    SeededSession holder = seedVerifiedAccount("tokensvc-exmember");
+    MintedSession login = authTokenService.login("tokensvc-exmember", TestAccounts.PASSWORD);
+
+    // The organization row itself is left alone: refresh_tokens carries a real foreign key to it,
+    // so a live session can outlive its membership but never its organization. Wrapped in a
+    // transaction because a derived delete needs one and this tier does not run inside any, so
+    // that the removal is committed before refresh reads it.
+    transactionTemplate.executeWithoutResult(
+        status -> membershipRepository.deleteByUserId(holder.userId()));
+
+    assertThatThrownBy(() -> authTokenService.refresh(login.refresh().raw()))
+        .isInstanceOf(InvalidRefreshTokenException.class);
+    assertThat(organizationService.findById(holder.organizationId())).isPresent();
   }
 
   @Test

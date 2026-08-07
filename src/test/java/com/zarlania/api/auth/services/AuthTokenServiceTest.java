@@ -3,6 +3,7 @@ package com.zarlania.api.auth.services;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -27,6 +28,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -147,6 +149,7 @@ class AuthTokenServiceTest {
     when(refreshTokenService.rotate("raw")).thenReturn(rotation);
     when(userService.findById(userId))
         .thenReturn(Optional.of(new User(userId, "person@example.com", IDENTIFIER, true)));
+    when(organizationService.isMember(userId, orgId)).thenReturn(true);
     when(jwtService.mint(userId, orgId, TokenKind.USER)).thenReturn(ACCESS_TOKEN);
 
     MintedSession session = service.refresh("raw");
@@ -154,6 +157,28 @@ class AuthTokenServiceTest {
     assertThat(session.accessToken()).isEqualTo(ACCESS_TOKEN);
     assertThat(session.refresh())
         .isEqualTo(new IssuedRefreshToken(NEW_RAW_REFRESH, familyExpiresAt));
+    // Ordered, not merely both-happened: a token minted before the membership is confirmed is a
+    // token that exists for an instant regardless of the answer, which is the bug being excluded.
+    InOrder inOrder = inOrder(organizationService, jwtService);
+    inOrder.verify(organizationService).isMember(userId, orgId);
+    inOrder.verify(jwtService).mint(userId, orgId, TokenKind.USER);
+  }
+
+  @Test
+  void refreshRejectsAndRevokesTheRotatedFamilyWhenTheOrganizationMembershipIsGone() {
+    UUID userId = UUID.randomUUID();
+    UUID orgId = UUID.randomUUID();
+    RefreshRotation rotation = new RefreshRotation(NEW_RAW_REFRESH, userId, orgId, Instant.now());
+    when(refreshTokenService.rotate("raw")).thenReturn(rotation);
+    when(userService.findById(userId))
+        .thenReturn(Optional.of(new User(userId, "person@example.com", IDENTIFIER, true)));
+    when(organizationService.isMember(userId, orgId)).thenReturn(false);
+
+    assertThatThrownBy(() -> service.refresh("raw"))
+        .isInstanceOf(InvalidRefreshTokenException.class);
+
+    verify(refreshTokenService).revokeFamilyOf(NEW_RAW_REFRESH);
+    verifyNoInteractions(jwtService);
   }
 
   @Test
