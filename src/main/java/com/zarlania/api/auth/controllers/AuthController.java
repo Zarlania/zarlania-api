@@ -202,14 +202,17 @@ public class AuthController {
   @SuppressFBWarnings(
       value = "COOKIE_USAGE",
       justification =
-          "The detector flags sensitive data held in a cookie; this method only reads the"
-              + " refresh cookie the service itself issued, and that cookie carries a random"
-              + " token whose SHA-256 hash is what the database stores — never a credential or"
-              + " anything about the person. It is written with HttpOnly, Secure and"
-              + " SameSite=Strict by buildRefreshCookie below. Reading through getCookies()"
-              + " rather than @CookieValue is deliberate and is the point of the method: a"
-              + " request carrying two cookies of this name has to be distinguishable from one"
-              + " carrying a single cookie, which the single-valued binding cannot express.")
+          "The detector flags sensitive data held in a cookie; rotating a session requires"
+              + " reading the opaque refresh-token secret, and the cookie the service itself"
+              + " issued is where it lives. The value is a random, opaque bearer secret that"
+              + " says nothing about the person: it is never logged and never persisted in"
+              + " raw form, and only its SHA-256 hash reaches the database. The cookie is"
+              + " written with HttpOnly, Secure and SameSite=Strict by buildRefreshCookie"
+              + " below, and this suppression covers only this helper. Reading through"
+              + " getCookies() rather than @CookieValue is deliberate and is the point of"
+              + " the method: a request carrying two cookies of this name has to be"
+              + " distinguishable from one carrying a single cookie, which the single-valued"
+              + " binding cannot express.")
   private static List<String> refreshCookies(HttpServletRequest request) {
     Cookie[] cookies = request.getCookies();
     if (cookies == null) {
