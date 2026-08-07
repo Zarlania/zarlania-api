@@ -1,5 +1,7 @@
 package com.zarlania.api.auth.services;
 
+import com.zarlania.api.auth.events.DuplicateRegistrationAttempted;
+import com.zarlania.api.auth.events.VerificationEmailRequested;
 import com.zarlania.api.auth.exceptions.UsernameTakenException;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;

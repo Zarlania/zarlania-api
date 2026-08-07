@@ -3,6 +3,8 @@ package com.zarlania.api.auth.services;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.zarlania.api.auth.AuthProperties;
+import com.zarlania.api.auth.events.DuplicateRegistrationAttempted;
+import com.zarlania.api.auth.events.VerificationEmailRequested;
 import com.zarlania.api.email.EmailDispatcher;
 import com.zarlania.api.email.EmailMessage;
 import java.time.Duration;

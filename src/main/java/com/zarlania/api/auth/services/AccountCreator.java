@@ -1,5 +1,6 @@
 package com.zarlania.api.auth.services;
 
+import com.zarlania.api.auth.events.VerificationEmailRequested;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
 import com.zarlania.api.organizations.services.OrganizationService;

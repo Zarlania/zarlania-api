@@ -1,4 +1,4 @@
-package com.zarlania.api.auth.services;
+package com.zarlania.api.auth.events;
 
 import java.util.UUID;
 
@@ -10,4 +10,4 @@ import java.util.UUID;
  * @param userId the account that already holds the address, used as the sent message's log
  *     reference so a failed send is traceable without the address appearing in the logs
  */
-record DuplicateRegistrationAttempted(String email, UUID userId) {}
+public record DuplicateRegistrationAttempted(String email, UUID userId) {}

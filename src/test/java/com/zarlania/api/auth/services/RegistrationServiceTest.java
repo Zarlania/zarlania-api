@@ -9,6 +9,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.zarlania.api.auth.events.DuplicateRegistrationAttempted;
+import com.zarlania.api.auth.events.VerificationEmailRequested;
 import com.zarlania.api.auth.exceptions.UsernameTakenException;
 import com.zarlania.api.credentials.services.CredentialsService;
 import com.zarlania.api.credentials.services.EmailVerificationService;
