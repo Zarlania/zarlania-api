@@ -202,9 +202,4 @@ class RefreshTokenServiceIntegrationTest extends IntegrationTestBase {
     assertThat(family).hasSize(2);
     assertThat(family).allSatisfy(row -> assertThat(row.getRevokedAt()).isNotNull());
   }
-
-  // Guards against a check-then-act race: two callers redeeming the same not-yet-used token at
-  // the same instant must not both succeed. findByFamilyIdOrderById takes a PESSIMISTIC_WRITE
-  // lock on the whole family, so the loser blocks until the winner commits, then re-reads usedAt
-  // as already set and correctly takes the reuse path instead of also succeeding.
 }
