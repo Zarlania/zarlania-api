@@ -9,13 +9,15 @@ canonical set of agent instructions; `AGENTS.md` points here.
 written in Java. The browser client lives in a separate repository,
 [Zarlania/zarlania-app](https://github.com/Zarlania/zarlania-app).
 
-> **Status: persistence foundation.** Postgres, Flyway, and JPA are wired
-> (see Stack and Layout below), but there is still no domain model, no domain
-> code, and no authentication yet.
+> **Status: core authentication delivered.** Postgres, Flyway, and JPA are
+> wired (see Stack and Layout below), and the `users`, `organizations`,
+> `credentials`, and `auth` domains implement registration, blocking email
+> verification, login, and JWT access/refresh tokens — see
+> `docs/references/000002-authentication-and-tokens.md` for how it works.
 >
-> **PLACEHOLDER — expand as the project takes shape:** domain concepts and
-> vocabulary, module boundaries, authentication and authorization model,
-> external integrations, and the API versioning policy.
+> **PLACEHOLDER — expand as the project takes shape:** general (multi-member)
+> organizations, roles and permissions, external integrations beyond email,
+> and the API versioning policy.
 
 ## Stack
 
@@ -55,14 +57,16 @@ Always use `./mvnw`, never a system `mvn` — the wrapper pins the Maven version
 ```text
 src/main/java/com/zarlania/api/
   ZarlaniaApiApplication.java   Entry point
-  common/                       Domain-agnostic infrastructure only (e.g. persistence
-                                base classes). Nothing with business meaning.
+  <topic>/                      Infrastructure grouped by the topic it is about —
+                                email/, errors/, http/, persistence/, security/,
+                                throttle/, time/. Never a general-purpose bucket.
   <domain>/                     One package per domain, layer sub-packages inside:
-    controllers/                HTTP endpoints
+    controllers/                HTTP endpoints, and the domain's exception handler
     services/                   Business rules
     repositories/               Spring Data interfaces
     entities/                   JPA entities — never leave the domain
     dtos/                       Records crossing the domain boundary
+    exceptions/                 What this domain throws
 src/main/resources/
   application.yml               Configuration, with env-var overrides
   db/migration/                 Flyway migrations (V<n>__<slug>.sql) — the only thing
@@ -82,11 +86,28 @@ can be lifted out of the monolith with minimal work):
   (`fruit/controllers`, `fruit/apple/controllers`, …). Every sub-domain is a
   full domain boundary in its own right; the parent level holds orchestration
   only — never entities.
+- **Exceptions live in an `exceptions/` sub-package**, in the domain or topic
+  package that throws them — `auth/exceptions/`, `email/exceptions/`. A reader
+  looking for what a domain can fail with finds one directory, and the domain
+  lifts out with its failures attached. An exception genuinely shared across
+  domains belongs in `errors/`, which is that bucket by name; nothing else is.
+- **A DTO carries the plain name; a JPA entity is suffixed `Entity`.** The DTO
+  is the type every other domain speaks in, so it gets the unqualified name —
+  `User`, `Organization`. The entity never leaves its domain and is the one that
+  takes the qualifier: `UserEntity`, `OrganizationEntity`. This holds for every
+  entity, not only the ones a DTO would otherwise collide with, so that adding a
+  DTO later never forces a rename.
 - **Every table** gets `id uuid primary key`, `created_at timestamptz(6) not
   null`, `updated_at timestamptz(6) not null`, with real FK constraints.
   Case-insensitive unique text columns use `citext`.
 - Do not create top-level `controllers/`, `services/` or `models/` packages for
   the whole application.
+- **No general-purpose bucket packages.** Infrastructure that several domains
+  share still gets a package named for the _topic_ it is about — `throttle/`,
+  `email/`, `persistence/` — never a catch-all such as `common/`, `shared/` or
+  `util/`. A bucket collects whatever has no obvious home, so it accumulates
+  unrelated classes and stops telling a reader anything. If a class does not fit
+  an existing topic, that is the signal to name a new one, not to widen a bucket.
 
 ## Documentation (`docs/`)
 
@@ -181,7 +202,128 @@ without reading the rest of the codebase.
   API; prefixing every route would repeat that in the path. A controller for
   collections maps `/collections`, not `/api/collections`. The one exception is
   `/actuator/**`, which Spring owns.
+- **Route paths are literals on the mapping annotation.** `@GetMapping("/users/me")`,
+  not `@GetMapping(ME_PATH)`. This is the one deliberate exception to _no magic
+  values_: the path is the single most important thing about a handler, and
+  putting it on the annotation means it is visible where the method is read.
+  Extracting it moves it away from the only place it matters. A path referenced
+  from somewhere else too — `SecurityConfig`'s public-path list, for instance —
+  is written out in both places with a comment naming the other, since two
+  occurrences is not yet an abstraction.
 - Use records for immutable data carriers such as request and response bodies.
+- **A record gets its own file.** No nested records — not in main code, not in
+  tests, not even a `private` one used by a single class. A record is a type, and
+  a type declared inside another is invisible to anyone searching for it by name
+  and cannot be referred to without naming its host. The nesting also puts a type
+  declaration in the middle of a class body, where the member-order rule below
+  wants fields.
+- **Services never throw an HTTP-aware exception.** A service throws its own
+  domain exception, naming what went wrong and nothing about how it is reported.
+  Each domain's `controllers/` package holds a `@RestControllerAdvice` — scoped
+  with `basePackageClasses` to that package, so the mapping travels with the
+  domain — that turns those exceptions into a status and an error code. Build the
+  body with `ProblemDetails`, so every error keeps one shape. Client-facing
+  messages live in the handler, not on the exception: several are deliberately
+  identical across different causes, and side by side is the only way that stays
+  checkable.
+- **`ErrorCode` is an interface; each domain owns an enum of its own codes.**
+  `AuthErrorCode`, `ThrottleErrorCode`, `ValidationErrorCode` — a domain's whole
+  error vocabulary in one readable place, that leaves with the domain when it is
+  extracted. The enum lives beside the handler that uses it, since a status is an
+  HTTP fact rather than a domain one. `ProblemDetails` renders any implementation
+  and knows none of them. **A code string is published contract** — `zarlania-app`
+  matches these exact strings, so adding one is safe and renaming a shipped one
+  is not.
+- **`ApiException` is for code that is already an HTTP concern**, never a
+  service: a controller rejecting a request it can judge itself, or
+  infrastructure in the request path like `ThrottleAspect`.
+  `GlobalExceptionHandler` renders it through the same `ProblemDetails`, so a
+  controller-raised failure and a handler-mapped one are identical on the wire.
+  A controller doing this must still take its code from its domain's `ErrorCode`
+  enum; a status invented at the call site is what would break the contract.
+- **An exception is built by a named static factory, never by `new`.** The
+  constructor is private; the class offers `UsernameTakenException.forUsername(…)`,
+  `AccountVerifiedDuringPurgeException.forUser(…)`. The message is composed inside
+  the exception, so every throw site of one failure produces the identical string
+  and a reader finds a class's whole failure vocabulary by reading its factories.
+  A factory taking a pre-composed `String message` defeats the point — take the
+  values and build the sentence. The name says what the caller knows, not what
+  went wrong: the class name already carries that.
+  - **One factory per meaning, not per call site.** Where two causes must stay
+    indistinguishable — `InvalidCredentialsException` for a wrong password and
+    for an unknown identifier — they get one factory, so the distinction cannot
+    be reintroduced later by a handler branching on which was used.
+  - **A factory may not take a live credential.** No raw token, no password, no
+    token hash. An exception message is the one string guaranteed to reach a log.
+- **Log so a request can be followed afterwards, and never log who it was
+  about.** Prefer a `UUID` id over anything human-readable: user id, not email or
+  username; organization id, not organization name. Never log a password, a raw
+  or hashed token, a verification link, an API key, or a message body that could
+  contain one. Where a component genuinely has no id — outbound email is
+  infrastructure and cannot depend on a domain — the caller passes an opaque
+  reference for it to log instead (see `EmailMessage#reference`). Anything
+  interpolated into a log line that reached the process as request input gets its
+  line breaks stripped first, or a crafted value forges log entries. Log at the
+  decision points a retrospective actually needs — a sweep's outcome, a rejected
+  token family, a dropped email — not on every branch; a log nobody can read
+  through is the same as no log.
+- **Every third-party dependency sits behind an interface this repository
+  owns.** Email, caches, the client-IP source, anything reached over a network:
+  the port is ours, the vendor lives in an implementation named for it
+  (`ResendEmailSender`, `CloudflareClientIpResolver`), and swapping providers is
+  a new class plus a bean rather than an edit to callers. Endpoints, base URLs
+  and credentials are configuration, never constants. **Postgres is the one
+  accepted exception** — the JPA/Flyway coupling runs too deep to abstract
+  usefully, and the _provider_ stays pluggable through the five `DB_*`
+  variables; see `docs/references/000001-persistence-foundation.md`. Where an
+  abstraction genuinely is not worth it, say so in the type's own Javadoc and
+  name what would have to change to move, so the swap is a search rather than an
+  audit.
+- **Nothing exists in production code because a test needed it.** No
+  package-private method opened up for a same-package test, no accessor whose
+  Javadoc explains which test calls it, no parameter a test supplies and nothing
+  else does. If a test cannot reach something, that is a design signal: give the
+  behaviour a real collaborator with a public contract (`EmailSenderFactory`), or
+  publish the value the test wants as something production genuinely uses — a
+  metric, say (`InMemoryRateLimiter#trackedKeyCount` backs a Micrometer gauge).
+  Constructor injection means a test can substitute any collaborator without the
+  class knowing.
+- **Only where grouping is real, `services/` may hold sub-packages.** A flat
+  directory of thirty services tells a reader nothing, so once a domain's
+  services fall into genuine groups, put them in named sub-packages. Until they
+  do, leave them flat — inventing a grouping to avoid a flat list produces
+  packages named for nothing, which is worse than the list.
+- **Write names out in full.** `applicationEventPublisher`, not `events`;
+  `organization`, not `org`; `exception`, not `e`, including in a `catch`. A
+  field holding a collaborator is named for that collaborator —
+  `userRepository`, not `users`. Java's conventional short names are conventions,
+  not exemptions: the point is that a reader never has to expand an abbreviation
+  from context, and one-letter names are the worst case of it.
+- **Never reference a plan, spec, brief, task or phase** in a comment or Javadoc.
+  Those documents are snapshots that stop being true, and a reader of the code
+  has no way to open one. Say the reason itself — what the constraint is and why
+  it holds — so the comment stays true on its own.
+- **No `serialVersionUID` on exceptions.** Nothing here is ever Java-serialized,
+  so the field pins compatibility for a format the service does not use. It reads
+  as though serialization matters somewhere, and it cannot be kept consistent.
+- **Javadoc every public type and method.** Someone opening one file — person or
+  model — should be able to state the contract without reading the rest of the
+  codebase, and a signature does not carry nullability, units, or which of
+  several failures a caller must handle. Checkstyle enforces presence at public
+  scope; what makes it worth reading is on you. Javadoc that restates the method
+  name is worse than none, so say what cannot be read off the signature: what a
+  getter returns when the value is absent, why an unusual choice was made, which
+  exception means what. `@Override` is exempt — an override inherits its
+  contract, and restating it in a second place is how the two drift apart.
+- **An explanation about a method goes in its Javadoc, not above it.** A `//`
+  block over a declaration is invisible to everything that reads a contract.
+  Private methods get Javadoc too whenever they have something non-obvious to
+  say, and nothing when they do not. `//` is for a comment about a _statement_,
+  and lives immediately above the code it explains.
+- **Members are ordered public, then protected, then package-private, then
+  private**, with fields first and constructors between the fields and the
+  methods. A reader looking for what a class offers finds it at the top and can
+  stop there; the helpers below exist only to serve what is above them.
 - **Lombok is available, but narrowed.** `@Data`, `@Value`, `@Getter` and
   `@Setter` are compile errors, because a record already does that job and two
   competing ways to declare a data carrier is worse than one. So are
@@ -193,16 +335,50 @@ without reading the rest of the codebase.
   overrides. Never hardcode a value that differs between environments.
 - Name tests after the behaviour they assert (`applicationBootsAgainstPostgres`),
   not the method under test.
-- **Integration tests end in `IntegrationTest`; unit tests end in `Test`.** A test
-  is an integration test when it needs something outside the JVM under test — a
-  database, a Testcontainer, an HTTP call to a real server — or boots a Spring
-  context to get it. So `CollectionServiceTest` unit-tests the service in
-  isolation, and `CollectionRepositoryIntegrationTest` exercises it against
-  Postgres. The two can then sit side by side for the same class. A shared base
-  class may appear later to hold common setup; it does not replace the suffix,
-  because the class name is what tells a reader (and a `-Dtest=` filter) which
-  kind of test they are looking at. Surefire's default `**/*Test.java` include
-  matches both, so both run under `./mvnw verify`.
+- **A test's suffix names its tier.** The class name is what tells a reader — and
+  a `-Dtest=` filter — what kind of test they are looking at, so the tiers are
+  named rather than inferred. Surefire's default `**/*Test.java` include matches
+  all of them, so every tier runs under `./mvnw verify`.
+
+  | Suffix | Tier | Covers |
+  | ------ | ---- | ------ |
+  | `…Test` | Unit | Decisions a class makes, with collaborators mocked. No Spring context. |
+  | `…IntegrationTest` | Integration | A component against a real Spring context and real Postgres. |
+  | `…TransactionTest` | Transaction | Transactional behaviour itself — locking, rollback boundaries, what concurrent callers observe. Runs serially. |
+  | `…EndToEndTest` | End-to-end | One endpoint's request and response, and the middleware in front of it, over HTTP. |
+  | `…FlowTest` | Flow | A sequence of endpoints where the subject is what carries between them. |
+
+  Which tiers a class gets follows from what it is:
+
+  - **Controllers** get `…EndToEndTest`, and `…FlowTest` for journeys spanning
+    several endpoints. No unit tests — a controller's whole job is HTTP, and a
+    unit test of it asserts nothing a reader could not read off the method.
+  - **Services** get both a unit test and an integration test. They cover
+    different things and neither replaces the other: the unit test reaches every
+    branch by stating the state, the integration test proves the pieces actually
+    fit together against a database.
+  - **Repositories** get an integration test only, and only for the queries the
+    project declares itself. Spring Data's inherited CRUD is not this project's
+    to test.
+  - **Records and entities** get tests only if they hold logic. Most do not.
+
+- **Shared setup lives in a base class; shared data lives in a helper.** The
+  bases are `IntegrationTestBase`, `EndToEndTestBase`, `FlowTestBase` and
+  `TransactionTestBase` in `testsupport`. The helpers are there too —
+  `AuthEndpoints` for requests, `TestAccounts` for seeding, `AccountAssertions`
+  for checking an account is wholly gone or wholly intact, `MutableClock` for
+  time. A change to how a test account is built, or to a request's shape, must
+  be a change to one file. Anything copied into a second test class belongs in
+  one of these instead.
+- **One Postgres container serves the whole run**, declared once on
+  `IntegrationTestBase`. Tests therefore share a database and must not assume an
+  empty one: seed under a unique slug rather than relying on rollback between
+  classes. (Repository tests are the exception — they are `@Transactional` and do
+  roll back.)
+- **Use data providers for cases that differ only in their inputs.**
+  `@ParameterizedTest` with `@CsvSource` or `@MethodSource` says "these all
+  behave the same way" in a way that four near-identical methods cannot. Give
+  each case its own seed data, since the database is shared.
 - Prefer Spring Boot test slices (`@WebMvcTest`) over `@SpringBootTest` when the
   full context is not needed — they are dramatically faster.
 - **Flyway owns the schema.** Never enable Hibernate DDL generation; write a
@@ -226,7 +402,7 @@ contradictory failures.
 | Gate | Owns | Config |
 | ---- | ---- | ------ |
 | Spotless | Formatting: layout, wrapping, import order | `pom.xml` |
-| Checkstyle | Design: size, nesting, complexity, banned constructs | `config/checkstyle/` |
+| Checkstyle | Design: size, nesting, complexity, banned constructs, Javadoc presence | `config/checkstyle/` |
 | SpotBugs + FindSecBugs | Bytecode defects and security patterns | `config/spotbugs/` |
 | JaCoCo | Line and branch coverage at 80% | `pom.xml` |
 | CodeQL | Deeper security analysis, in CI only | `.github/workflows/` |
@@ -241,11 +417,15 @@ pull request. Dependabot does not track them — bump them by hand.
 Run them locally with `npx markdownlint-cli2` and `yamllint --strict -c
 .yamllint.yml .`; `markdownlint-cli2 --fix` repairs most Markdown findings.
 
-Checkstyle enforces the numbers behind the principles above: methods stay under
-40 lines and files under 400, complexity under 10, nesting under 2, no magic
-numbers, no field injection. Those ceilings sit deliberately above the guidance
-in _Engineering principles_ — the guidance is the review signal, the gate catches
-what has clearly got away from us. **Do not add formatting rules to Checkstyle;
+Checkstyle enforces what is countable behind the principles above: methods stay
+under 40 lines and files under 400, complexity under 10, nesting under 2, no
+magic numbers, no field injection, and Javadoc on every public type and method.
+Those ceilings sit deliberately above the guidance in _Engineering principles_ —
+the guidance is the review signal, the gate catches what has clearly got away
+from us. Javadoc is the one rule checked for presence rather than for a number,
+because absence is the failure mode a reader cannot work around; whether it says
+anything worth reading stays a review question, since no rule can tell an
+explanation from a restatement. **Do not add formatting rules to Checkstyle;
 Spotless owns formatting.**
 
 When a gate fires, fix the code. Suppress only when the tool is wrong about that

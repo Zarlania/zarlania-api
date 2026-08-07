@@ -480,3 +480,29 @@ EOF
 - **Spec coverage:** every endpoint row in the spec's table maps to Tasks 3–7; roles/matrix/seeds → 1; claims + enforcement + staleness → 2; invariants → 5–6; 404 semantics → 4 (guard) and 6–7 (cases); quota + naming → 3; backfill test → 1; journey → 8. Custom-role readiness = nullable `organization_id` on `roles`, no endpoints (spec deferral).
 - **Placeholders:** none; the one in-flight design question (invite-as-OWNER failure code) is resolved inline as `orgs.owner-required` (403), added to the Global Constraints codes.
 - **Type consistency:** `MembershipDto`/`MemberDto` fields align between Tasks 2, 4, 6; `RefreshRotation` reused from plan 2 Task 10 unchanged; `mint(...)` five-arg signature consistent across Tasks 2 and 7; `RoleNames`/`Permissions` constants single-homed.
+
+## Amendment — spec 2 as implemented (2026-08-02)
+
+Written before spec 2's implementation (PR #33) settled. These deltas
+override the tasks above where they conflict:
+
+- **Task 7 (`POST /auth/token`) must add CSRF wiring.** The route
+  authenticates with the refresh cookie, and spec 2 shipped scoped CSRF
+  protection for exactly that case: add `POST /auth/token` to
+  `SecurityConfig.configureCsrf`'s matcher beside `/auth/refresh` and
+  `/auth/logout`, and drive the MockMvc tests through
+  `testsupport/CsrfCredentials` the way the refresh tests do. Without the
+  matcher entry the endpoint works but ships CSRF-unprotected.
+- **Task 7 must throttle.** Add a per-client-IP limit for `/auth/token` to
+  `ThrottleProperties` and gate the endpoint through `AuthController`'s
+  existing `requireCapacity` idiom — every other public `/auth` route has
+  one.
+- **Task 7's rotation reuses refresh's user re-check.**
+  `AuthTokenService.refresh` now rotates via a private `rotateOrReject` and
+  then `requireLiveVerifiedUser(rotation)`, which revokes the fresh family
+  and rejects when the user is gone or unverified. `switchOrganization`
+  should call through those same helpers rather than
+  `RefreshTokenService.rotate` directly.
+- **Reuse logging exists.** `RefreshTokenService.rotate` logs replays with
+  the `REFRESH_TOKEN_REUSE` WARN marker. The org-switch family revocation is
+  an ordinary revocation and must not reuse that marker.

@@ -1,0 +1,168 @@
+package com.zarlania.api.auth.controllers;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.zarlania.api.testsupport.EndToEndTestBase;
+import java.util.Locale;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.ResultActions;
+
+/**
+ * Covers the per-account half of the throttle. The limiter counts per-IP <em>and</em> per-account,
+ * and without the second one an attacker with many addresses is unbounded against a single known
+ * account.
+ *
+ * <p>Every per-IP limit is raised out of the way here, and every request below arrives from a
+ * different client address (in {@code CF-Connecting-IP}, the header {@code ClientIpResolver}
+ * reads), so a 429 can only have come from the account bucket. {@link ClientIpThrottleEndToEndTest}
+ * is the mirror image, holding the per-IP limits at their defaults.
+ */
+@SpringBootTest(
+    properties = {
+      "zarlania.throttle.endpoints.login.limit=1000",
+      "zarlania.throttle.endpoints.register.limit=1000",
+      "zarlania.throttle.endpoints.resend.limit=1000"
+    })
+class AccountThrottleEndToEndTest extends EndToEndTestBase {
+
+  // This class asserts on total outbound volume, so it needs an empty recorder — safe here because
+  // its property set is unique, which gives it a Spring context, and therefore a recorder, of its
+  // own. A class sharing a context must scope its reads by recipient instead.
+  @BeforeEach
+  void clearRecordedEmails() {
+    recordedEmails.clear();
+  }
+
+  private static final String PASSWORD = "correct-horse-battery";
+  private static final String CLOUDFLARE_CLIENT_IP_HEADER = "CF-Connecting-IP";
+  // login-account-limit and resend-account-limit in application.yml; one more request than each is
+  // what has to be refused.
+  private static final int LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = 11;
+  private static final int RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = 4;
+
+  // Each attempt arrives from its own address and spells the identifier differently — leading and
+  // trailing space, alternating case. Both are normalized into one bucket key on purpose: email
+  // and username are citext columns, so Postgres already treats these spellings as one account,
+  // and keying on the raw string would hand an attacker a fresh allowance per spelling.
+  @Test
+  void loginAttemptsOnOneAccountShareABucketAcrossAddressesAndSpellings() throws Exception {
+    for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING; attempt++) {
+      loginRequest(addressFor(attempt), spellingFor("targeted-account", attempt))
+          .andExpect(status().isUnauthorized());
+    }
+
+    loginRequest(
+            addressFor(LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING),
+            spellingFor("targeted-account", LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("auth.throttled"));
+  }
+
+  // A different account must still have its full allowance while the one above is exhausted —
+  // otherwise the bucket is global rather than per-account, which would be a denial of service on
+  // every user at once.
+  @Test
+  void anotherAccountKeepsItsOwnAllowance() throws Exception {
+    for (int attempt = 1; attempt < LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING; attempt++) {
+      loginRequest(addressFor(attempt), "exhausted-account").andExpect(status().isUnauthorized());
+    }
+    loginRequest(addressFor(LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING), "exhausted-account")
+        .andExpect(status().isTooManyRequests());
+
+    loginRequest(addressFor(1), "untouched-account").andExpect(status().isUnauthorized());
+  }
+
+  // Resend is the email-bombing path: without a per-account limit, an attacker with several
+  // addresses can keep mailing one victim indefinitely, and every message spends the provider
+  // quota the whole service shares.
+  @Test
+  void resendAttemptsForOneEmailShareABucketAcrossAddresses() throws Exception {
+    for (int attempt = 1; attempt < RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING; attempt++) {
+      resendRequest(addressFor(attempt), "bombed@example.com").andExpect(status().isAccepted());
+    }
+
+    resendRequest(addressFor(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING), "bombed@example.com")
+        .andExpect(status().isTooManyRequests())
+        .andExpect(jsonPath("$.code").value("auth.throttled"));
+  }
+
+  // Every other test here uses unregistered identifiers, which cannot show *where* the limit sits
+  // in the request's path. This one uses a real, live account and counts what the service actually
+  // did: three resends send three emails, and the throttled fourth sends none — so the limiter runs
+  // ahead of RegistrationService, not after it. If it ran after, the quota would already be spent
+  // by the time the 429 was returned, which is the whole reason the limit exists on this endpoint.
+  @Test
+  void aThrottledResendNeverReachesTheServiceThatWouldHaveSentTheEmail() throws Exception {
+    registerRequest("throttled-resend@example.com", "throttledresend")
+        .andExpect(status().isAccepted());
+    recordedEmails.clear();
+
+    for (int attempt = 1; attempt <= RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1; attempt++) {
+      resendRequest(addressFor(attempt), "throttled-resend@example.com")
+          .andExpect(status().isAccepted());
+    }
+    assertThat(recordedEmails.messages())
+        .hasSize(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1);
+
+    resendRequest(
+            addressFor(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING),
+            "throttled-resend@example.com")
+        .andExpect(status().isTooManyRequests());
+
+    assertThat(recordedEmails.messages())
+        .hasSize(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1);
+  }
+
+  private ResultActions registerRequest(String email, String username) throws Exception {
+    return mockMvc.perform(
+        post("/auth/register")
+            .header(CLOUDFLARE_CLIENT_IP_HEADER, addressFor(1))
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {"email":"%s","username":"%s","password":"%s"}
+                """
+                    .formatted(email, username, PASSWORD)));
+  }
+
+  // TEST-NET-3 (RFC 5737): a distinct client address per attempt, carried in the header
+  // ClientIpResolver actually reads, so the per-IP bucket is never the reason a request is refused
+  // even if its limit were somehow not raised.
+  private static String addressFor(int attempt) {
+    return "203.0.113." + attempt;
+  }
+
+  private static String spellingFor(String identifier, int attempt) {
+    return attempt % 2 == 0 ? " " + identifier.toUpperCase(Locale.ROOT) + " " : identifier;
+  }
+
+  private ResultActions loginRequest(String clientIp, String identifier) throws Exception {
+    return mockMvc.perform(
+        post("/auth/login")
+            .header(CLOUDFLARE_CLIENT_IP_HEADER, clientIp)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {"identifier":"%s","password":"%s"}
+                """
+                    .formatted(identifier, PASSWORD)));
+  }
+
+  private ResultActions resendRequest(String clientIp, String email) throws Exception {
+    return mockMvc.perform(
+        post("/auth/resend")
+            .header(CLOUDFLARE_CLIENT_IP_HEADER, clientIp)
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                """
+                {"email":"%s"}
+                """
+                    .formatted(email)));
+  }
+}

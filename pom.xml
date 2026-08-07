@@ -52,8 +52,15 @@
       this once a SpotBugs release supports Java 25 directly.
     -->
     <asm.version>9.10.1</asm.version>
+    <!--
+      BouncyCastle is not in the Spring Boot BOM; Argon2PasswordEncoder requires
+      it at runtime for PBKDF2 and other cryptographic operations.
+    -->
+    <bouncycastle.version>1.81</bouncycastle.version>
     <!-- Minimum line and branch coverage. The build fails below this. -->
     <jacoco.coverage.minimum>0.80</jacoco.coverage.minimum>
+    <!-- The annotations jar matching the spotbugs-maven-plugin's spotbugs core version. -->
+    <spotbugs-annotations.version>4.10.3</spotbugs-annotations.version>
   </properties>
 
   <dependencies>
@@ -68,6 +75,35 @@
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-data-jpa</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+    <!--
+      Carries throttling. The per-account buckets key on a field of the parsed
+      request body, which a servlet filter or HandlerInterceptor cannot see —
+      both run before argument resolution. An aspect around the handler method
+      runs after binding, so one mechanism can cover both bucket kinds.
+
+      Named spring-boot-starter-aspectj, not the spring-boot-starter-aop of
+      Boot 3 and earlier: Boot 4 renamed it, and the old id is not managed by
+      the parent at all, so requesting it fails the build with a missing
+      version rather than resolving to something stale.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-aspectj</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>${bouncycastle.version}</version>
+      <scope>runtime</scope>
     </dependency>
     <!--
       Spring Boot 4 split FlywayAutoConfiguration out of spring-boot-autoconfigure
@@ -94,6 +130,16 @@
       <artifactId>lombok</artifactId>
       <scope>provided</scope>
     </dependency>
+    <!--
+      Compile-only, so @SuppressFBWarnings can target a single finding at its site
+      (CLAUDE.md's preferred suppression) instead of a project-wide exclude.xml rule.
+    -->
+    <dependency>
+      <groupId>com.github.spotbugs</groupId>
+      <artifactId>spotbugs-annotations</artifactId>
+      <version>${spotbugs-annotations.version}</version>
+      <scope>provided</scope>
+    </dependency>
 
     <dependency>
       <groupId>org.springframework.boot</groupId>
@@ -118,6 +164,11 @@
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>testcontainers-postgresql</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
   </dependencies>

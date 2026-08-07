@@ -1,0 +1,184 @@
+package com.zarlania.api.auth.services;
+
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSet;
+import com.nimbusds.jose.jwk.RSAKey;
+import com.zarlania.api.auth.AuthProperties;
+import java.security.KeyFactory;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.PublicKey;
+import java.security.interfaces.RSAPrivateCrtKey;
+import java.security.interfaces.RSAPrivateKey;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.InvalidKeySpecException;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.RSAPublicKeySpec;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import org.springframework.core.env.Environment;
+import org.springframework.stereotype.Component;
+
+/**
+ * Holds the RSA key pair that signs access tokens plus any retired public keys still needed to
+ * verify tokens minted before a rotation. Keys are resolved once at construction time — signing
+ * every token during the process's lifetime with the same key, and the same {@code kid}, is what
+ * makes the published JWKS usable for verification: a token outlives neither its key nor its {@code
+ * kid}, so any holder of the JWKS can check a signature without asking this service.
+ */
+@Component
+public final class JwtKeys {
+
+  private static final String RSA_ALGORITHM = "RSA";
+  private static final int EPHEMERAL_KEY_SIZE_BITS = 2048;
+  private static final String PRODUCTION_PROFILE = "production";
+  // The PEM header itself, not a secret; gitleaks flags the literal text regardless of context.
+  private static final String PRIVATE_KEY_BEGIN_MARKER =
+      "-----BEGIN PRIVATE KEY-----"; // gitleaks:allow
+  private static final String PRIVATE_KEY_END_MARKER = "-----END PRIVATE KEY-----";
+  private static final String PUBLIC_KEY_BEGIN_MARKER = "-----BEGIN PUBLIC KEY-----";
+  private static final String PUBLIC_KEY_END_MARKER = "-----END PUBLIC KEY-----";
+  // The two-character escape sequences, not the control characters they stand for: a PEM squeezed
+  // onto one line spells each break as a backslash followed by 'n' (or 'r'), and those characters
+  // survive verbatim into the env var's value.
+  private static final String ESCAPED_LINE_FEED = "\\n";
+  private static final String ESCAPED_CARRIAGE_RETURN = "\\r";
+
+  private final RSAKey signingKey;
+  private final JWKSet publicJwkSet;
+
+  /**
+   * Resolves the signing key once, at startup, so a misconfigured deployment fails to boot rather
+   * than failing on the first login.
+   *
+   * @throws IllegalStateException in production if no private key is configured; outside production
+   *     an ephemeral key is generated instead, which is why local development needs no secret
+   */
+  public JwtKeys(AuthProperties authProperties, Environment environment) {
+    this.signingKey = resolveSigningKey(authProperties, environment);
+    this.publicJwkSet = buildPublicJwkSet(signingKey, authProperties.jwtRetiredPublicKeysPem());
+  }
+
+  /** The private key access tokens are signed with. Never published — see {@link #publicJwkSet}. */
+  public RSAKey signingKey() {
+    return signingKey;
+  }
+
+  /**
+   * The public half of the signing key plus any retired keys, for verification.
+   *
+   * <p>Retired keys stay in the set so that tokens minted before a rotation keep verifying until
+   * they expire, which is what makes rotating a key a non-event for logged-in clients.
+   */
+  public JWKSet publicJwkSet() {
+    return publicJwkSet;
+  }
+
+  private static RSAKey resolveSigningKey(AuthProperties authProperties, Environment environment) {
+    String pem = authProperties.jwtPrivateKeyPem();
+    if (pem != null && !pem.isBlank()) {
+      return signingKeyFromPem(pem);
+    }
+    if (environment.matchesProfiles(PRODUCTION_PROFILE)) {
+      throw new IllegalStateException(
+          "zarlania.auth.jwt-private-key-pem (JWT_PRIVATE_KEY) must be set in production");
+    }
+    return generateEphemeralSigningKey();
+  }
+
+  private static RSAKey signingKeyFromPem(String pem) {
+    byte[] keyBytes = decodeBase64Body(pem, PRIVATE_KEY_BEGIN_MARKER, PRIVATE_KEY_END_MARKER);
+    try {
+      KeyFactory keyFactory = KeyFactory.getInstance(RSA_ALGORITHM);
+      RSAPrivateKey privateKey =
+          (RSAPrivateKey) keyFactory.generatePrivate(new PKCS8EncodedKeySpec(keyBytes));
+      RSAPublicKey publicKey = derivePublicKey(keyFactory, privateKey);
+      return new RSAKey.Builder(publicKey).privateKey(privateKey).keyIDFromThumbprint().build();
+    } catch (NoSuchAlgorithmException | InvalidKeySpecException | JOSEException exception) {
+      throw new IllegalStateException("Failed to parse the configured JWT private key", exception);
+    }
+  }
+
+  private static RSAPublicKey derivePublicKey(KeyFactory keyFactory, RSAPrivateKey privateKey)
+      throws InvalidKeySpecException {
+    if (!(privateKey instanceof RSAPrivateCrtKey crtKey)) {
+      // A public exponent only exists on the CRT form of an RSA private key, so
+      // there is no way to derive the matching public key from a plain one.
+      throw new IllegalStateException(
+          "Configured JWT private key is not in RSA CRT form; cannot derive its public key");
+    }
+    RSAPublicKeySpec publicKeySpec =
+        new RSAPublicKeySpec(crtKey.getModulus(), crtKey.getPublicExponent());
+    return (RSAPublicKey) keyFactory.generatePublic(publicKeySpec);
+  }
+
+  private static RSAKey generateEphemeralSigningKey() {
+    try {
+      KeyPairGenerator generator = KeyPairGenerator.getInstance(RSA_ALGORITHM);
+      generator.initialize(EPHEMERAL_KEY_SIZE_BITS);
+      KeyPair keyPair = generator.generateKeyPair();
+      return new RSAKey.Builder((RSAPublicKey) keyPair.getPublic())
+          .privateKey(keyPair.getPrivate())
+          .keyIDFromThumbprint()
+          .build();
+    } catch (NoSuchAlgorithmException | JOSEException exception) {
+      throw new IllegalStateException("Failed to generate an ephemeral JWT signing key", exception);
+    }
+  }
+
+  private static JWKSet buildPublicJwkSet(RSAKey signingKey, String retiredPublicKeysPem) {
+    List<JWK> keys = new ArrayList<>();
+    keys.add(signingKey.toPublicJWK());
+    keys.addAll(retiredPublicKeys(retiredPublicKeysPem));
+    return new JWKSet(keys);
+  }
+
+  private static List<RSAKey> retiredPublicKeys(String retiredPublicKeysPem) {
+    if (retiredPublicKeysPem == null || retiredPublicKeysPem.isBlank()) {
+      return List.of();
+    }
+    List<RSAKey> keys = new ArrayList<>();
+    for (String block : retiredPublicKeysPem.split(PUBLIC_KEY_BEGIN_MARKER)) {
+      if (!block.isBlank()) {
+        keys.add(retiredPublicKeyFromBlock(block));
+      }
+    }
+    return keys;
+  }
+
+  private static RSAKey retiredPublicKeyFromBlock(String block) {
+    // The BEGIN marker is already gone: retiredPublicKeys() split the PEM on it.
+    byte[] keyBytes = decodeBase64Body(block.replace(PUBLIC_KEY_END_MARKER, ""));
+    try {
+      KeyFactory keyFactory = KeyFactory.getInstance(RSA_ALGORITHM);
+      PublicKey publicKey = keyFactory.generatePublic(new X509EncodedKeySpec(keyBytes));
+      return new RSAKey.Builder((RSAPublicKey) publicKey).keyIDFromThumbprint().build();
+    } catch (NoSuchAlgorithmException | InvalidKeySpecException | JOSEException exception) {
+      throw new IllegalStateException("Failed to parse a retired JWT public key", exception);
+    }
+  }
+
+  private static byte[] decodeBase64Body(String pem, String beginMarker, String endMarker) {
+    return decodeBase64Body(pem.replace(beginMarker, "").replace(endMarker, ""));
+  }
+
+  private static byte[] decodeBase64Body(String base64WithMarkersRemoved) {
+    // Env vars carry PEM blocks with either real or escaped newlines, depending on how the
+    // platform injects them: Render's dashboard stores a pasted multi-line value verbatim, but a
+    // value supplied through its API, a .env file or `docker run --env` arrives on one line with
+    // every break written as backslash-n. Both spellings have to go, and the escapes have to go
+    // first — stripping only real whitespace leaves the backslashes sitting in the Base64 body,
+    // where the strict decoder below rejects them. That throws inside JwtKeys' constructor, which
+    // means the whole service fails to start rather than failing one request.
+    String base64 =
+        base64WithMarkersRemoved
+            .replace(ESCAPED_LINE_FEED, "")
+            .replace(ESCAPED_CARRIAGE_RETURN, "")
+            .replaceAll("\\s", "");
+    return Base64.getDecoder().decode(base64);
+  }
+}
