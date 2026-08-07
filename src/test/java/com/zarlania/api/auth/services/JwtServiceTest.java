@@ -86,6 +86,31 @@ class JwtServiceTest {
     assertThat(lifetime).isEqualTo(ACCESS_TOKEN_TTL);
   }
 
+  // Same user, same organization, same kind, same instant: under the fixed clock every other claim
+  // is byte-identical, so jti is the only thing that can tell two tokens apart. Anything that has
+  // to name one token — a replay check, a revocation list — has nothing else to key on.
+  @Test
+  void mintedTokensCarryDistinctJwtIdsWhenEveryOtherClaimIsIdentical() throws Exception {
+    AuthProperties authProperties = authProperties(generateTestPrivateKeyPem(), "");
+    JwtKeys jwtKeys = new JwtKeys(authProperties, new MockEnvironment());
+    JwtService jwtService = new JwtService(authProperties, jwtKeys, FIXED_CLOCK);
+    UUID userId = UUID.randomUUID();
+    UUID organizationId = UUID.randomUUID();
+
+    String firstJwtId =
+        SignedJWT.parse(jwtService.mint(userId, organizationId, TokenKind.USER))
+            .getJWTClaimsSet()
+            .getJWTID();
+    String secondJwtId =
+        SignedJWT.parse(jwtService.mint(userId, organizationId, TokenKind.USER))
+            .getJWTClaimsSet()
+            .getJWTID();
+
+    assertThat(firstJwtId).isNotBlank();
+    assertThat(secondJwtId).isNotBlank();
+    assertThat(firstJwtId).isNotEqualTo(secondJwtId);
+  }
+
   @Test
   void mintedTokenSignatureVerifiesAgainstThePublicJwkSet() throws Exception {
     AuthProperties authProperties = authProperties(generateTestPrivateKeyPem(), "");
