@@ -61,6 +61,14 @@ public final class CsrfCredentials {
   }
 
   /**
+   * The header name the endpoint named, for a test that has to send that header carrying something
+   * other than the genuine token — {@link #applyHeaderTo} always sends the real one.
+   */
+  public String headerName() {
+    return headerName;
+  }
+
+  /**
    * Attaches only the cookie half of the pair. The mirror of {@link #applyHeaderTo}, for asserting
    * that a caller holding a genuine cookie still gets nowhere without the header.
    */

@@ -11,6 +11,8 @@ import com.zarlania.api.testsupport.CsrfCredentials;
 import com.zarlania.api.testsupport.FlowTestBase;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MvcResult;
@@ -96,6 +98,39 @@ class CsrfEndToEndTest extends FlowTestBase {
 
     // The session itself survives the rejection: a forgery attempt must not cost the real owner
     // their refresh cookie.
+    auth.refresh(cookie).andExpect(status().isOk());
+  }
+
+  // The test above sends no header at all, so it pins the one case Spring itself would fall back
+  // to the parameter on: the fallback triggers on a *null* header, and only then. This pins the
+  // other side of that line — a header that arrives but is unusable. A blank one is the sharp end,
+  // because `X-XSRF-TOKEN:` with no value reads back as "" rather than null, so it is present as
+  // far as every check here is concerned and the parameter is never consulted.
+  //
+  // Nothing in today's chain could do otherwise, which is the point of pinning it: the plausible
+  // regression is a later handler "helpfully" treating an empty header as a missing one and
+  // resuming the parameter fallback, which hands the sibling-host form attack back its opening. A
+  // form can send a blank header no more than a real one, but it can always send the _csrf field.
+  @ParameterizedTest
+  @CsvSource({"blankheader, ''", "wrongheader, not-the-token-that-was-issued"})
+  void refreshWithAValidFormParameterIsRejectedWhenTheHeaderIsPresentButUnusable(
+      String slug, String headerValue) throws Exception {
+    registerAndVerify(slug + "@example.com", slug);
+    MvcResult login = auth.login(slug, PASSWORD).andExpect(status().isOk()).andReturn();
+    String cookie = refreshCookieOf(login);
+    CsrfCredentials csrf = CsrfCredentials.fetch(mockMvc);
+
+    mockMvc
+        .perform(
+            csrf.applyCookieTo(post("/auth/refresh"))
+                .header(csrf.headerName(), headerValue)
+                .cookie(new Cookie(AuthEndpoints.REFRESH_COOKIE, cookie))
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .param(CSRF_PARAMETER, csrf.token()))
+        .andExpect(status().isForbidden());
+
+    // The genuine cookie is untouched by the rejection, so the real owner's session survives an
+    // attempt made in their browser.
     auth.refresh(cookie).andExpect(status().isOk());
   }
 
