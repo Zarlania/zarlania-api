@@ -24,11 +24,33 @@ public record ThrottleProperties(
    * reference to what the binder passed in. A throttle whose limits could be changed at runtime by
    * an unrelated caller would be no throttle at all.
    *
+   * <p>Also rejects an email budget the service cannot run on. The two halves fail in opposite
+   * directions and neither announces itself. A non-positive limit refuses the very first send, so
+   * no verification email leaves the service and no account registered afterwards can ever be used.
+   * A non-positive window has already elapsed by the time the next send arrives, so each one starts
+   * a fresh window, the count never reaches the limit, and the ceiling that exists to keep a free
+   * provider tier from being drained quietly is not enforced at all.
+   *
+   * <p>Every message names the property as it is written in configuration, not the record component
+   * — whoever reads one is looking at {@code application.yml} or an environment variable.
+   *
    * @throws NullPointerException if no {@code endpoints} block is configured — failing at startup
-   *     is the right answer, since every {@link Throttled} endpoint would otherwise run unlimited
+   *     is the right answer, since every {@link Throttled} endpoint would otherwise run unlimited —
+   *     or if {@code emailBudgetWindow} is not configured
+   * @throws IllegalArgumentException if {@code emailBudgetLimit} is not at least one, or if {@code
+   *     emailBudgetWindow} is not positive
    */
   public ThrottleProperties {
     endpoints = Map.copyOf(Objects.requireNonNull(endpoints, "zarlania.throttle.endpoints"));
+    if (emailBudgetLimit < 1) {
+      throw new IllegalArgumentException(
+          "zarlania.throttle.email-budget-limit must be at least 1, but was " + emailBudgetLimit);
+    }
+    Objects.requireNonNull(emailBudgetWindow, "zarlania.throttle.email-budget-window");
+    if (!emailBudgetWindow.isPositive()) {
+      throw new IllegalArgumentException(
+          "zarlania.throttle.email-budget-window must be positive, but was " + emailBudgetWindow);
+    }
   }
 
   /**
