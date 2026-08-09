@@ -36,6 +36,40 @@ import java.util.Optional;
  */
 public record EndpointLimits(int limit, Integer accountLimit) {
 
+  /**
+   * Rejects a limit that would close the endpoint rather than throttle it.
+   *
+   * <p>{@link InMemoryRateLimiter} permits a request when the running count for the window is at or
+   * below the limit, so a limit of zero or less is exceeded by the first caller and refuses every
+   * request from then on. Nothing downstream reports that as a misconfiguration — the endpoint
+   * simply answers 429 forever, which reads as a throttle working hard rather than one set wrong.
+   * Zero is also what an empty value in the YAML binds to.
+   *
+   * <p>A null {@code accountLimit} is left alone, because absent and non-positive mean different
+   * things: absent is how an endpoint that names no account is configured, and several are. Zero
+   * would be an account bucket that refuses everybody.
+   *
+   * <p>The messages name the configuration keys rather than the record components. The endpoint
+   * they belong to is not knowable here — this record is one value in a map keyed by endpoint name,
+   * and the binder builds it before {@link ThrottleProperties} sees which key it sat under — so
+   * whoever reads one is told which setting is wrong and left to find it under the endpoint they
+   * were editing.
+   *
+   * @throws IllegalArgumentException if {@code limit} is not at least one, or if {@code
+   *     accountLimit} is present and not at least one
+   */
+  public EndpointLimits {
+    if (limit < 1) {
+      throw new IllegalArgumentException(
+          "zarlania.throttle.endpoints limit must be at least 1, but was " + limit);
+    }
+    if (accountLimit != null && accountLimit < 1) {
+      throw new IllegalArgumentException(
+          "zarlania.throttle.endpoints account-limit must be at least 1 when set, but was "
+              + accountLimit);
+    }
+  }
+
   /** The per-account limit, empty when this endpoint has no account bucket. */
   public Optional<Integer> accountLimitIfPresent() {
     return Optional.ofNullable(accountLimit);
