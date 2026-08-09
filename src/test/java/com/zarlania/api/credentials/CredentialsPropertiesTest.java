@@ -38,6 +38,21 @@ class CredentialsPropertiesTest {
         .hasMessageContaining("zarlania.credentials.verification-token-ttl");
   }
 
+  // A TTL is added to the current instant to set a token's expiry, so anything not positive issues
+  // a token that expired before the email carrying it was sent. That failure is silent in a way the
+  // null case is not: rows are written and mail goes out exactly as they do when it works, and only
+  // the account owner ever finds out, by being unable to verify and therefore unable to log in.
+  @ParameterizedTest
+  @ValueSource(strings = {"PT0S", "PT-24H"})
+  void rejectsANonPositiveVerificationTokenTtlNamingTheProperty(String ttl) {
+    Duration nonPositive = Duration.parse(ttl);
+
+    assertThatThrownBy(() -> new CredentialsProperties(nonPositive, PERMITS))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("zarlania.credentials.verification-token-ttl")
+        .hasMessageContaining(nonPositive.toString());
+  }
+
   // Zero is the value that makes this worth checking at all — it is what an unset or misspelled
   // property binds to, and it is indistinguishable from a working service until the first hash.
   @ParameterizedTest

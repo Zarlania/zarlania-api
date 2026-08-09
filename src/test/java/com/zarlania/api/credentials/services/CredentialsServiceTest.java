@@ -34,8 +34,11 @@ class CredentialsServiceTest {
   // rather than a mock so the test proves encode/verify actually round-trip.
   private static final PasswordEncoder ENCODER = new Argon2PasswordEncoder(16, 32, 1, 1024, 1);
 
+  // Nothing in CredentialsService reads the TTL — it belongs to EmailVerificationService — but the
+  // record refuses a non-positive one, so the tests below name a real value rather than a filler.
+  private static final Duration VERIFICATION_TOKEN_TTL = Duration.ofHours(24);
   private static final CredentialsProperties PROPERTIES =
-      new CredentialsProperties(Duration.ofHours(24), 4);
+      new CredentialsProperties(VERIFICATION_TOKEN_TTL, 4);
   private static final Duration BLOCKED_CALL_GRACE = Duration.ofMillis(300);
   private static final Duration UNBLOCKED_CALL_TIMEOUT = Duration.ofSeconds(5);
 
@@ -127,7 +130,10 @@ class CredentialsServiceTest {
     GatedEncoder encoder = new GatedEncoder();
     CredentialsService gated =
         new CredentialsService(
-            credentials, verificationTokens, encoder, new CredentialsProperties(Duration.ZERO, 1));
+            credentials,
+            verificationTokens,
+            encoder,
+            new CredentialsProperties(VERIFICATION_TOKEN_TTL, 1));
     Thread decoy = startThread(gated::hashDecoyPassword);
     assertThat(encoder.decoyStarted.await(UNBLOCKED_CALL_TIMEOUT.toMillis(), MILLISECONDS))
         .isTrue();
