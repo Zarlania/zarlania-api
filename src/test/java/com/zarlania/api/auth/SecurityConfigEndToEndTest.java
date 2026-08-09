@@ -163,6 +163,33 @@ class SecurityConfigEndToEndTest extends EndToEndTestBase {
             header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, HttpHeaders.RETRY_AFTER));
   }
 
+  // The allow-list is explicit rather than a wildcard, which is the whole reason
+  // setAllowCredentials(true) above it is safe. An origin that is not on it must get no
+  // Access-Control-Allow-Origin, or the browser hands it a response it should never have read.
+  //
+  // Asserting the 403 alongside the missing header is what makes this load-bearing rather than
+  // vacuous: delete the CORS configuration entirely and the header is still absent, so absence on
+  // its own would keep passing while the protection was gone. Rejection before the controller runs
+  // is the part only a working allow-list produces — and it means the CSRF token in this
+  // endpoint's body is never minted for the caller at all.
+  //
+  // The sibling host is the case the allow-list exists for. A wholly unrelated origin is already
+  // cross-site, so SameSite=Strict withholds the refresh cookie from it anyway; a host under the
+  // registrable domain is same-site, so the cookie would travel and the allow-list is the only
+  // thing standing in the way.
+  @ParameterizedTest
+  @ValueSource(strings = {"https://evil.example", "https://evil.zarlania.com"})
+  void anUnlistedOriginIsRefusedAndGetsNoAllowOriginHeader(String origin) throws Exception {
+    MvcResult result =
+        mockMvc
+            .perform(get("/auth/csrf").header(HttpHeaders.ORIGIN, origin))
+            .andExpect(status().isForbidden())
+            .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN))
+            .andReturn();
+
+    assertThat(result.getResponse().getContentAsString()).doesNotContain("token");
+  }
+
   // Flips the first character of the signature segment so the claims and header stay
   // well-formed but the signature no longer verifies against the signing key.
   private static String tamperSignature(String jwt) {
