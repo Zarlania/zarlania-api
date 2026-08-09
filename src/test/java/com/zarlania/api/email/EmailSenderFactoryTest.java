@@ -8,6 +8,7 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.web.client.ResourceAccessException;
@@ -38,20 +39,26 @@ class EmailSenderFactoryTest {
     assertThat(factory("", new MockEnvironment()).create()).isInstanceOf(LoggingEmailSender.class);
   }
 
-  @Test
-  void aBlankKeyInProductionFailsStartupRatherThanFallingBackToLogging() {
+  // Null is the shape an unset property binds to, and it has to reach the same decision the other
+  // empty spellings do rather than throwing on the way to it — a deployment that never set the
+  // variable at all is the most ordinary way to have no key.
+  @ParameterizedTest
+  @NullSource
+  @ValueSource(strings = {"", " ", "\t"})
+  void aKeyInProductionWithNothingInItFailsStartupRatherThanFallingBackToLogging(String apiKey) {
     MockEnvironment environment = new MockEnvironment();
     environment.setActiveProfiles(PRODUCTION_PROFILE);
 
-    assertThatThrownBy(() -> factory("", environment).create())
+    assertThatThrownBy(() -> factory(apiKey, environment).create())
         .isInstanceOf(IllegalStateException.class);
   }
 
   // A key that is present but empty of content is the same as no key at all — a deployment that set
-  // the variable to whitespace must not get a client that authenticates with it.
+  // the variable to whitespace, or never set it, must not get a client that authenticates with it.
   @ParameterizedTest
+  @NullSource
   @ValueSource(strings = {"", " ", "\t"})
-  void aKeyOfOnlyWhitespaceCountsAsUnconfigured(String apiKey) {
+  void aKeyWithNothingInItCountsAsUnconfigured(String apiKey) {
     assertThat(factory(apiKey, new MockEnvironment()).create())
         .isInstanceOf(LoggingEmailSender.class);
   }

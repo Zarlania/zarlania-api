@@ -1,7 +1,6 @@
 package com.zarlania.api.email;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Duration;
@@ -44,21 +43,31 @@ class EmailPropertiesTest {
   // selects the logging adapter — and EmailSenderFactory is the one place allowed to decide that a
   // missing key is fatal, because only it knows the profile. Validating it here would take that
   // decision away and break local development.
+  //
+  // Normalised rather than merely tolerated, though: an unset property binds to null, and this
+  // record documents the key as "blank when none is configured". EmailSenderFactory takes that at
+  // its word and asks isBlank(), so anything reaching it null would throw on the way to the very
+  // decision this exemption exists to allow.
   @ParameterizedTest
   @NullAndEmptySource
   @ValueSource(strings = {"   "})
-  void acceptsABlankResendApiKeyBecauseTheFactoryOwnsThatDecision(String apiKey) {
-    assertThatCode(
-            () ->
-                new EmailProperties(
-                    FROM_ADDRESS,
-                    apiKey,
-                    BASE_URL,
-                    TIMEOUT,
-                    TIMEOUT,
-                    DISPATCH_THREADS,
-                    DISPATCH_QUEUE_CAPACITY))
-        .doesNotThrowAnyException();
+  void normalisesABlankResendApiKeyToOneTheFactoryCanAskIsBlank(String apiKey) {
+    EmailProperties properties =
+        new EmailProperties(
+            FROM_ADDRESS,
+            apiKey,
+            BASE_URL,
+            TIMEOUT,
+            TIMEOUT,
+            DISPATCH_THREADS,
+            DISPATCH_QUEUE_CAPACITY);
+
+    assertThat(properties.resendApiKey()).isNotNull().isBlank();
+  }
+
+  @Test
+  void keepsAConfiguredResendApiKeyExactlyAsGiven() {
+    assertThat(properties().resendApiKey()).isEqualTo(API_KEY);
   }
 
   // Goes into the Resend request body verbatim, so a blank one is a 422 on every send.

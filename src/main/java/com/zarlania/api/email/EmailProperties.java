@@ -8,7 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Binds the {@code zarlania.email} configuration block; see {@code application.yml}.
  *
  * @param resendApiKey the provider credential, blank when none is configured — which is a startup
- *     failure in production and a fall back to logging everywhere else
+ *     failure in production and a fall back to logging everywhere else. Never null: an unset
+ *     property is normalised to an empty string, so callers can ask {@code isBlank()} directly
  * @param resendBaseUrl the provider's API root, configurable so a different Resend-compatible
  *     endpoint, or a stub, can be pointed at without a code change
  * @param connectTimeout how long a send may wait for the provider to accept a connection
@@ -41,7 +42,11 @@ public record EmailProperties(
    *
    * <p>{@code resendApiKey} is deliberately not checked. A blank key is how every non-production
    * deployment runs — it selects the logging adapter — and {@link EmailSenderFactory} is the only
-   * thing that knows the profile, so whether a missing key is fatal is its decision to make.
+   * thing that knows the profile, so whether a missing key is fatal is its decision to make. It is
+   * normalised to an empty string rather than left alone, because an unset property binds to null
+   * and every reader of it goes on to ask {@code isBlank()}: without this, the most ordinary way to
+   * have no key — never setting the variable — would throw on the way to the decision this
+   * exemption exists to allow, and it would throw identically in production and out of it.
    *
    * <p>{@code dispatchQueueCapacity} floors at zero rather than one, because zero is a real choice:
    * it makes the executor hand a send straight to a thread and reject it when none is free, instead
@@ -58,6 +63,7 @@ public record EmailProperties(
    */
   public EmailProperties {
     requireNonBlank(from, "zarlania.email.from");
+    resendApiKey = Objects.requireNonNullElse(resendApiKey, "");
     requireNonBlank(resendBaseUrl, "zarlania.email.resend-base-url");
     requirePositive(connectTimeout, "zarlania.email.connect-timeout");
     requirePositive(readTimeout, "zarlania.email.read-timeout");
