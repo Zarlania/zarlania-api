@@ -58,6 +58,29 @@ class ThrottlePropertiesTest {
   }
 
   @Test
+  void rejectsAMissingWindowNamingTheProperty() {
+    assertThatThrownBy(() -> new ThrottleProperties(null, Map.of(), BUDGET_LIMIT, BUDGET_WINDOW))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("zarlania.throttle.window");
+  }
+
+  // This one disables every per-IP and per-account limit at once, by the same mechanism the budget
+  // window fails on: a window that has already elapsed starts fresh on each request, so the count
+  // never climbs. Login brute-forcing and registration spam would both run unbounded, and the only
+  // visible difference from a working throttle is that nothing is ever refused.
+  @ParameterizedTest
+  @ValueSource(strings = {"PT0S", "PT-1M"})
+  void rejectsANonPositiveWindowNamingTheProperty(String window) {
+    Duration nonPositive = Duration.parse(window);
+
+    assertThatThrownBy(
+            () -> new ThrottleProperties(nonPositive, Map.of(), BUDGET_LIMIT, BUDGET_WINDOW))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("zarlania.throttle.window")
+        .hasMessageContaining(nonPositive.toString());
+  }
+
+  @Test
   void rejectsAMissingEndpointsBlockNamingTheProperty() {
     assertThatThrownBy(() -> new ThrottleProperties(WINDOW, null, BUDGET_LIMIT, BUDGET_WINDOW))
         .isInstanceOf(NullPointerException.class)

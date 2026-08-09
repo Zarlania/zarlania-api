@@ -24,23 +24,34 @@ public record ThrottleProperties(
    * reference to what the binder passed in. A throttle whose limits could be changed at runtime by
    * an unrelated caller would be no throttle at all.
    *
-   * <p>Also rejects an email budget the service cannot run on. The two halves fail in opposite
-   * directions and neither announces itself. A non-positive limit refuses the very first send, so
-   * no verification email leaves the service and no account registered afterwards can ever be used.
-   * A non-positive window has already elapsed by the time the next send arrives, so each one starts
-   * a fresh window, the count never reaches the limit, and the ceiling that exists to keep a free
-   * provider tier from being drained quietly is not enforced at all.
+   * <p>Also rejects durations and limits the service cannot throttle on, none of which announce
+   * themselves. A non-positive window is the widest of them: {@link RateLimitWindow#hasPassed} asks
+   * whether now is after the window's start plus its length, so one of zero or less has always
+   * elapsed by the next request. Each request then starts a fresh window, no count ever climbs, and
+   * every per-IP and per-account limit stops applying at once — login brute-forcing and
+   * registration spam both run unbounded, with nothing refused and nothing logged to say so. The
+   * same reasoning makes {@code emailBudgetWindow} the dangerous half of the email budget, where
+   * what goes unenforced is the ceiling keeping a free provider tier from being drained.
+   *
+   * <p>A non-positive {@code emailBudgetLimit} fails the opposite way, refusing the very first
+   * send: no verification email leaves the service, and no account registered afterwards can ever
+   * be used.
    *
    * <p>Every message names the property as it is written in configuration, not the record component
    * — whoever reads one is looking at {@code application.yml} or an environment variable.
    *
-   * @throws NullPointerException if no {@code endpoints} block is configured — failing at startup
-   *     is the right answer, since every {@link Throttled} endpoint would otherwise run unlimited —
-   *     or if {@code emailBudgetWindow} is not configured
-   * @throws IllegalArgumentException if {@code emailBudgetLimit} is not at least one, or if {@code
-   *     emailBudgetWindow} is not positive
+   * @throws NullPointerException if {@code window} or {@code emailBudgetWindow} is not configured,
+   *     or if no {@code endpoints} block is — failing at startup is the right answer for the last,
+   *     since every {@link Throttled} endpoint would otherwise run unlimited
+   * @throws IllegalArgumentException if {@code window} or {@code emailBudgetWindow} is not
+   *     positive, or if {@code emailBudgetLimit} is not at least one
    */
   public ThrottleProperties {
+    Objects.requireNonNull(window, "zarlania.throttle.window");
+    if (!window.isPositive()) {
+      throw new IllegalArgumentException(
+          "zarlania.throttle.window must be positive, but was " + window);
+    }
     endpoints = Map.copyOf(Objects.requireNonNull(endpoints, "zarlania.throttle.endpoints"));
     if (emailBudgetLimit < 1) {
       throw new IllegalArgumentException(
