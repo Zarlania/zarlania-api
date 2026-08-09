@@ -86,6 +86,28 @@ class OrganizationServiceIntegrationTest extends IntegrationTestBase {
     assertThat(found).isEmpty();
   }
 
+  // The type check alone is not enough, because PERSONAL says what an organization is for, not
+  // whose it is. A membership row pointing at somebody else's personal organization would satisfy
+  // it and hand this account a session scoped into another person's space — so ownership is the
+  // half that actually answers "which one is mine".
+  @Test
+  void personalOrganizationOfIgnoresAPersonalOrganizationTheAccountDoesNotOwn() {
+    UserEntity owner =
+        users.saveAndFlush(new UserEntity("personal-owner@example.com", "personalowner"));
+    UserEntity guest =
+        users.saveAndFlush(new UserEntity("personal-guest@example.com", "personalguest"));
+    Organization ownersOwn =
+        organizationService.createPersonalOrganization(owner.getId(), "Personal Owner's Space");
+    OrganizationEntity ownersEntity = organizations.findById(ownersOwn.id()).orElseThrow();
+    memberships.saveAndFlush(new MembershipEntity(ownersEntity, guest.getId(), false));
+
+    Optional<Organization> found = organizationService.personalOrganizationOf(guest.getId());
+
+    assertThat(found).isEmpty();
+    // And the owner still finds it, so the tightened predicate excluded only the guest.
+    assertThat(organizationService.personalOrganizationOf(owner.getId())).contains(ownersOwn);
+  }
+
   @Test
   void findByIdFindsAPreviouslyCreatedOrganization() {
     UserEntity owner = users.saveAndFlush(new UserEntity("lookup@example.com", "lookup"));

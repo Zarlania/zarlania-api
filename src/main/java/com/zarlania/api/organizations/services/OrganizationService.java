@@ -42,12 +42,20 @@ public class OrganizationService {
   /**
    * Finds the organization an account owns for itself, which is the one a session is scoped to.
    *
+   * <p>Owner and type are both required, and each half carries its own weight. {@code PERSONAL}
+   * says what an organization is for, not whose it is: a membership row pointing at somebody else's
+   * personal organization satisfies the type alone, and returning it would scope a session into
+   * another person's space. {@link #deletePersonalOrganizationOf} gates on the same pair, for the
+   * same reason — these two are the only places that answer "which organization is this account's
+   * own", so they have to answer it identically.
+   *
    * <p>{@code readOnly} so the lazy relation on {@code MembershipEntity} can be traversed inside
    * this transaction; {@code open-in-view} is false, so that traversal would fail outside one.
    */
   @Transactional(readOnly = true)
   public Optional<Organization> personalOrganizationOf(UUID userId) {
     return membershipRepository.findByUserId(userId).stream()
+        .filter(MembershipEntity::isOwner)
         .map(MembershipEntity::getOrganization)
         .filter(organization -> organization.getType() == OrganizationType.PERSONAL)
         .findFirst()

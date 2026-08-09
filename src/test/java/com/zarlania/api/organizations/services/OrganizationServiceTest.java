@@ -70,14 +70,20 @@ class OrganizationServiceTest {
     assertThat(organizationService.personalOrganizationOf(userId)).isEmpty();
   }
 
-  // A session is scoped to the caller's own organization, so a shared one must never be mistaken
-  // for it however many the account belongs to.
-  @Test
-  void thePersonalOrganizationLookupIgnoresSharedOrganizations() {
-    UUID userId = UUID.randomUUID();
-    OrganizationEntity shared = new OrganizationEntity("Shared", OrganizationType.GENERAL);
-    when(memberships.findByUserId(userId))
-        .thenReturn(List.of(new MembershipEntity(shared, userId, false)));
+  // A session is scoped to the caller's own organization, so nothing else the account belongs to
+  // may be mistaken for it — not a shared space, and not somebody else's personal one.
+  //
+  // Shares its cases with the deletion test below, deliberately. Both methods answer the same
+  // question, "which organization is this account's own", and they are the only two that do; when
+  // the lookup asked it with half a predicate and the delete asked it with the whole one, the two
+  // disagreed about the same account. One list of what does not qualify is what stops that
+  // recurring.
+  @ParameterizedTest(name = "{0} is not the account's own")
+  @MethodSource("membershipsThatAreNotAnOwnedPersonalOrganization")
+  void thePersonalOrganizationLookupIgnoresAnythingTheAccountDoesNotOwnPersonally(
+      String description, MembershipEntity membership) {
+    UUID userId = membership.getUserId();
+    when(memberships.findByUserId(userId)).thenReturn(List.of(membership));
 
     assertThat(organizationService.personalOrganizationOf(userId)).isEmpty();
   }
@@ -87,7 +93,7 @@ class OrganizationServiceTest {
   // for a unit test to compare — and "deleted nothing" is the property that actually protects a
   // shared space from being destroyed by someone else's purge.
   @ParameterizedTest(name = "{0} is never deleted")
-  @MethodSource("organizationsThatMustSurvive")
+  @MethodSource("membershipsThatAreNotAnOwnedPersonalOrganization")
   void deletingRemovesNothingUnlessTheAccountOwnsAPersonalOrganization(
       String description, MembershipEntity membership) {
     UUID userId = membership.getUserId();
@@ -99,7 +105,7 @@ class OrganizationServiceTest {
     verify(organizations, never()).deleteById(any());
   }
 
-  static Stream<Arguments> organizationsThatMustSurvive() {
+  static Stream<Arguments> membershipsThatAreNotAnOwnedPersonalOrganization() {
     UUID userId = UUID.randomUUID();
     return Stream.of(
         Arguments.of(
