@@ -24,17 +24,22 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Guards the five ways {@link Throttled} can be wrong without anything noticing until a request
- * hits it in production.
+ * Guards the five ways {@link Throttled} can be wrong without the build saying so.
  *
- * <p>An endpoint name with no configured limits would leave the route unthrottled. An {@code
- * accountFrom} naming a component no argument declares would leave the per-account bucket off, and
- * one naming a component that is not a {@code String} would key the bucket on that value's {@code
- * toString()} instead, throttling on something no other endpoint throttles on. An {@code
- * accountFrom} without a matching {@code account-limit}, or the reverse, means one half of a bucket
- * was added and the other forgotten — they are declared in different files, so nothing else
- * connects them. And a configured endpoint no handler claims is a limit somebody will tune in the
- * belief that it is in force.
+ * <p>Three of them do fail loudly, but only once a request arrives: an endpoint name with no
+ * configured limits ({@link ThrottleProperties#limitsFor}), an {@code accountFrom} naming a
+ * component no argument declares ({@link AccountIdentifierReader}), and an {@code accountFrom} with
+ * no matching {@code account-limit} ({@link ThrottleAspect}) each throw {@link
+ * IllegalStateException} rather than let a bucket quietly not apply. Loud, but the first person to
+ * find out is a caller in production.
+ *
+ * <p>The rest never announce themselves at all. An {@code account-limit} with no {@code
+ * accountFrom} to spend it leaves the per-account bucket off. An {@code accountFrom} naming a
+ * component that is not a {@code String} still produces a key, because the value is read through
+ * {@code Objects.toString} — the bucket then counts a {@code toString()} of some other shape, and
+ * the annotation is a bare string that cannot express the constraint. And a configured endpoint no
+ * handler claims is a limit somebody will tune in the belief that it is in force. In each case the
+ * only symptom is a limit that never bites.
  *
  * <p>Reads the real {@code application.yml} and scans the real controllers, so it fails the build
  * on that drift rather than merely describing the rule.
