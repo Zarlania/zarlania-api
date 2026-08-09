@@ -39,6 +39,23 @@ class AccountIdentifierReaderTest {
     assertThat(AccountIdentifierReader.read(arguments, "identifier")).isEqualTo("bob@example.com");
   }
 
+  // A null *value* in the named component, as against a null argument above. Bean validation
+  // rejects a null identifier before any handler runs, so this is reachable only if a request
+  // record ever drops that constraint — but the reader has to answer something regardless, and
+  // what it answers is an empty key rather than a throw or a skip.
+  //
+  // Empty is the safe end of the choice it faces. Every caller sending no identifier shares one
+  // bucket, which throttles them collectively; keying on null would have to mean either failing
+  // the request on a throttling concern, or dropping the account bucket for exactly the callers
+  // sending the most malformed input. Documented here rather than argued from the code, since
+  // Objects.toString's second argument is easy to read past.
+  @Test
+  void aNullValueInTheNamedComponentReadsAsAnEmptyKeyRatherThanFailing() {
+    Object[] arguments = {new LoginBody(null, "hunter2")};
+
+    assertThat(AccountIdentifierReader.read(arguments, "identifier")).isEmpty();
+  }
+
   // Failing loudly matters more than degrading here: silently skipping the account bucket would
   // leave the endpoint throttled per IP only, which is the exact gap the account bucket exists to
   // close. ThrottledEndpointConventionTest is what stops this reaching production at all.

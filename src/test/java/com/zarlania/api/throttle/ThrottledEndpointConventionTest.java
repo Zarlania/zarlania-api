@@ -24,13 +24,15 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Guards the four ways {@link Throttled} can be wrong without anything noticing until a request
+ * Guards the five ways {@link Throttled} can be wrong without anything noticing until a request
  * hits it in production.
  *
  * <p>An endpoint name with no configured limits would leave the route unthrottled. An {@code
- * accountFrom} naming a component no argument declares would leave the per-account bucket off. An
- * {@code accountFrom} without a matching {@code account-limit}, or the reverse, means one half of a
- * bucket was added and the other forgotten — they are declared in different files, so nothing else
+ * accountFrom} naming a component no argument declares would leave the per-account bucket off, and
+ * one naming a component that is not a {@code String} would key the bucket on that value's {@code
+ * toString()} instead, throttling on something no other endpoint throttles on. An {@code
+ * accountFrom} without a matching {@code account-limit}, or the reverse, means one half of a bucket
+ * was added and the other forgotten — they are declared in different files, so nothing else
  * connects them. And a configured endpoint no handler claims is a limit somebody will tune in the
  * belief that it is in force.
  *
@@ -64,6 +66,29 @@ class ThrottledEndpointConventionTest {
     assertThat(recordComponentNames(handler))
         .as("record component named by accountFrom on %s", name)
         .contains(accountFrom);
+  }
+
+  // AccountIdentifierReader hands whatever the accessor returns to Objects.toString, so a component
+  // of any type at all still yields a key. Pointing accountFrom at a UUID or a nested record would
+  // therefore throttle on that value's toString() without anything failing — a bucket keyed on a
+  // different shape of string from every other endpoint's, discovered only by noticing that the
+  // limit never bites. The annotation is a bare string and cannot express the constraint, so this
+  // is the only place it can be held.
+  //
+  // isNotEmpty() before the type check is load-bearing: allSatisfy passes vacuously on an empty
+  // list, so a name matching nothing would sail through this while failing only the test above.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("throttledHandlers")
+  void everyAccountFromNamesAComponentThatIsExactlyAString(String name, Method handler) {
+    String accountFrom = handler.getAnnotation(Throttled.class).accountFrom();
+    if (accountFrom.isEmpty()) {
+      return;
+    }
+
+    assertThat(recordComponentsNamed(handler, accountFrom))
+        .as("type of the record component named by accountFrom on %s", name)
+        .isNotEmpty()
+        .allSatisfy(component -> assertThat(component.getType()).isEqualTo(String.class));
   }
 
   // The two halves of an account bucket are declared in different files, so nothing but this stops
@@ -110,11 +135,24 @@ class ThrottledEndpointConventionTest {
   }
 
   private static List<String> recordComponentNames(Method handler) {
+    return recordComponents(handler).map(RecordComponent::getName).toList();
+  }
+
+  /**
+   * Every component of that name, not just the one {@code AccountIdentifierReader} would read
+   * first. Two arguments declaring the same component name is not a shape any handler has today,
+   * and holding all of them to the rule means the reader's choice between them cannot matter.
+   */
+  private static List<RecordComponent> recordComponentsNamed(Method handler, String componentName) {
+    return recordComponents(handler)
+        .filter(component -> component.getName().equals(componentName))
+        .toList();
+  }
+
+  private static Stream<RecordComponent> recordComponents(Method handler) {
     return Arrays.stream(handler.getParameterTypes())
         .filter(Class::isRecord)
-        .flatMap(type -> Arrays.stream(type.getRecordComponents()))
-        .map(RecordComponent::getName)
-        .toList();
+        .flatMap(type -> Arrays.stream(type.getRecordComponents()));
   }
 
   private static Class<?> load(BeanDefinition definition) {
