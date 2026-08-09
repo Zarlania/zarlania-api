@@ -8,9 +8,10 @@ tags:
 - configuration
 - security
 created: '2026-08-03'
-updated: '2026-08-05'
+updated: '2026-08-09'
 related:
 - '000002'
+- '000004'
 ---
 
 # Outbound email
@@ -23,8 +24,8 @@ related:
 | Description | How the EmailSender port, its Resend and logging adapters, the service-wide send budget, and off-request-thread dispatch work. |
 | Tags | architecture, configuration, security |
 | Created | 2026-08-03 |
-| Updated | 2026-08-05 |
-| Related | [000002](000002-authentication-and-tokens.md) |
+| Updated | 2026-08-09 |
+| Related | [000002](000002-authentication-and-tokens.md), [000004](000004-request-throttling.md) |
 <!-- reference-table:end -->
 
 Everything this service sends to a mailbox goes through one narrow port, one
@@ -112,8 +113,8 @@ always the budgeted wrapper, and no bean exposes the adapter underneath it —
 the only way to obtain a bare one is to call `EmailSenderFactory` directly.
 
 The counting is done by the same `RateLimiter` the request throttles use
-(described under [Throttling](000002-authentication-and-tokens.md#throttling)),
-through its explicit-window overload. That overload exists for this: a daily
+(described in [Request throttling](000004-request-throttling.md)), through its
+explicit-window overload. That overload exists for this: a daily
 allowance expressed in the shared one-minute request window would cap the rate
 while leaving the day's total unbounded.
 
