@@ -51,9 +51,6 @@ public class UnverifiedAccountCleanup {
   /**
    * Purges one account, absorbing whatever it fails with.
    *
-   * <p>Owns the sweep's whole log vocabulary — the success line as well as the two failure ones —
-   * because it is the only place that sees a purge all the way through its commit.
-   *
    * <p>One bad row must not abort the sweep: every other expired account still needs purging on
    * this pass, and whichever user failed is simply picked up again on the next scheduled run. The
    * catch is deliberately broad because the whole point is resilience against whatever Postgres or
@@ -73,14 +70,6 @@ public class UnverifiedAccountCleanup {
   private void purgeSafely(UUID userId) {
     try {
       unverifiedAccountPurger.purgeOneAccount(userId);
-      // Logged out here, not inside purgeOneAccount, because that method is @Transactional:
-      // anything it logs is written while its transaction is still open, so a commit that then
-      // failed would leave behind a line claiming an account was purged that is in fact still
-      // there. Returning from the call is the first moment the commit has actually happened.
-      //
-      // Logged at all because a sweep that deletes rows and leaves no record of which ones is the
-      // one failure mode nobody can investigate afterwards, so success is as loud as failure.
-      log.info("Purged unverified account {} and everything hanging off it", userId);
     } catch (AccountVerifiedDuringPurgeException exception) {
       // Not a failure: the account was verified between this sweep listing it and the purge
       // reaching it, the purge rolled itself back, and the account is intact. Logged at debug
