@@ -1,0 +1,185 @@
+package com.zarlania.api.throttle;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * Guards the five ways {@link Throttled} can be wrong without the build saying so.
+ *
+ * <p>Three of them do fail loudly, but only once a request arrives: an endpoint name with no
+ * configured limits ({@link ThrottleProperties#limitsFor}), an {@code accountFrom} naming a
+ * component no argument declares ({@link AccountIdentifierReader}), and an {@code accountFrom} with
+ * no matching {@code account-limit} ({@link ThrottleAspect}) each throw {@link
+ * IllegalStateException} rather than let a bucket quietly not apply. Loud, but the first person to
+ * find out is a caller in production.
+ *
+ * <p>The rest never announce themselves at all. An {@code account-limit} with no {@code
+ * accountFrom} to spend it leaves the per-account bucket off. An {@code accountFrom} naming a
+ * component that is not a {@code String} still produces a key, because the value is read through
+ * {@code Objects.toString} — the bucket then counts a {@code toString()} of some other shape, and
+ * the annotation is a bare string that cannot express the constraint. And a configured endpoint no
+ * handler claims is a limit somebody will tune in the belief that it is in force. In each case the
+ * only symptom is a limit that never bites.
+ *
+ * <p>Reads the real {@code application.yml} and scans the real controllers, so it fails the build
+ * on that drift rather than merely describing the rule.
+ */
+class ThrottledEndpointConventionTest {
+
+  private static final String BASE_PACKAGE = "com.zarlania.api";
+
+  private static final ThrottleProperties PROPERTIES = loadThrottleProperties();
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("throttledHandlers")
+  void everyThrottledEndpointHasConfiguredLimits(String name, Method handler) {
+    String endpoint = handler.getAnnotation(Throttled.class).endpoint();
+
+    assertThat(PROPERTIES.endpoints())
+        .as("zarlania.throttle.endpoints entry for %s, declared on %s", endpoint, name)
+        .containsKey(endpoint);
+  }
+
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("throttledHandlers")
+  void everyAccountFromNamesAComponentTheHandlerActuallyReceives(String name, Method handler) {
+    String accountFrom = handler.getAnnotation(Throttled.class).accountFrom();
+    if (accountFrom.isEmpty()) {
+      return;
+    }
+
+    assertThat(recordComponentNames(handler))
+        .as("record component named by accountFrom on %s", name)
+        .contains(accountFrom);
+  }
+
+  // AccountIdentifierReader hands whatever the accessor returns to Objects.toString, so a component
+  // of any type at all still yields a key. Pointing accountFrom at a UUID or a nested record would
+  // therefore throttle on that value's toString() without anything failing — a bucket keyed on a
+  // different shape of string from every other endpoint's, discovered only by noticing that the
+  // limit never bites. The annotation is a bare string and cannot express the constraint, so this
+  // is the only place it can be held.
+  //
+  // isNotEmpty() before the type check is load-bearing: allSatisfy passes vacuously on an empty
+  // list, so a name matching nothing would sail through this while failing only the test above.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("throttledHandlers")
+  void everyAccountFromNamesAComponentThatIsExactlyAString(String name, Method handler) {
+    String accountFrom = handler.getAnnotation(Throttled.class).accountFrom();
+    if (accountFrom.isEmpty()) {
+      return;
+    }
+
+    assertThat(recordComponentsNamed(handler, accountFrom))
+        .as("type of the record component named by accountFrom on %s", name)
+        .isNotEmpty()
+        .allSatisfy(component -> assertThat(component.getType()).isEqualTo(String.class));
+  }
+
+  // The two halves of an account bucket are declared in different files, so nothing but this stops
+  // one being added without the other. Either omission is silent: no annotation means the limit is
+  // never applied, no limit means the annotation cannot be honoured.
+  @ParameterizedTest(name = "{0}")
+  @MethodSource("throttledHandlers")
+  void namingAnAccountAndConfiguringAnAccountLimitGoTogether(String name, Method handler) {
+    Throttled throttled = handler.getAnnotation(Throttled.class);
+    EndpointLimits limits = PROPERTIES.endpoints().get(throttled.endpoint());
+    boolean namesAnAccount = !throttled.accountFrom().isEmpty();
+
+    assertThat(limits.accountLimitIfPresent().isPresent())
+        .as("account-limit configured for %s, which names an account: %s", name, namesAnAccount)
+        .isEqualTo(namesAnAccount);
+  }
+
+  // Configuration nothing reads is configuration that will drift: a limit tuned here and never
+  // applied reads, to whoever tunes it next, as a limit that is in force.
+  @Test
+  void everyConfiguredEndpointIsClaimedBySomeHandler() {
+    Set<String> annotated =
+        throttledHandlers()
+            .map(arguments -> (Method) arguments.get()[1])
+            .map(handler -> handler.getAnnotation(Throttled.class).endpoint())
+            .collect(Collectors.toSet());
+
+    assertThat(PROPERTIES.endpoints().keySet()).isEqualTo(annotated);
+  }
+
+  private static Stream<Arguments> throttledHandlers() {
+    ClassPathScanningCandidateComponentProvider scanner =
+        new ClassPathScanningCandidateComponentProvider(false);
+    scanner.addIncludeFilter(new AnnotationTypeFilter(RestController.class));
+
+    return scanner.findCandidateComponents(BASE_PACKAGE).stream()
+        .map(ThrottledEndpointConventionTest::load)
+        .flatMap(controller -> Arrays.stream(controller.getDeclaredMethods()))
+        .filter(method -> method.isAnnotationPresent(Throttled.class))
+        .map(
+            method ->
+                Arguments.of(
+                    method.getDeclaringClass().getSimpleName() + "#" + method.getName(), method));
+  }
+
+  private static List<String> recordComponentNames(Method handler) {
+    return recordComponents(handler).map(RecordComponent::getName).toList();
+  }
+
+  /**
+   * Every component of that name, not just the one {@code AccountIdentifierReader} would read
+   * first. Two arguments declaring the same component name is not a shape any handler has today,
+   * and holding all of them to the rule means the reader's choice between them cannot matter.
+   */
+  private static List<RecordComponent> recordComponentsNamed(Method handler, String componentName) {
+    return recordComponents(handler)
+        .filter(component -> component.getName().equals(componentName))
+        .toList();
+  }
+
+  private static Stream<RecordComponent> recordComponents(Method handler) {
+    return Arrays.stream(handler.getParameterTypes())
+        .filter(Class::isRecord)
+        .flatMap(type -> Arrays.stream(type.getRecordComponents()));
+  }
+
+  private static Class<?> load(BeanDefinition definition) {
+    try {
+      return Class.forName(definition.getBeanClassName());
+    } catch (ClassNotFoundException exception) {
+      throw new IllegalStateException(exception);
+    }
+  }
+
+  private static ThrottleProperties loadThrottleProperties() {
+    try {
+      Binder binder =
+          new Binder(
+              ConfigurationPropertySources.from(
+                  new YamlPropertySourceLoader()
+                      .load("application.yml", new ClassPathResource("application.yml"))));
+      return binder
+          .bind("zarlania.throttle", ThrottleProperties.class)
+          .orElseThrow(() -> new IllegalStateException("No zarlania.throttle block found"));
+    } catch (IOException exception) {
+      throw new IllegalStateException("Cannot read application.yml", exception);
+    }
+  }
+}

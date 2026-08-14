@@ -1,12 +1,30 @@
 spring:
   application:
     name: zarlania-api
+  task:
+    scheduling:
+      pool:
+        # One thread per @Scheduled method in the application: UnverifiedAccountCleanup and
+        # ExpiredTokenCleanup (both hourly, both on cleanup-interval, so they start together and
+        # occupy their threads at the same time) plus InMemoryRateLimiter's minute-by-minute
+        # eviction. Spring's default is a single thread, which serializes all three — and against a
+        # cold free-tier database the two sweeps can run long enough that eviction would simply not
+        # happen, leaving the limiter's map to grow on an instance with 512 MB to spend. Sizing this
+        # below the number of scheduled methods reintroduces exactly that. Add a thread whenever a
+        # @Scheduled method is added.
+        size: 3
   # Composed from parts, not one URL: Render blueprints can inject a database's
   # host/port/database/user/password into env vars but cannot template them into
   # a JDBC URL (Render's own connectionString is postgres://, which JDBC rejects).
   # Any Postgres provider plugs in through these five variables.
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zarlania}
+    # stringtype=unspecified: without it, pgjdbc binds a String parameter as
+    # varchar, so Postgres resolves `citext_column = ?` via an implicit cast to
+    # plain text on both sides and silently compares case-sensitively — the
+    # unique/case-insensitive columns CLAUDE.md documents (email, username)
+    # would stop matching on case. Leaving the type unspecified lets Postgres
+    # infer it from the citext column instead.
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:zarlania}?stringtype=unspecified
     username: ${DB_USER:zarlania}
     password: ${DB_PASSWORD:zarlania}
   jpa:
@@ -21,6 +39,34 @@ spring:
 server:
   # Render injects PORT; 8080 is the local default.
   port: ${PORT:8080}
+  tomcat:
+    threads:
+      # Tomcat's default is 200. Each request thread that reaches the password hasher can hold a
+      # 19 MiB Argon2 buffer on a ~358 MB heap, so the default is enough concurrency to OOM-kill
+      # the instance on its own. CredentialsService's semaphore is what actually caps live
+      # buffers; this caps how many requests can be queued behind it before Tomcat starts
+      # refusing connections, which is the failure mode we want instead of an OOM.
+      max: 50
+  # Deliberately `none`, even though this service does sit behind proxies. The deployed chain is
+  # client -> Cloudflare edge -> Render load balancer -> app: two appending hops, so
+  # X-Forwarded-For arrives with three entries and neither end of it is the caller. `framework`
+  # would rewrite getRemoteAddr() from the *leftmost* entry, which is whatever the client sent
+  # (proxies append rather than replace) — rotate it and you get a fresh throttle bucket per
+  # request. The rightmost entry is Render's internal load balancer, the same private address for
+  # every request from every user, so keying on that collapses the whole service into one bucket.
+  #
+  # CloudflareClientIpResolver (http) reads CF-Connecting-IP instead, which Cloudflare *replaces*
+  # on every request it proxies, and falls back to getRemoteAddr() when it is absent or is not
+  # one bare IP literal. It implements the ClientIpResolver port, so a move off Cloudflare is a
+  # new implementation rather than an edit here.
+  #
+  # That fallback is why this setting still matters, and the reason is not the obvious one:
+  # ForwardedHeaderFilter removes only Forwarded and the X-Forwarded-* family, so CF-Connecting-IP
+  # would still be readable under `framework`. What `framework` changes is getRemoteAddr() itself —
+  # it rewrites it from the leftmost X-Forwarded-For entry, the one the client wrote. The resolver's
+  # safe degraded path would then be forgeable, which is precisely the bypass this whole design
+  # removes. `none` keeps getRemoteAddr() the TCP peer, which no client can set.
+  forward-headers-strategy: none
 
 management:
   endpoints:
@@ -34,9 +80,94 @@ management:
       probes:
         enabled: true
 
-# Placeholder: CORS is not configured yet because zarlania-app does not call this
-# API. When the browser client is wired up, add the allowed origins here and read
-# them in a WebMvcConfigurer.
+# CORS: SecurityConfig's corsConfigurationSource bean reads allowed-origins below.
 zarlania:
   cors:
     allowed-origins: ${ZARLANIA_CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  email:
+    from: ${EMAIL_FROM:no-reply@zarlania.com}
+    resend-api-key: ${RESEND_API_KEY:}
+    # The provider's API root. Configuration rather than a constant so a different
+    # Resend-compatible endpoint can be pointed at without a code change, and so a test can aim
+    # the adapter at a stub instead of the internet.
+    resend-base-url: ${RESEND_BASE_URL:https://api.resend.com}
+    # How long one send may wait on the provider. The JDK's HTTP client has no default for either,
+    # and dispatch-threads below is 1 — so a provider that accepts the connection and then stops
+    # answering would hold that single thread forever, stalling every queued verification email
+    # until the queue filled and new ones were dropped. Generous enough that a slow-but-working
+    # provider still succeeds; short enough that a hung one costs one message, not all of them.
+    connect-timeout: PT5S
+    read-timeout: PT10S
+    # Sends in flight at once. One is enough while email-budget-limit caps the whole service:
+    # there is no volume worth parallelising, and each extra thread is heap a 512 MB instance has
+    # to find. Raise it with the instance size, not on its own.
+    dispatch-threads: 1
+    # How many sends may sit waiting for the single dispatch thread before new ones are rejected
+    # and logged. Comfortably above email-budget-limit below, so the budget — not this queue — is
+    # what bounds outbound volume; this only stops a provider outage from growing the queue without
+    # limit until the 512 MB instance is OOM-killed.
+    dispatch-queue-capacity: 200
+  auth:
+    issuer: ${JWT_ISSUER:https://api.zarlania.com}
+    access-token-ttl: PT15M
+    refresh-family-lifetime: P30D
+    unverified-account-max-age: P7D
+    cleanup-interval: PT1H
+    cookie-secure: ${AUTH_COOKIE_SECURE:true}
+    jwt-private-key-pem: ${JWT_PRIVATE_KEY:}
+    jwt-retired-public-keys-pem: ${JWT_RETIRED_PUBLIC_KEYS:}
+    app-base-url: ${APP_BASE_URL:https://zarlania.com}
+  # Owned by the credentials domain, not by auth: EmailVerificationService binds these, and a
+  # credentials class reading zarlania.auth.* would invert the domains' dependency direction.
+  credentials:
+    verification-token-ttl: PT24H
+    # Argon2id holds 19 MiB on the Java heap per hash in flight (see
+    # CredentialsService#hash). Four at once is ~76 MiB of the free tier's ~358 MB heap,
+    # which leaves room for everything else the request is doing; raise it only alongside
+    # a bigger instance.
+    max-concurrent-hashes: 4
+  throttle:
+    window: PT1M
+    # Keyed by the name in @Throttled(endpoint = "..."). `limit` is per client IP; `account-limit`
+    # is a second, independent bucket per account named in the request, across every IP, so
+    # credential stuffing spread over many addresses is bounded too. Endpoints that name no
+    # account (refresh carries only a cookie, csrf carries nothing) set no account-limit.
+    endpoints:
+      login:
+        limit: 10
+        # The same 10 as the per-IP limit: a real person never makes ten login attempts in a
+        # minute, and going lower would let an attacker suppress one account's logins more cheaply.
+        account-limit: 10
+      register:
+        limit: 5
+        account-limit: 3
+      resend:
+        limit: 3
+        account-limit: 3
+      verify:
+        # A person follows the emailed link once, or a handful of times if they retry a stale one.
+        # Nothing here names an account — the token is the whole request — so there is no
+        # account-limit to set, and this per-IP cap is what stops a caller guessing tokens by
+        # firing them at the token table without limit.
+        limit: 10
+      logout:
+        # Higher than refresh: a client may log out on every tab it has open, and being throttled
+        # out of logging out is the one failure that leaves a session alive against the user's
+        # wishes. Still bounded, because the endpoint needs no credential a caller cannot mint —
+        # one CSRF pair fetched once can be reused against any number of invented refresh cookies,
+        # each costing a refresh-token lookup.
+        limit: 60
+      refresh:
+        limit: 30
+      csrf:
+        # Higher than refresh, because a client fetches a CSRF token before it can refresh at all
+        # and must never be the reason a refresh is refused. The endpoint does no database work
+        # and no hashing, so the limit is here for uniformity across public /auth routes rather
+        # than to protect anything expensive.
+        limit: 60
+    # Total outbound email for the whole service, across every caller and endpoint. The per-caller
+    # limits above do not bound this: 5 registrations/min from one compliant IP is ~7,200 messages
+    # a day against a Resend free tier of roughly 100. 80/day leaves headroom under that ceiling,
+    # and a rejection is logged at error rather than silently dropped. Raise it with the plan.
+    email-budget-limit: 80
+    email-budget-window: P1D

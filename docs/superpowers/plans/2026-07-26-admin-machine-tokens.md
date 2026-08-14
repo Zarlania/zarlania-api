@@ -353,3 +353,29 @@ EOF
 - **Spec coverage:** data model → 1–2, 6; endpoints table → 5 (roles/users/audit), 6 (services + secrets), 7 (impersonation + exchange); claims/bootstrap → 3–4; no-refresh + negative space → 7's tests; audit-not-per-exchange → 6 (`lastUsedAt`); 404-hiding → 5; docs/runbooks → 8.
 - **Placeholders:** none; `<ISSUE>` per Task 0.
 - **Type consistency:** `TokenClaims` is the single mint input from Task 3 on (Tasks 7 uses it for both kinds); `TokenKinds` constants match the spec's `kind` values; `PermissionCatalog.readOnlyOrgPermissions()` is the one impersonation source; `ServiceGrant` produced in Task 6 and consumed in Task 7.
+
+## Amendment — spec 2 as implemented (2026-08-02)
+
+Written before spec 2's implementation (PR #33) settled. These deltas
+override the tasks above where they conflict:
+
+- **Task 3's `record TokenClaims` collides with an existing class.**
+  `auth/services/TokenClaims.java` already holds the claim-name constants
+  (`ORGANIZATION`, `KIND`) that `JwtService` and `SecurityConfig` read.
+  Rename the planned record or fold the constants into it deliberately — do
+  not shadow the name.
+- **Task 3's converter change must start enforcing `kind`.** Today the
+  converter accepts any value, including a missing claim, because only
+  `user` exists. The moment three kinds are minted, the converter must
+  reject unknown or missing kinds, and human-only checks must read the
+  principal's kind.
+- **Task 7's exchange follows spec 2's stored-token idioms:** SHA-256 hash
+  lookup compared with `MessageDigest.isEqual` (see
+  `RefreshTokenService.findByHash`), and a per-client-IP throttle through
+  `AuthController`'s `requireCapacity`/`ClientIpResolver` idiom — the
+  planned `zarlania.throttle.service-limit` slots into `ThrottleProperties`
+  beside the existing limits.
+- **Audit-log candidate from spec 2:** `RefreshTokenService.rotate` logs
+  refresh-token replays with the `REFRESH_TOKEN_REUSE` WARN marker; consider
+  an `auth.refresh-reuse` audit action when the audit log lands, rather than
+  leaving the log line as the only trace.

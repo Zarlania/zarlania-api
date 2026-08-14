@@ -105,6 +105,31 @@
       <property name="ignoreFieldDeclaration" value="true"/>
     </module>
 
+    <!-- === Documentation ===
+      CLAUDE.md: every public type and method carries Javadoc. The audience is
+      both a person opening one file and an agent reading it without the rest of
+      the codebase, and neither can infer a contract from a signature. Scope is
+      `public` deliberately: what is reachable from outside the class is what
+      needs a stated contract, while a private helper is documented when it has
+      something non-obvious to say and left bare when it does not.
+
+      Content is not checked here, only presence — a rule cannot tell a real
+      explanation from a restatement of the method name. That is the review's
+      job, and CLAUDE.md states what makes a comment worth writing.
+    -->
+    <module name="MissingJavadocType">
+      <property name="scope" value="public"/>
+    </module>
+    <module name="MissingJavadocMethod">
+      <property name="scope" value="public"/>
+      <!--
+        An @Override inherits its contract from the type it implements, and
+        restating it in a second place is how the two drift apart. Javadoc is
+        still welcome on an override that has something of its own to say.
+      -->
+      <property name="allowedAnnotations" value="Override"/>
+    </module>
+
     <!-- === Naming === -->
 
     <module name="TypeName"/>

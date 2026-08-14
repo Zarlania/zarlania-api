@@ -14,3 +14,4 @@ fits; only add a new row when none of these cover the change.
 | controllers | Spring MVC controllers and request mapping. |
 | http | HTTP request/response handling and endpoints. |
 | persistence | Database schema, migrations, and the data-access layer. |
+| security | Authentication, authorization, cryptography, and abuse defenses. |

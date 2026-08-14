@@ -2,24 +2,14 @@ package com.zarlania.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.zarlania.api.testsupport.IntegrationTestBase;
 import lombok.RequiredArgsConstructor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
-@SpringBootTest
-@Testcontainers
 @RequiredArgsConstructor(onConstructor_ = @Autowired)
-class ZarlaniaApiApplicationIntegrationTest {
-
-  // Same major version render.yaml and docker-compose.yml pin for production and local dev.
-  @Container @ServiceConnection
-  static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17-alpine");
+class ZarlaniaApiApplicationIntegrationTest extends IntegrationTestBase {
 
   private final JdbcTemplate jdbcTemplate;
 
@@ -37,5 +27,16 @@ class ZarlaniaApiApplicationIntegrationTest {
                 + " WHERE table_name = 'flyway_schema_history'",
             Integer.class);
     assertThat(tables).isEqualTo(1);
+  }
+
+  @Test
+  void migrationCreatesTheAccountTables() {
+    Integer tables =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name IN"
+                + " ('users','organizations','organization_memberships',"
+                + " 'password_credentials','email_verification_tokens','refresh_tokens')",
+            Integer.class);
+    assertThat(tables).isEqualTo(6);
   }
 }
