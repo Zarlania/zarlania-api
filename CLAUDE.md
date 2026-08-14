@@ -43,6 +43,7 @@ written in Java. The browser client lives in a separate repository,
 | ------------------------ | -------------------------------------------------------- |
 | `./mvnw verify`          | Compile, test, and run every quality gate. **This is what CI runs.** |
 | `./mvnw test`            | Tests only.                                              |
+| `./mvnw test -Dtest=<Class>` | One class, a comma-separated few, or a `*` pattern. **The default while iterating.** |
 | `./mvnw spotless:apply`  | Reformat. Run this before committing.                    |
 | `./mvnw checkstyle:check` | Design and complexity rules only.                       |
 | `./mvnw spotbugs:check`  | Bug and security analysis only. Needs a `compile` first. |
@@ -51,6 +52,23 @@ written in Java. The browser client lives in a separate repository,
 | `docker compose up postgres` | Just the local database, for `spring-boot:run`. |
 
 Always use `./mvnw`, never a system `mvn` — the wrapper pins the Maven version.
+
+**Scope the test run to what you changed.** The full suite takes a few minutes,
+almost all of it Spring contexts being built and torn down one per test method,
+and re-running it after every edit spends that repeatedly to re-prove code the
+edit never touched. Name the classes instead —
+`./mvnw test -Dtest=AccountThrottleEndToEndTest`, a comma-separated list, or a
+pattern such as `-Dtest='*Throttle*'`. The coverage gate binds to `verify`, so a
+scoped `test` run never fails for covering only part of the codebase.
+
+Run the whole of `./mvnw verify` when the change is broad enough that you cannot
+name what it affects: anything in `testsupport/`, a shared base class,
+`application.yml`, a migration, or a refactor spanning many files. Otherwise CI
+is the backstop — it runs `./mvnw verify` on every push, so the full suite is
+never skipped, only moved off the inner loop. The trade is that a break in an
+untouched area surfaces on the pull request rather than locally, which is the
+right price for every change except the broad ones above. Do still run
+`./mvnw spotless:apply` before committing, whatever the scope.
 
 ## Layout
 
