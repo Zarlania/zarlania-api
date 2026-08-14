@@ -66,7 +66,7 @@ class ClientIpThrottleEndToEndTest extends EndToEndTestBase {
 
     loginAsDeployed(CLIENT_SHARED_BUCKET_TEST, "nobody-shared")
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("auth.throttled"));
+        .andExpect(jsonPath("$.code").value("throttle.limit-exceeded"));
   }
 
   // A 429 with no Retry-After leaves a client guessing, and a client that guesses short spends its
@@ -118,7 +118,7 @@ class ClientIpThrottleEndToEndTest extends EndToEndTestBase {
 
     loginWithForgedForwardedFor(CLIENT_SPOOFING_TEST, LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING)
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("auth.throttled"));
+        .andExpect(jsonPath("$.code").value("throttle.limit-exceeded"));
   }
 
   // No Cloudflare header at all: the request never crossed the edge, so nothing in it can be
@@ -132,7 +132,7 @@ class ClientIpThrottleEndToEndTest extends EndToEndTestBase {
 
     loginFromUnproxiedPeer("nobody-direct")
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("auth.throttled"));
+        .andExpect(jsonPath("$.code").value("throttle.limit-exceeded"));
   }
 
   // The exact header set a live Render service receives.

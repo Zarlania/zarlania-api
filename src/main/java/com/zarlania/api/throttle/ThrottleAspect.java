@@ -29,7 +29,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 @RequiredArgsConstructor
 public class ThrottleAspect {
 
-  private static final String THROTTLED_MESSAGE = "Too many requests";
+  private static final String LIMIT_EXCEEDED_MESSAGE = "Too many requests";
 
   // RFC 9110 §10.2.3 measures Retry-After in whole seconds. Rounding up rather than down, and never
   // below one, so a client that obeys the header to the letter always waits until the window has
@@ -47,7 +47,8 @@ public class ThrottleAspect {
    * <p>Advises the handler method rather than filtering the request because the per-account bucket
    * keys on a field of the parsed body; see {@link Throttled}.
    *
-   * @throws ApiException with {@link ThrottleErrorCode#THROTTLED} if either bucket is exhausted
+   * @throws ApiException with {@link ThrottleErrorCode#LIMIT_EXCEEDED} if either bucket is
+   *     exhausted
    */
   @Before("@annotation(throttled)")
   public void enforce(JoinPoint joinPoint, Throttled throttled) {
@@ -74,7 +75,7 @@ public class ThrottleAspect {
     ThrottleDecision decision = rateLimiter.tryConsume(key, limit);
     if (!decision.allowed()) {
       throw new ApiException(
-          ThrottleErrorCode.THROTTLED, THROTTLED_MESSAGE, retryAfterHeader(decision));
+          ThrottleErrorCode.LIMIT_EXCEEDED, LIMIT_EXCEEDED_MESSAGE, retryAfterHeader(decision));
     }
   }
 

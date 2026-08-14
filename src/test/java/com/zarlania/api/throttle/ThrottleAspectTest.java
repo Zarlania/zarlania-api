@@ -120,7 +120,7 @@ class ThrottleAspectTest {
     assertThatThrownBy(() -> aspect.enforce(joinPoint, throttled("withAccountBucket")))
         .isInstanceOf(ApiException.class)
         .extracting(exception -> ((ApiException) exception).getErrorCode())
-        .isEqualTo(ThrottleErrorCode.THROTTLED);
+        .isEqualTo(ThrottleErrorCode.LIMIT_EXCEEDED);
 
     verify(rateLimiter, never()).tryConsume("login:acct:bob@example.com", ACCOUNT_LIMIT);
   }

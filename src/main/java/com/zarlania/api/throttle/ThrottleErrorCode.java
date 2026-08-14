@@ -8,11 +8,10 @@ public enum ThrottleErrorCode implements ErrorCode {
    * Too many requests for one of this endpoint's buckets. The response carries {@code Retry-After}
    * saying for how long, which is why the aspect raises it with response headers attached.
    *
-   * <p>The string reads {@code auth.throttled} rather than {@code throttle.*} because throttling
-   * only guarded auth endpoints when it shipped. It is published contract now and {@code
-   * zarlania-app} matches it, so it stays as it is even though this package is domain-agnostic.
+   * <p>The string is prefixed {@code throttle} because this package is what publishes it, and
+   * throttling is domain-agnostic: an endpoint outside {@code auth} answers with the same code.
    */
-  THROTTLED("auth.throttled", 429);
+  LIMIT_EXCEEDED("throttle.limit-exceeded", 429);
 
   private final String code;
   private final int status;

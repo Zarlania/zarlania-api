@@ -9,7 +9,7 @@ tags:
 - http
 - security
 created: '2026-08-09'
-updated: '2026-08-09'
+updated: '2026-08-14'
 related:
 - '000002'
 - '000003'
@@ -25,7 +25,7 @@ related:
 | Description | How the @Throttled aspect, its per-IP and per-account buckets, the configured endpoint limits, and the client-IP source that keys them work. |
 | Tags | architecture, configuration, http, security |
 | Created | 2026-08-09 |
-| Updated | 2026-08-09 |
+| Updated | 2026-08-14 |
 | Related | [000002](000002-authentication-and-tokens.md), [000003](000003-outbound-email.md) |
 <!-- reference-table:end -->
 
@@ -65,9 +65,10 @@ failure does.
 
 A throttled request that names an account consumes **two** buckets —
 `<endpoint>:<client-ip>` and `<endpoint>:acct:<identifier>` — because either
-alone leaves a real attack unbounded. With only the per-IP bucket, credential stuffing spread across many
-addresses can hammer one known username freely; with only the per-account
-bucket, a single address can work through a list of accounts.
+alone leaves a real attack unbounded. With only the per-IP bucket, credential
+stuffing spread across many addresses can hammer one known username freely;
+with only the per-account bucket, a single address can work through a list of
+accounts.
 
 The per-IP bucket is consumed first, and a refusal there means the per-account
 bucket is never touched. An endpoint whose annotation names no `accountFrom`
@@ -159,19 +160,19 @@ across the public `/auth` routes.
 
 ## What a refused caller sees
 
-A caller over either limit gets `429` with code `auth.throttled`, carrying a
-`Retry-After` header. The limiter returns the remaining window alongside the
-refusal rather than through a second lookup, so the advertised wait always
-describes the window that actually rejected the request. The value is whole
-seconds per RFC 9110 §10.2.3, rounded up and never below one, so a client that
-obeys it to the letter arrives after the window has genuinely refilled instead
-of retrying into a second rejection.
+A caller over either limit gets `429` with code `throttle.limit-exceeded`,
+carrying a `Retry-After` header. The limiter returns the remaining window
+alongside the refusal rather than through a second lookup, so the advertised
+wait always describes the window that actually rejected the request. The value
+is whole seconds per RFC 9110 §10.2.3, rounded up and never below one, so a
+client that obeys it to the letter arrives after the window has genuinely
+refilled instead of retrying into a second rejection.
 
-The code reads `auth.throttled` rather than `throttle.throttled` only because
-throttling guarded nothing but auth endpoints when it shipped. It is published
-contract — `zarlania-app` matches the exact string — so `ThrottleErrorCode`
-keeps the name it was released under even though the mechanism has since become
-general. A throttled endpoint outside `auth` would answer with it too.
+The code is prefixed `throttle` even though every endpoint answering with it
+today sits under `/auth`. `CLAUDE.md`'s rule is that a code's prefix names the
+enum that publishes it rather than the callers that happen to use it, and
+`ThrottleErrorCode` is domain-agnostic: a throttled endpoint outside `auth`
+answers with the same code.
 
 `Retry-After` is not one of the CORS-safelisted response headers, so
 `SecurityConfig`'s CORS configuration names it in `setExposedHeaders`. Without

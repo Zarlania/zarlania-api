@@ -234,6 +234,13 @@ without reading the rest of the codebase.
   and knows none of them. **A code string is published contract** — `zarlania-app`
   matches these exact strings, so adding one is safe and renaming a shipped one
   is not.
+  - **A code reads `<owner>.<what-went-wrong>`, where the owner is the enum that
+    publishes it** — never the callers that happen to use it today.
+    `throttle.limit-exceeded` comes from `ThrottleErrorCode`, even though every
+    endpoint carrying it is currently under `/auth`. Naming a code for its
+    callers makes the prefix a lie the moment a second caller appears, and by
+    then it is contract and cannot be renamed. The suffix says what went wrong,
+    hyphenated, and matches the enum constant.
 - **`ApiException` is for code that is already an HTTP concern**, never a
   service: a controller rejecting a request it can judge itself, or
   infrastructure in the request path like `ThrottleAspect`.

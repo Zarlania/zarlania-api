@@ -61,7 +61,7 @@ class AccountThrottleEndToEndTest extends EndToEndTestBase {
             addressFor(LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING),
             spellingFor("targeted-account", LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING))
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("auth.throttled"));
+        .andExpect(jsonPath("$.code").value("throttle.limit-exceeded"));
   }
 
   // A different account must still have its full allowance while the one above is exhausted —
@@ -89,7 +89,7 @@ class AccountThrottleEndToEndTest extends EndToEndTestBase {
 
     resendRequest(addressFor(RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING), "bombed@example.com")
         .andExpect(status().isTooManyRequests())
-        .andExpect(jsonPath("$.code").value("auth.throttled"));
+        .andExpect(jsonPath("$.code").value("throttle.limit-exceeded"));
   }
 
   // Every other test here uses unregistered identifiers, which cannot show *where* the limit sits
