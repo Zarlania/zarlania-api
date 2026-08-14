@@ -17,12 +17,17 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * <p>Holds what every such test needs and none of them should re-declare: {@link MockMvc}, the
  * recording email sender in place of a real provider, and the JSON request builder.
  *
- * <p>Deliberately does <em>not</em> clear recorded email before each test. {@link
- * RecordingEmailSender} is a singleton per Spring context, and a context is shared by every class
- * configured identically — so a blanket clear here would let a class that never looks at email wipe
- * the inbox of one that is midway through reading it. Read your own mail by recipient instead
- * ({@link RecordingEmailSender#messagesTo}); clear only in a class that owns its context and needs
- * to assert on total volume.
+ * <p>Does not clear recorded email before each test, because there is nothing left to clear: {@link
+ * IntegrationTestBase} dirties the context after every method, so each method starts with a {@link
+ * RecordingEmailSender} that has recorded only what that method caused. Asserting on total outbound
+ * volume with {@link RecordingEmailSender#messages()} is therefore safe anywhere; {@link
+ * RecordingEmailSender#messagesTo} is for reading one account's mail out of a method that sends to
+ * several.
+ *
+ * <p>The rule that follows from a fresh context is that a test sets up the email, time and database
+ * state it goes on to assert on. Nothing arrives from a previous method — but nothing is cleaned up
+ * by one either, and committed rows do outlive the context, so a test that needs an account seeds
+ * it under a slug of its own.
  */
 @AutoConfigureMockMvc
 @Import(RecordingEmailSenderConfig.class)

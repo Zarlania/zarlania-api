@@ -21,9 +21,9 @@ public class RecordingEmailSender implements EmailSender {
   /**
    * Everything sent so far, oldest first, as an immutable snapshot.
    *
-   * <p>Only meaningful to a test whose class owns its Spring context. This bean is a singleton per
-   * context, so two classes sharing one see each other's mail — prefer {@link #messagesTo} unless
-   * the whole outbound volume is the thing being asserted.
+   * <p>This bean is a singleton per Spring context and every test method gets its own context, so
+   * what this returns is exactly what the running method caused — total outbound volume is a fair
+   * thing to assert on.
    */
   public List<EmailMessage> messages() {
     return List.copyOf(messages);
@@ -32,15 +32,18 @@ public class RecordingEmailSender implements EmailSender {
   /**
    * Everything sent to one address, oldest first.
    *
-   * <p>Scoping by recipient is what lets a test read its own mail without caring what else shares
-   * the context: two tests registering different accounts at the same time cannot see each other's
-   * verification link, however they interleave.
+   * <p>Scoping by recipient is what lets a method that registers several accounts pick out one
+   * account's verification link rather than whichever was sent last.
    */
   public List<EmailMessage> messagesTo(String address) {
     return messages.stream().filter(message -> message.to().equals(address)).toList();
   }
 
-  /** Forgets everything recorded. Tests that assert on counts run this between cases. */
+  /**
+   * Forgets everything recorded. For a method that sends mail while arranging its subject and then
+   * wants to count only what the subject itself sends — the recorder already starts empty, so there
+   * is nothing to clear between methods.
+   */
   public void clear() {
     messages.clear();
   }

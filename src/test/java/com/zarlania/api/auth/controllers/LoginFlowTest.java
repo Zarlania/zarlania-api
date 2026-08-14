@@ -33,13 +33,14 @@ import org.springframework.test.web.servlet.MvcResult;
  * issued; that replaying an old cookie kills the whole family can be seen only by using the new one
  * afterwards; that logout ends a session can be seen only by refreshing after it.
  *
- * <p>Every test seeds its own account under a unique slug. The container and the rate limiter are
- * shared for the run, so nothing here may assume an empty database or an untouched bucket.
+ * <p>Every test seeds its own account under a unique slug. The Postgres container is shared for the
+ * whole run, so nothing here may assume an empty database — only the Spring context, and with it
+ * the rate limiter and the recorded mail, is fresh per method.
  */
-// Every raised limit is about setup, not about what this class asserts: each test method registers,
-// verifies and logs in its own account under one shared InMemoryRateLimiter and one client address,
-// which is far more calls than the real per-minute caps allow. The throttle itself is covered by
-// ClientIpThrottleEndToEndTest and AccountThrottleEndToEndTest against real limits.
+// Every raised limit is about setup, not about what this class asserts: one test method registers,
+// verifies and logs in its own account from a single client address, which is more calls than the
+// real per-minute caps allow even before the method reaches its subject. The throttle itself is
+// covered by ClientIpThrottleEndToEndTest and AccountThrottleEndToEndTest.
 @SpringBootTest(
     properties = {
       "zarlania.throttle.endpoints.register.limit=1000",

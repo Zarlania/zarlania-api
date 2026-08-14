@@ -6,10 +6,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zarlania.api.testsupport.EndToEndTestBase;
+import com.zarlania.api.testsupport.MutableClockConfig;
 import java.util.Locale;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
 
@@ -21,30 +22,45 @@ import org.springframework.test.web.servlet.ResultActions;
  * <p>Every per-IP limit is raised out of the way here, and every request below arrives from a
  * different client address (in {@code CF-Connecting-IP}, the header {@code ClientIpResolver}
  * reads), so a 429 can only have come from the account bucket. {@link ClientIpThrottleEndToEndTest}
- * is the mirror image, holding the per-IP limits at their defaults.
+ * is the mirror image, raising the account limits and driving the per-IP one.
+ *
+ * <p>The account limits are set here rather than inherited from {@code application.yml}, so the
+ * counts the methods below run up to are this class's own numbers: a product decision to allow
+ * users more login attempts would otherwise silently turn every assertion here into one that never
+ * reaches a limit at all.
+ *
+ * <p>Time is frozen through {@link MutableClockConfig}. Every method fills a bucket over a series
+ * of requests and expects the next one refused, which is only true while all of them fall inside
+ * one {@code zarlania.throttle.window} — on the wall clock that holds until the run is slow enough
+ * or unlucky enough for a minute boundary to land mid-method, and then the failure looks like a
+ * throttle bug rather than the timing artefact it is.
  */
 @SpringBootTest(
     properties = {
       "zarlania.throttle.endpoints.login.limit=1000",
       "zarlania.throttle.endpoints.register.limit=1000",
-      "zarlania.throttle.endpoints.resend.limit=1000"
+      "zarlania.throttle.endpoints.resend.limit=1000",
+      "zarlania.throttle.endpoints.login.account-limit="
+          + AccountThrottleEndToEndTest.LOGIN_ACCOUNT_LIMIT,
+      "zarlania.throttle.endpoints.resend.account-limit="
+          + AccountThrottleEndToEndTest.RESEND_ACCOUNT_LIMIT
     })
+@Import(MutableClockConfig.class)
 class AccountThrottleEndToEndTest extends EndToEndTestBase {
 
-  // This class asserts on total outbound volume, so it needs an empty recorder — safe here because
-  // its property set is unique, which gives it a Spring context, and therefore a recorder, of its
-  // own. A class sharing a context must scope its reads by recipient instead.
-  @BeforeEach
-  void clearRecordedEmails() {
-    recordedEmails.clear();
-  }
+  // The account limits this class drives past, set into the context by the annotation above so the
+  // numbers below and the numbers the limiter enforces cannot drift apart.
+  // Package-private rather than private: javac reads a private constant from its own class's
+  // annotation, but Eclipse's compiler — which the IDE's language server uses — rejects it, and a
+  // constant that only builds under one toolchain is not worth the narrower scope.
+  static final int LOGIN_ACCOUNT_LIMIT = 10;
+  static final int RESEND_ACCOUNT_LIMIT = 3;
 
   private static final String PASSWORD = "correct-horse-battery";
   private static final String CLOUDFLARE_CLIENT_IP_HEADER = "CF-Connecting-IP";
-  // login-account-limit and resend-account-limit in application.yml; one more request than each is
-  // what has to be refused.
-  private static final int LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = 11;
-  private static final int RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = 4;
+  // One more request than the limit allows is what has to be refused.
+  private static final int LOGIN_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = LOGIN_ACCOUNT_LIMIT + 1;
+  private static final int RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING = RESEND_ACCOUNT_LIMIT + 1;
 
   // Each attempt arrives from its own address and spells the identifier differently — leading and
   // trailing space, alternating case. Both are normalized into one bucket key on purpose: email
@@ -101,6 +117,7 @@ class AccountThrottleEndToEndTest extends EndToEndTestBase {
   void aThrottledResendNeverReachesTheServiceThatWouldHaveSentTheEmail() throws Exception {
     registerRequest("throttled-resend@example.com", "throttledresend")
         .andExpect(status().isAccepted());
+    // Drops the verification email registration just sent, so the counts below are resends only.
     recordedEmails.clear();
 
     for (int attempt = 1; attempt <= RESEND_ATTEMPTS_TO_TRIGGER_ACCOUNT_THROTTLING - 1; attempt++) {

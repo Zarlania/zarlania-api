@@ -31,8 +31,8 @@ public abstract class FlowTestBase extends EndToEndTestBase {
    *
    * <p>Goes through the emailed link rather than reaching into the database, because that round
    * trip is part of what these tests exist to prove. The link is read from the mail addressed to
-   * this account rather than from whatever was sent last, so a class sharing its Spring context
-   * with another cannot pick up someone else's token.
+   * this account rather than from whatever was sent last, so a flow that seeds several accounts
+   * before getting to its subject verifies the right one.
    */
   protected void registerAndVerify(String email, String username) throws Exception {
     auth.register(email, username, PASSWORD).andExpect(status().isAccepted());
@@ -48,8 +48,8 @@ public abstract class FlowTestBase extends EndToEndTestBase {
   /**
    * The body of the most recent email sent to one address — the verification link, in practice.
    *
-   * <p>By recipient rather than "the last thing sent", so this stays correct whatever else is using
-   * the same recorder.
+   * <p>By recipient rather than "the last thing sent", so this stays correct however many accounts
+   * the flow has seeded on the way here.
    */
   protected String lastEmailTo(String address) {
     return recordedEmails.messagesTo(address).getLast().textBody();
@@ -58,7 +58,8 @@ public abstract class FlowTestBase extends EndToEndTestBase {
   /**
    * The body of the most recently sent email, whoever it went to.
    *
-   * <p>Only safe in a class that owns its Spring context; prefer {@link #lastEmailTo}.
+   * <p>Unambiguous only where the method has sent exactly one message; prefer {@link #lastEmailTo}
+   * as soon as more than one account is involved.
    */
   protected String lastEmailBody() {
     return recordedEmails.messages().getLast().textBody();

@@ -7,10 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.zarlania.api.testsupport.EndToEndTestBase;
+import com.zarlania.api.testsupport.MutableClockConfig;
 import java.time.Duration;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.ResultActions;
@@ -27,19 +29,40 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
  * caller, and the rightmost is Render's internal load balancer, one address shared by every request
  * from every user. Tests that synthesize a two-entry header cannot tell any of those apart.
  *
- * <p>{@code login-limit} stays at the production default so these exercise the real number. {@code
+ * <p>The per-IP limit and the window are set here rather than inherited from {@code
+ * application.yml}, so the counts below are this class's own numbers and a later change to what
+ * production allows cannot quietly turn these into tests that never reach a limit. {@code
  * login-account-limit} is raised out of the way, since it would otherwise trip at the same request
  * count and leave every 429 ambiguous about which limit produced it; {@link
- * AccountThrottleEndToEndTest} is the mirror image. Every method uses its own client address so no
- * method's bucket state can bleed into another's, whatever order JUnit runs them in.
+ * AccountThrottleEndToEndTest} is the mirror image.
+ *
+ * <p>Time is frozen through {@link MutableClockConfig}, so the run of requests each method makes is
+ * guaranteed to fall inside one window instead of merely being fast enough that it usually does.
+ * Every method also uses its own client address, so no method's bucket state can bleed into
+ * another's whatever order JUnit runs them in — belt and braces now that each method gets a fresh
+ * limiter with the context.
  */
-@SpringBootTest(properties = {"zarlania.throttle.endpoints.login.account-limit=1000"})
+@SpringBootTest(
+    properties = {
+      "zarlania.throttle.endpoints.login.account-limit=1000",
+      "zarlania.throttle.endpoints.login.limit=" + ClientIpThrottleEndToEndTest.LOGIN_LIMIT,
+      "zarlania.throttle.window=" + ClientIpThrottleEndToEndTest.WINDOW_ISO
+    })
+@Import(MutableClockConfig.class)
 class ClientIpThrottleEndToEndTest extends EndToEndTestBase {
+
+  // The per-IP limit and window this class drives past, set into the context by the annotation
+  // above so the numbers below and the numbers the limiter enforces cannot drift apart.
+  // Package-private rather than private: javac reads a private constant from its own class's
+  // annotation, but Eclipse's compiler — which the IDE's language server uses — rejects it, and a
+  // constant that only builds under one toolchain is not worth the narrower scope.
+  static final int LOGIN_LIMIT = 10;
+  static final String WINDOW_ISO = "PT1M";
 
   private static final String PASSWORD = "correct-horse-battery";
   private static final String CLOUDFLARE_CLIENT_IP_HEADER = "CF-Connecting-IP";
   private static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
-  private static final int LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING = 11;
+  private static final int LOGIN_ATTEMPTS_TO_TRIGGER_THROTTLING = LOGIN_LIMIT + 1;
 
   // The two infrastructure hops, from a probe of a live Render service. RENDER_LOAD_BALANCER is
   // also what getRemoteAddr() returns in production — the same private address for everybody.
@@ -54,8 +77,7 @@ class ClientIpThrottleEndToEndTest extends EndToEndTestBase {
   private static final String CLIENT_RETRY_AFTER_TEST = "198.51.100.60";
   private static final String UNPROXIED_REMOTE_ADDR = "203.0.113.7";
 
-  // Mirrors zarlania.throttle.window, which these tests deliberately leave at its production value.
-  private static final Duration THROTTLE_WINDOW = Duration.ofMinutes(1);
+  private static final Duration THROTTLE_WINDOW = Duration.parse(WINDOW_ISO);
 
   @Test
   void requestsFromOneClientAddressShareAThrottleBucket() throws Exception {

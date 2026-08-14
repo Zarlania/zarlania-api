@@ -7,7 +7,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.zarlania.api.email.EmailMessage;
 import com.zarlania.api.testsupport.FlowTestBase;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 
@@ -22,9 +21,9 @@ import org.springframework.boot.test.context.SpringBootTest;
  * <p>Runs against the real {@code AFTER_COMMIT} listener, so an email observed here is one a
  * committed registration actually caused.
  */
-// Throttle limits are raised well above what this class sends from one client address: register
-// defaults to 5/min and these methods together make more calls than that against one shared
-// InMemoryRateLimiter. The throttle itself is covered against real limits by
+// Throttle limits are raised out of the way: register defaults to 5/min per address, and a single
+// method here can register several accounts from the one address MockMvc reports. The throttle
+// itself is covered against limits those tests set for themselves, in
 // ClientIpThrottleEndToEndTest and AccountThrottleEndToEndTest.
 @SpringBootTest(
     properties = {
@@ -33,14 +32,6 @@ import org.springframework.boot.test.context.SpringBootTest;
       "zarlania.throttle.endpoints.verify.limit=1000"
     })
 class RegistrationFlowTest extends FlowTestBase {
-
-  // This class asserts on total outbound volume, so it needs an empty recorder — safe here because
-  // its property set is unique, which gives it a Spring context, and therefore a recorder, of its
-  // own. A class sharing a context must scope its reads by recipient instead.
-  @BeforeEach
-  void clearRecordedEmails() {
-    recordedEmails.clear();
-  }
 
   @Test
   void registeringSendsOneVerificationEmailCarryingAUsableToken() throws Exception {

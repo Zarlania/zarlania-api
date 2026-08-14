@@ -377,11 +377,34 @@ without reading the rest of the codebase.
   time. A change to how a test account is built, or to a request's shape, must
   be a change to one file. Anything copied into a second test class belongs in
   one of these instead.
+- **Every test method gets its own Spring context.** `IntegrationTestBase`
+  carries `@DirtiesContext(classMode = AFTER_EACH_TEST_METHOD)`, so no method can
+  observe mutable singleton state another method left behind — the rate limiter's
+  buckets, the email budget's counter, the recording sender's outbox. A context
+  rebuild costs seconds; a test that passes only because of the order it ran in
+  costs an afternoon, and stops being reproducible at all once the suite runs in
+  parallel. This is the deliberate trade, so do not reach for context reuse to
+  make the suite faster — scope the run instead, as _Commands_ describes.
+- **A test sets up the email, time and database state it asserts on.** Nothing
+  arrives from a previous method, and nothing is tidied away by one either.
 - **One Postgres container serves the whole run**, declared once on
-  `IntegrationTestBase`. Tests therefore share a database and must not assume an
-  empty one: seed under a unique slug rather than relying on rollback between
-  classes. (Repository tests are the exception — they are `@Transactional` and do
-  roll back.)
+  `IntegrationTestBase`. The database is emphatically _not_ reset with the
+  context: tests share it and must not assume an empty one, so seed under a
+  unique slug rather than relying on rollback between classes. (Repository tests
+  are the exception — they are `@Transactional` and do roll back.)
+- **A Spring-backed test whose subject involves a duration imports
+  `MutableClockConfig`** — a throttle window, a token TTL, an eviction sweep.
+  It makes `MutableClock` the application's `Clock`, frozen at a fixed instant,
+  so a run of requests is guaranteed to fall inside one window instead of merely
+  being fast enough that it usually does, and elapsing time is an instruction
+  rather than a sleep. No reset between methods is needed, since the context is
+  dirtied after each one; only a method that advances time and then needs the
+  baseline again has to arrange that itself.
+- **A test owns the thresholds it counts up to.** Where a limit is what a test
+  drives past, set it in that class's `@SpringBootTest(properties = …)` rather
+  than inheriting `application.yml`'s value — otherwise a product decision to
+  raise a limit silently turns the test into one that never reaches it. Derive
+  the loop bounds from the same constant the property is built from.
 - **Use data providers for cases that differ only in their inputs.**
   `@ParameterizedTest` with `@CsvSource` or `@MethodSource` says "these all
   behave the same way" in a way that four near-identical methods cannot. Give
