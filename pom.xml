@@ -51,7 +51,7 @@
       plugin's classpath is the fix until SpotBugs bundles a newer one; drop
       this once a SpotBugs release supports Java 25 directly.
     -->
-    <asm.version>9.10.1</asm.version>
+    <asm.version>9.11</asm.version>
     <!-- Minimum line and branch coverage. The build fails below this. -->
     <jacoco.coverage.minimum>0.80</jacoco.coverage.minimum>
   </properties>
